@@ -52,6 +52,8 @@ def _data_path(filename):
 _ENUM_CHOICES = {
     "PRECIP_METHOD":         ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw"],
     "RUNOFF_SOURCE":         ["none", "coefficient", "raster", "scs_cn", "vsa_opm"],
+    "RUNOFF_CN_SOURCE":      ["scalar", "gee", "raster"],
+    "RUNOFF_CN_AMC":         ["i", "ii", "iii"],
     "ROUTING_SCHEME":        ["kinematic", "diffusive", "muskingum"],
     "DELINEATION_ENGINE":    ["pysheds", "pyflwdir"],
     "BACKEND":               ["cpu", "gpu"],
@@ -211,7 +213,21 @@ class Config:
     RUNOFF_SOURCE: str = "none"
     RUNOFF_COEFFICIENT_PATH: str = ""
     RUNOFF_RASTER_MANIFEST: str = ""
-    RUNOFF_CN_PATH: str = ""
+
+    # ── SCS Curve Number (used when RUNOFF_SOURCE='scs_cn') ───────────────────
+    # Where per-cell CN comes from:
+    #   'scalar' – uniform RUNOFF_CN everywhere
+    #   'gee'    – download the GCN250 global curve-number raster (Jaafar et al.
+    #              2019) via Earth Engine; RUNOFF_CN_AMC picks the variant
+    #              (i=Dry, ii=Average, iii=Wet). Needs GEE_PROJECT.
+    #   'raster' – read a user-supplied CN GeoTIFF from RUNOFF_CN_PATH
+    RUNOFF_CN_SOURCE: str = "gee"
+    # Antecedent Moisture Condition: 'i' dry | 'ii' normal | 'iii' wet. For the
+    # 'gee' source this selects the GCN250 image; for 'scalar'/'raster' (taken as
+    # AMC-II) it applies the standard CN-conversion when set to 'i' or 'iii'.
+    RUNOFF_CN_AMC: str = "ii"
+    RUNOFF_CN: float = 75.0          # scalar CN / nodata fill for the raster source
+    RUNOFF_CN_PATH: str = ""         # CN GeoTIFF (RUNOFF_CN_SOURCE='raster')
     RUNOFF_SCS_Ia_FACTOR: float = 0.2
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -262,8 +278,16 @@ class Config:
     MANNINGS_N: float = 0.09                # uniform fallback / nodata default
     MANNINGS_N_LULC_PATH: str = "gee"       # 'gee' → download ESA WorldCover
     MANNINGS_N_RASTER_PATH = None
-    # Channel roughness override for cells above CHANNEL_FACCUM_THRESHOLD.
-    # float → uniform channel n | dict{order:n} → per Strahler order | None → off.
+    # Channel roughness override for cells above CHANNEL_FACCUM_THRESHOLD,
+    # independent of MANNINGS_N_SOURCE above (e.g. LULC overland + elevation
+    # rule on channels). Accepted forms:
+    #   None                          -> off (channel cells keep MANNINGS_N_SOURCE value)
+    #   float                         -> uniform channel n
+    #   dict{int order: n}            -> per Strahler order (compute_strahler_order)
+    #   dict{(min_elev,max_elev): n}  -> per elevation bin, [min,max), channel cells only
+    #   list[(upper_elev, n), ...]    -> ascending elevation breakpoints, first match wins
+    #   callable(elev_array)->n_array -> custom rule over channel-cell elevations
+    #   str (file path)               -> channel-only Manning's-n raster (resampled)
     MANNINGS_N_CHANNEL = 0.035
     CHANNEL_FACCUM_THRESHOLD = None         # None → auto (top 1% of cells)
 
@@ -521,6 +545,57 @@ class Config:
         if self.MANNINGS_N <= 0:
             errors.append(f"MANNINGS_N must be > 0 (got {self.MANNINGS_N})")
 
+        # MANNINGS_N_CHANNEL isn't an enum (see _ENUM_CHOICES), so validate
+        # its shape here for a fast, clear error instead of a deep stack
+        # trace inside resolve_mannings_n at routing time. Elevation-range
+        # overlap with the DEM isn't checked here (DEM may not be loaded
+        # yet) — resolve_mannings_n falls back with a printed warning if a
+        # rule matches no channel cells.
+        _ch_n = self.MANNINGS_N_CHANNEL
+        if _ch_n is not None:
+            if isinstance(_ch_n, bool):
+                errors.append("MANNINGS_N_CHANNEL must not be a bool")
+            elif isinstance(_ch_n, (int, float)):
+                if _ch_n <= 0:
+                    errors.append(f"MANNINGS_N_CHANNEL must be > 0 (got {_ch_n})")
+            elif isinstance(_ch_n, dict):
+                if not _ch_n:
+                    errors.append("MANNINGS_N_CHANNEL dict must not be empty")
+                else:
+                    _keys = list(_ch_n.keys())
+                    _is_strahler = all(
+                        isinstance(k, int) and not isinstance(k, bool) for k in _keys)
+                    _is_elev_bins = all(
+                        isinstance(k, tuple) and len(k) == 2 for k in _keys)
+                    if not (_is_strahler or _is_elev_bins):
+                        errors.append(
+                            "MANNINGS_N_CHANNEL dict keys must be all int "
+                            "(Strahler order) or all 2-tuples (elevation "
+                            f"bins) — got {sorted({type(k).__name__ for k in _keys})}"
+                        )
+            elif isinstance(_ch_n, (list, tuple)):
+                if not _ch_n:
+                    errors.append("MANNINGS_N_CHANNEL list must not be empty")
+                elif not all(
+                    isinstance(pair, (list, tuple)) and len(pair) == 2
+                    for pair in _ch_n
+                ):
+                    errors.append(
+                        "MANNINGS_N_CHANNEL list must contain "
+                        "(upper_elev, n) pairs")
+            elif isinstance(_ch_n, str):
+                if not os.path.isfile(_ch_n):
+                    errors.append(f"MANNINGS_N_CHANNEL path not found: '{_ch_n}'")
+            elif callable(_ch_n):
+                pass  # can't statically validate a callable's behavior
+            else:
+                errors.append(
+                    "MANNINGS_N_CHANNEL must be None, a positive float, a "
+                    "dict (Strahler-order or elevation-bin), a list of "
+                    "(upper_elev, n) pairs, a callable, or a raster path "
+                    f"— got {type(_ch_n).__name__}"
+                )
+
         # Gauge CSVs are only required for the file-based interpolation methods.
         if self.PRECIP_METHOD in ("thiessen", "idw"):
             if not self.PRECIP_GAUGE_FILE or not os.path.exists(self.PRECIP_GAUGE_FILE):
@@ -555,6 +630,21 @@ class Config:
                     "A GEE-backed option is selected (SERVES SD, gridded Ksat, "
                     "texture suction, or LULC/LCZ Manning's/impervious) but "
                     "GEE_PROJECT is not set."
+                )
+
+        # SCS Curve Number sourced from Earth Engine (GCN250) also needs a project.
+        if self.RUNOFF_SOURCE == "scs_cn" and self.RUNOFF_CN_SOURCE == "gee":
+            if not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
+                errors.append(
+                    "RUNOFF_CN_SOURCE='gee' downloads the GCN250 curve-number "
+                    "raster from Earth Engine but GEE_PROJECT is not set. Set "
+                    "GEE_PROJECT, or use RUNOFF_CN_SOURCE='scalar'/'raster'."
+                )
+        if self.RUNOFF_SOURCE == "scs_cn" and self.RUNOFF_CN_SOURCE == "raster":
+            if not self.RUNOFF_CN_PATH:
+                errors.append(
+                    "RUNOFF_CN_SOURCE='raster' requires RUNOFF_CN_PATH to point "
+                    "at a curve-number GeoTIFF."
                 )
 
         # Note: fixed-choice options (BACKEND, DELINEATION_ENGINE, PRECIP_METHOD,

@@ -28,6 +28,7 @@ import numpy as np
 
 from ...utils import gpu_utils
 from . import terrain, surface, hydraulics
+from .schemes import get_scheme
 from .reporting import (
     save_hydrograph,
     write_partition_series,
@@ -271,15 +272,12 @@ def run_time_loop(grid_data, cfg):
             gauge_rec = None
 
     # ── Routing scheme ────────────────────────────────────────────────────────
+    # Scheme behaviour is described by a registry descriptor (schemes.py); the
+    # time loop branches on its trait flags rather than raw name comparisons.
     scheme = getattr(cfg, 'ROUTING_SCHEME', 'kinematic').lower()
+    scheme_desc = get_scheme(scheme)
     theta  = float(getattr(cfg, 'DIFFUSION_THETA', 1.0))
-    if scheme == 'diffusive':
-        print(f"  Routing scheme: DIFFUSIVE wave (water-surface slope, θ={theta:g})")
-    elif scheme == 'muskingum':
-        print("  Routing scheme: MUSKINGUM–CUNGE (variable-parameter; "
-              "physical diffusion D=Q/(2BS₀), grid-independent)")
-    else:
-        print("  Routing scheme: KINEMATIC wave (bed slope)")
+    print(f"  Routing scheme: {scheme_desc.describe(theta)}")
 
     # ── Array module (numpy or cupy) ─────────────────────────────────────────
     xp     = grid_data.get("xp", np)
@@ -294,7 +292,7 @@ def run_time_loop(grid_data, cfg):
     # Muskingum–Cunge extra state: I₁ (previous-step inflow rate) and the previous
     # dt (used to recover the inflow RATE I₂ = inflow_vol/dt_prev from the volume
     # scatter without a second reduction).  O₁ is the persistent Q_out_1d above.
-    _mc          = (scheme == 'muskingum')
+    _mc          = scheme_desc.rate_based
     I_prev_1d    = xp.zeros(n_cells, dtype=_dtype)    # [m³/s] inflow rate previous step
     _dt_prev_mc  = cfg.TIME_STEP_SECONDS              # [s] seeds I₂ recovery on step 0
     _mc_neg_max  = xp.zeros((), dtype=_dtype)         # peak negative-outflow fraction
@@ -473,7 +471,7 @@ def run_time_loop(grid_data, cfg):
             c_mc_1d  = (5.0 / 3.0) * Q_ref / xp.maximum(A_xs_1d, _eps_div)
             Q_out_1d = Q_ref
             S_eff_1d = slope_1d
-        elif scheme == 'diffusive':
+        elif scheme_desc.needs_water_surface_slope:
             # Diffusion wave: Manning on the water-surface slope along the flow path,
             # with conveyance on the flow-depth-over-the-higher-bed (CASC2D/GSSHA-style).
             # Returns (Q, A_xs, S_eff); channel cells use a confined rectangular section.

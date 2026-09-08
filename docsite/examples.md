@@ -129,10 +129,13 @@ translation/attenuation should do to a wave routed through ~5 km of channel.
 
 ## 4. Manning's n by elevation
 
-There's no dedicated `MANNINGS_N_SOURCE="elevation"` — instead,
-`mannings_n_from_dem` generates a Manning's-n raster from your DEM using an
-elevation rule, and you point the existing `MANNINGS_N_SOURCE="raster"` path
-at it.
+There's no dedicated `MANNINGS_N_SOURCE="elevation"` for the **whole
+grid** — instead, `mannings_n_from_dem` generates a Manning's-n raster from
+your DEM using an elevation rule, and you point the existing
+`MANNINGS_N_SOURCE="raster"` path at it. If you only want an elevation rule
+on **channel cells** (keeping LULC/scalar roughness on overland cells), see
+[4b](#4b-lulc-overland--elevation-rule-channels) below — no raster file
+needed there.
 
 ```python
 from hydroflow import Config, run_pipeline, mannings_n_from_dem, plot_raster, plot_hydrograph
@@ -178,6 +181,34 @@ above), a `{(min, max): n}` dict of bins, or any callable
 `f(elevation_array) -> n_array` for a continuous relationship. The router's
 own log confirms the raster reached it: `Manning's n | source=raster
 range=[0.035, 0.140]`.
+
+## 4b. LULC overland + elevation-rule channels
+
+`MANNINGS_N_SOURCE` (overland cells) and `MANNINGS_N_CHANNEL` (cells above
+`CHANNEL_FACCUM_THRESHOLD`) are fully independent — you can mix, say, an
+LULC-based overland source with a channel-only elevation rule, with no
+raster round-trip:
+
+```python
+cfg.MANNINGS_N_SOURCE = "lulc"                     # overland roughness from ESA WorldCover
+cfg.MANNINGS_N_CHANNEL = [                          # channel roughness by elevation
+    (1700, 0.03), (2000, 0.05), (float("inf"), 0.08),
+]
+```
+
+`MANNINGS_N_CHANNEL` accepts the same rule forms as `mannings_n_from_dem`'s
+`rule`, evaluated directly against channel-cell elevations, plus a
+Strahler-order dict and a channel-only raster path:
+
+```python
+cfg.MANNINGS_N_CHANNEL = {(0, 1500): 0.03, (1500, 3000): 0.08}   # elevation bins
+cfg.MANNINGS_N_CHANNEL = lambda z: 0.02 + 0.00002 * z             # any callable
+cfg.MANNINGS_N_CHANNEL = {1: 0.10, 2: 0.06, 3: 0.045, 4: 0.035}   # per Strahler order
+cfg.MANNINGS_N_CHANNEL = "results/channel_n.tif"                  # channel-only raster
+```
+
+The log line reports which mode fired, e.g. `Manning's n | channel cells:
+1,204 / 48,930  (threshold=489, mode=elevation-breakpoints)`.
 
 ## 5. Capstone: everything together
 
@@ -236,3 +267,84 @@ runoff peaks quickly, riding on top of the slower upstream BC pulse — and the
 mass balance still closes exactly, tracking rainfall-runoff and
 boundary-condition inflow as two independent, separately-accounted-for
 sources of water into the domain.
+
+## 6. SCS Curve Number runoff (GCN250 or your own raster)
+
+The `scs_cn` runoff source turns rainfall into effective runoff with the
+classic SCS Curve Number method. Curve numbers can come from three places via
+`RUNOFF_CN_SOURCE`:
+
+- **`gee`** — download the [GCN250](https://gee-community-catalog.org/projects/gcn250/)
+  global curve-number dataset (Jaafar et al. 2019) from Earth Engine, aligned to
+  your DEM. `RUNOFF_CN_AMC` picks the antecedent-moisture image: `i` (Dry),
+  `ii` (Average, default), or `iii` (Wet).
+- **`raster`** — point `RUNOFF_CN_PATH` at your own CN GeoTIFF (any grid; it's
+  resampled to the routing DEM).
+- **`scalar`** — a single basin-wide `RUNOFF_CN`.
+
+```python
+from hydroflow import Config, run_pipeline, plot_hydrograph
+
+# --- Option A: GCN250 from Earth Engine (needs hydroflow[gee] + a project) ---
+cfg = Config(
+    DEM_PATH="dem_250.tif",
+    OUTPUT_DIR="results/",
+    OUTPUT_POINT=(27.632222, 85.293333),
+    TARGET_CRS_EPSG="EPSG:32645",
+    GEE_PROJECT="your-gee-project",
+    PRECIP_METHOD="uniform",
+    RAIN_INTENSITY_MM_HR=25.0,
+    RAIN_DURATION_HOURS=3.0,
+    RUNOFF_SOURCE="scs_cn",          # or 3
+    RUNOFF_CN_SOURCE="gee",          # download GCN250
+    RUNOFF_CN_AMC="iii",             # wet antecedent conditions
+    TOTAL_SIMULATION_TIME_HOURS=12.0,
+)
+out = run_pipeline(cfg)             # process_dem → routing
+plot_hydrograph(out, label="SCS-CN (AMC III) Q(t)")[0].savefig("cn_hydrograph.png")
+
+# --- Option B: your own curve-number raster (fully offline) ---
+cfg.RUNOFF_CN_SOURCE = "raster"
+cfg.RUNOFF_CN_PATH = "my_curve_numbers.tif"
+out = run_pipeline(cfg)
+
+# --- Option C: a single scalar CN, converted to the chosen AMC ---
+cfg.RUNOFF_CN_SOURCE = "scalar"
+cfg.RUNOFF_CN = 80.0
+cfg.RUNOFF_CN_AMC = "ii"
+out = run_pipeline(cfg)
+```
+
+Antecedent Moisture Condition (AMC) captures how wet the soil is before the
+storm: **AMC I** (dry) produces the least runoff, **AMC III** (wet) the most.
+For the `gee` source this simply selects the matching GCN250 image; for the
+`scalar`/`raster` sources the AMC-II value is converted with the standard SCS
+formulas.
+
+The AMC choice has a large, physically-consistent effect. For a ~106 km²
+Himalayan basin under a 120 mm storm, switching the GCN250 image gives:
+
+| GCN250 image | mean CN | peak Q | runoff volume |
+|---|---|---|---|
+| Dry (AMC I) | 55 | 113 m³/s | 1.4 × 10⁶ m³ |
+| Average (AMC II) | 74 | 317 m³/s | 4.1 × 10⁶ m³ |
+| Wet (AMC III) | 87 | 447 m³/s | 7.1 × 10⁶ m³ |
+
+Each AMC downloads its own image once and caches it as
+`cn_gcn250_amc{i,ii,iii}.tif` in the output directory; the mass balance closes
+to machine precision in every case.
+
+!!! tip "Pluggable runoff methods"
+    Every runoff source is a small `RunoffMode` class registered by name.
+    To add your own without touching hydroflow's source:
+
+    ```python
+    from hydroflow.core.runoff import RunoffMode, register
+
+    @register("my_method")
+    class MyMethod(RunoffMode):
+        def get_effective_1d(self, t_seconds, rain_1d):
+            return rain_1d * 0.6      # your runoff physics here
+
+    # then: Config(RUNOFF_SOURCE="my_method", ...)
+    ```

@@ -5,12 +5,18 @@ terrain_rules.py
 Generate a spatially-varying parameter raster (currently: Manning's n) from a
 DEM by applying a user-supplied elevation rule.
 
-There's no dedicated ``MANNINGS_N_SOURCE='elevation'`` config path — the
-existing ``'raster'`` source (``hydroflow.core.routing.surface.resolve_mannings_n``)
-already reprojects/resamples an arbitrary GeoTIFF onto the routing grid via
+There's still no dedicated ``MANNINGS_N_SOURCE='elevation'`` config path for
+the *whole grid* — the existing ``'raster'`` source
+(``hydroflow.core.routing.surface.resolve_mannings_n``) already
+reprojects/resamples an arbitrary GeoTIFF onto the routing grid via
 ``align_raster_to_dem`` and falls back bad values to ``MANNINGS_N``, so
 generating a Manning's-n GeoTIFF here and pointing ``MANNINGS_N_RASTER_PATH``
 at it reuses that path unchanged: ``MANNINGS_N_SOURCE="raster"``.
+
+For *channel cells only*, ``MANNINGS_N_CHANNEL`` accepts the same rule forms
+(callable / list of breakpoints / dict of bins) directly — no raster needed;
+see ``resolve_mannings_n``. Both paths share the dispatch logic in
+``apply_elevation_rule`` below.
 """
 
 import os
@@ -19,6 +25,56 @@ import numpy as np
 
 
 _SANE_N_RANGE = (0.005, 1.0)
+
+
+def apply_elevation_rule(elev, rule, *, valid=None):
+    """
+    Evaluate an elevation-dependent rule against an array of elevations.
+
+    Parameters
+    ----------
+    elev : ndarray
+        Elevation values, any shape (2-D grid or 1-D per-cell).
+    rule : callable | list[tuple] | dict
+        - callable: ``f(elev) -> n_array``, same shape, vectorized.
+        - list of ascending ``(upper_bound_elev, n)`` tuples, first match
+          wins (``elev <= upper``).
+        - dict ``{(min_elev, max_elev): n}`` — half-open ``[min, max)`` bins.
+    valid : ndarray[bool], optional
+        Boolean mask, same shape as *elev*, marking cells eligible for
+        assignment (e.g. a DEM-nodata mask). Defaults to
+        ``np.isfinite(elev)`` when omitted.
+
+    Returns
+    -------
+    n_arr : ndarray[float64], same shape as *elev*
+        NaN where *valid* is False or the rule produced no match — this
+        function does not fill nodata or do a sanity-range check; that is a
+        policy decision left to the caller.
+    """
+    elev = np.asarray(elev, dtype=np.float64)
+    if valid is None:
+        valid = np.isfinite(elev)
+    else:
+        valid = np.asarray(valid, dtype=bool) & np.isfinite(elev)
+
+    n_arr = np.full(elev.shape, np.nan, dtype=np.float64)
+
+    if callable(rule):
+        n_arr[valid] = np.asarray(rule(elev), dtype=np.float64)[valid]
+    elif isinstance(rule, dict):
+        for (lo, hi), n_val in rule.items():
+            mask = valid & (elev >= lo) & (elev < hi)
+            n_arr[mask] = float(n_val)
+    else:
+        breakpoints = sorted(rule, key=lambda pair: pair[0])
+        assigned = np.zeros(elev.shape, dtype=bool)
+        for upper, n_val in breakpoints:
+            mask = valid & ~assigned & (elev <= upper)
+            n_arr[mask] = float(n_val)
+            assigned |= mask
+
+    return n_arr
 
 
 def mannings_n_from_dem(dem_path, rule, output_path, *, nodata_n=None):
@@ -65,21 +121,7 @@ def mannings_n_from_dem(dem_path, rule, output_path, *, nodata_n=None):
     if nodata is not None:
         valid &= (elev != nodata)
 
-    n_arr = np.full(elev.shape, np.nan, dtype=np.float64)
-
-    if callable(rule):
-        n_arr[valid] = np.asarray(rule(elev), dtype=np.float64)[valid]
-    elif isinstance(rule, dict):
-        for (lo, hi), n_val in rule.items():
-            mask = valid & (elev >= lo) & (elev < hi)
-            n_arr[mask] = float(n_val)
-    else:
-        breakpoints = sorted(rule, key=lambda pair: pair[0])
-        assigned = np.zeros(elev.shape, dtype=bool)
-        for upper, n_val in breakpoints:
-            mask = valid & ~assigned & (elev <= upper)
-            n_arr[mask] = float(n_val)
-            assigned |= mask
+    n_arr = apply_elevation_rule(elev, rule, valid=valid)
 
     assigned_mask = valid & np.isfinite(n_arr)
     if not assigned_mask.any():

@@ -2,15 +2,18 @@
 """
 surface.py — spatial parameter fields on the routing grid.
 
-Manning's n (scalar / LULC / LCZ / raster, with per-Strahler-order channel
-override), land-cover lookups, impervious fraction, and the confined-channel
-geometry (mask, width, storage area).
+Manning's n (scalar / LULC / LCZ / raster overland source, with an
+independently specified channel override — uniform, per-Strahler-order,
+elevation-rule, callable, or a channel-only raster), land-cover lookups,
+impervious fraction, and the confined-channel geometry (mask, width, storage
+area).
 """
 
 import numpy as np
 
 from .terrain import compute_strahler_order
 from ..io_utils import align_raster_to_dem
+from ...utils.terrain_rules import apply_elevation_rule, _SANE_N_RANGE
 
 
 
@@ -23,13 +26,28 @@ def resolve_mannings_n(cfg, grid_data):
     """
     Build a per-cell Manning's n array from config.
 
-    Supports three sources (``MANNINGS_N_SOURCE``):
+    Supports four overland sources (``MANNINGS_N_SOURCE``):
       scalar  – uniform value from ``MANNINGS_N``
       lulc    – LULC class codes remapped via ``LULC_LOOKUP_CSV``
+      lcz     – WUDAPT LCZ class codes remapped via ``LCZ_LOOKUP_CSV``
       raster  – pre-computed Manning's n GeoTIFF
 
-    In all modes, cells whose flow accumulation exceeds a threshold
-    are overridden with ``MANNINGS_N_CHANNEL`` (if not None).
+    In all modes, cells whose flow accumulation exceeds a threshold are
+    independently overridden via ``MANNINGS_N_CHANNEL`` (if not None), which
+    accepts:
+      None                          – off, channel cells keep the overland value
+      float                         – uniform channel n
+      dict{int order: n}            – per Strahler order (``compute_strahler_order``)
+      dict{(min_elev, max_elev): n} – per elevation bin, ``[min, max)``, channel cells only
+      list[(upper_elev, n), ...]    – ascending elevation breakpoints, first match wins
+      callable(elev_array) -> n_array – custom rule over channel-cell elevations
+      str (file path)               – channel-only Manning's-n raster (resampled)
+
+    The elevation-bin/breakpoint/callable forms reuse
+    ``hydroflow.utils.terrain_rules.apply_elevation_rule`` and are evaluated
+    directly against ``grid_data['dem_1d']`` — no intermediate raster file is
+    needed (contrast with ``mannings_n_from_dem``, which writes a whole-grid
+    raster for use via ``MANNINGS_N_SOURCE='raster'``).
 
     Returns 1-D float64 array of shape ``(n_cells,)``.
     """
@@ -144,6 +162,11 @@ def resolve_mannings_n(cfg, grid_data):
         raise ValueError(f"Unknown MANNINGS_N_SOURCE: '{source}'")
 
     # ── Channel override (all modes) ─────────────────────────────────────
+    # Independent of the overland source above: None|float|dict{order:n}
+    # (unchanged, backward compatible) plus dict{(lo,hi):n} / list of
+    # (upper_elev, n) / callable(elev)->n / str raster path (new — let
+    # channel cells use a different rule than overland, e.g. LULC overland +
+    # elevation-based channel roughness).
     n_channel_cfg = getattr(cfg, 'MANNINGS_N_CHANNEL', None)
     if n_channel_cfg is not None:
         faccum_1d = grid_data['faccum_1d']
@@ -154,27 +177,91 @@ def resolve_mannings_n(cfg, grid_data):
             threshold = max(1, n_cells // 100)
         channel_mask = fa > threshold
 
-        if isinstance(n_channel_cfg, dict):
-            ds_idx = grid_data['ds_idx']
-            ds_np = ds_idx.get() if hasattr(ds_idx, 'get') else np.asarray(
-                ds_idx)
-            strahler = compute_strahler_order(ds_np, n_cells)
-            max_order = max(n_channel_cfg.keys())
-            for ci in np.where(channel_mask)[0]:
-                so = min(int(strahler[ci]), max_order)
-                n_1d[ci] = n_channel_cfg.get(so, n_channel_cfg[max_order])
-            order_dist = {o: int((strahler[channel_mask] == o).sum())
-                          for o in sorted(set(strahler[channel_mask]))}
+        def _fill_and_assign(n_channel_1d, mode_label):
+            bad = ~np.isfinite(n_channel_1d)
+            if bad.any():
+                ok = ~bad
+                fallback = float(n_channel_1d[ok].mean()) if ok.any() else n_fallback
+                n_channel_1d[bad] = fallback
+            lo_ok, hi_ok = _SANE_N_RANGE
+            out_of_range = (n_channel_1d < lo_ok) | (n_channel_1d > hi_ok)
+            if out_of_range.any():
+                print(f"  [WARN] Manning's n   |  {int(out_of_range.sum())} "
+                      f"channel cell(s) have n outside the typical "
+                      f"[{lo_ok}, {hi_ok}] range — check MANNINGS_N_CHANNEL.")
+            n_1d[channel_mask] = n_channel_1d
             print(f"  Manning's n   |  channel cells: "
                   f"{int(channel_mask.sum()):,} / {n_cells:,}  "
-                  f"(threshold={threshold})")
-            print(f"  Manning's n   |  Strahler order distribution: "
-                  f"{order_dist}")
+                  f"(threshold={threshold}, mode={mode_label})")
+
+        if isinstance(n_channel_cfg, dict):
+            keys = list(n_channel_cfg.keys())
+            is_strahler = bool(keys) and all(
+                isinstance(k, int) and not isinstance(k, bool) for k in keys)
+            is_elev_bins = bool(keys) and all(
+                isinstance(k, tuple) and len(k) == 2 for k in keys)
+
+            if is_strahler:
+                ds_idx = grid_data['ds_idx']
+                ds_np = ds_idx.get() if hasattr(ds_idx, 'get') else np.asarray(
+                    ds_idx)
+                strahler = compute_strahler_order(ds_np, n_cells)
+                max_order = max(n_channel_cfg.keys())
+                for ci in np.where(channel_mask)[0]:
+                    so = min(int(strahler[ci]), max_order)
+                    n_1d[ci] = n_channel_cfg.get(so, n_channel_cfg[max_order])
+                order_dist = {o: int((strahler[channel_mask] == o).sum())
+                              for o in sorted(set(strahler[channel_mask]))}
+                print(f"  Manning's n   |  channel cells: "
+                      f"{int(channel_mask.sum()):,} / {n_cells:,}  "
+                      f"(threshold={threshold}, mode=strahler-order)")
+                print(f"  Manning's n   |  Strahler order distribution: "
+                      f"{order_dist}")
+            elif is_elev_bins:
+                dem_1d = grid_data['dem_1d']
+                elev = dem_1d.get() if hasattr(dem_1d, 'get') else np.asarray(dem_1d)
+                n_channel_1d = apply_elevation_rule(elev[channel_mask], n_channel_cfg)
+                _fill_and_assign(n_channel_1d, 'elevation-bins')
+            else:
+                raise ValueError(
+                    "MANNINGS_N_CHANNEL dict keys must be all int (Strahler "
+                    "order, e.g. {1: 0.10, 2: 0.06}) or all 2-tuples "
+                    "(elevation bins, e.g. {(0, 1500): 0.03, (1500, 3000): "
+                    f"0.08}}) — got mixed/unsupported key types: "
+                    f"{sorted({type(k).__name__ for k in keys})}"
+                )
+
+        elif isinstance(n_channel_cfg, (list, tuple)):
+            dem_1d = grid_data['dem_1d']
+            elev = dem_1d.get() if hasattr(dem_1d, 'get') else np.asarray(dem_1d)
+            n_channel_1d = apply_elevation_rule(elev[channel_mask], n_channel_cfg)
+            _fill_and_assign(n_channel_1d, 'elevation-breakpoints')
+
+        elif isinstance(n_channel_cfg, str):
+            dem_path = cfg.ROUTING_DEM_PATH
+            n_2d = align_raster_to_dem(n_channel_cfg, dem_path, resampling='bilinear')
+            n_channel_1d = n_2d[s_rows[channel_mask], s_cols[channel_mask]].astype(np.float64)
+            bad = (n_channel_1d <= 0) | ~np.isfinite(n_channel_1d)
+            if bad.any():
+                n_channel_1d[bad] = n_fallback
+            n_1d[channel_mask] = n_channel_1d
+            print(f"  Manning's n   |  channel raster: {n_channel_cfg}")
+            print(f"  Manning's n   |  channel cells: "
+                  f"{int(channel_mask.sum()):,} / {n_cells:,}  "
+                  f"(threshold={threshold}, mode=channel-raster)")
+
+        elif callable(n_channel_cfg):
+            dem_1d = grid_data['dem_1d']
+            elev = dem_1d.get() if hasattr(dem_1d, 'get') else np.asarray(dem_1d)
+            n_channel_1d = np.asarray(
+                n_channel_cfg(elev[channel_mask]), dtype=np.float64)
+            _fill_and_assign(n_channel_1d, 'callable')
+
         else:
             n_1d[channel_mask] = float(n_channel_cfg)
             print(f"  Manning's n   |  channel cells: "
                   f"{int(channel_mask.sum()):,} / {n_cells:,}  "
-                  f"(threshold={threshold})")
+                  f"(threshold={threshold}, mode=uniform)")
 
     print(f"  Manning's n   |  source={source}"
           f"  range=[{n_1d.min():.4f}, {n_1d.max():.4f}]"

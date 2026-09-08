@@ -41,6 +41,8 @@ Discover them anytime with `hydroflow list-options` or
 |---|---|
 | `PRECIP_METHOD` | `0` uniform · `1` thiessen · `2` idw · `3` imerg_thiessen · `4` imerg_idw |
 | `RUNOFF_SOURCE` | `0` none · `1` coefficient · `2` raster · `3` scs_cn · `4` vsa_opm |
+| `RUNOFF_CN_SOURCE` | `0` scalar · `1` gee · `2` raster |
+| `RUNOFF_CN_AMC` | `0` i (dry) · `1` ii (normal) · `2` iii (wet) |
 | `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum |
 | `DELINEATION_ENGINE` | `0` pysheds · `1` pyflwdir |
 | `BACKEND` | `0` cpu · `1` gpu |
@@ -84,6 +86,9 @@ Discover them anytime with `hydroflow list-options` or
     | Parameter | Meaning |
     |---|---|
     | `RUNOFF_SOURCE` | generation method (see table) |
+    | `RUNOFF_CN_SOURCE` | where SCS curve numbers come from: `scalar` (uniform `RUNOFF_CN`), `gee` (GCN250 global CN via Earth Engine), or `raster` (`RUNOFF_CN_PATH`) |
+    | `RUNOFF_CN_AMC` | antecedent moisture: `i` dry · `ii` normal · `iii` wet. For `gee` this picks the GCN250 Dry/Average/Wet image; for `scalar`/`raster` it applies the standard CN conversion |
+    | `RUNOFF_CN`, `RUNOFF_CN_PATH`, `RUNOFF_SCS_Ia_FACTOR` | scalar CN / CN GeoTIFF / initial-abstraction factor (default 0.2) |
     | `RUNOFF_MECHANISMS` | subset of `vsa`/`horton`/`impervious` |
     | `OPM_SD_MAX_INITIAL`, `OPM_PHI`, `OPM_K_SAT` | VSA-OPM sandbox parameters |
     | `OPM_INFILTRATION` | Green-Ampt on/off |
@@ -114,11 +119,22 @@ for scheme in ["kinematic", "diffusive", "muskingum"]:   # or 0, 1, 2
 
 ## Elevation-based Manning's n
 
-There's no dedicated `MANNINGS_N_SOURCE` for elevation — instead,
-[`mannings_n_from_dem`][hydroflow.mannings_n_from_dem] generates a Manning's-n
-GeoTIFF from a DEM using an elevation rule (breakpoints, bins, or any
-callable), and you point the existing `MANNINGS_N_SOURCE="raster"` at it. See
-[Examples #4](examples.md#4-mannings-n-by-elevation) for a full walkthrough.
+To apply an elevation rule to the **whole grid** (overland + channel cells
+alike), there's still no dedicated `MANNINGS_N_SOURCE` for elevation —
+instead, [`mannings_n_from_dem`][hydroflow.mannings_n_from_dem] generates a
+Manning's-n GeoTIFF from a DEM using an elevation rule (breakpoints, bins, or
+any callable), and you point the existing `MANNINGS_N_SOURCE="raster"` at it.
+See [Examples #4](examples.md#4-mannings-n-by-elevation) for a full
+walkthrough.
+
+To apply an elevation rule (or a Strahler-order rule) to **channel cells
+only** — keeping, say, LULC-based roughness on overland cells — set
+`MANNINGS_N_CHANNEL` directly to the same rule forms `mannings_n_from_dem`
+accepts (a list of ascending `(upper_elev, n)` pairs, a `{(min, max): n}`
+dict of bins, or a callable), or to a `dict{strahler_order: n}`, or to a path
+to a pre-computed channel-only raster. No intermediate raster file is needed
+for the rule-based forms. See
+[Examples #4b](examples.md#4b-lulc-overland--elevation-rule-channels).
 
 ## Boundary conditions
 
