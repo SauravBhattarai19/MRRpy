@@ -46,8 +46,8 @@ def apply_output_dir(config, out_dir):
     config.ROUTING_FLOW_DIR_PATH       = out_dir + "flow_direction.tif"
     config.ROUTING_FLOW_ACCUM_PATH     = out_dir + "clipped_flow_accumulation.tif"
     config.ROUTING_WATERSHED_MASK_PATH = out_dir + "watershed.tif"
-    config.OPM_WATERSHED_GEOJSON       = out_dir + "watershed.geojson"
-    config.OPM_DEFICIT_RASTER          = None   # date-stamped per event in resolve_sd_params
+    config.WATERSHED_GEOJSON       = out_dir + "watershed.geojson"
+    config.VSA_DEFICIT_RASTER          = None   # date-stamped per event in resolve_sd_params
     config.PRECIP_IMERG_DIR            = out_dir + "imerg/"
     config.HYDROGRAPH_CSV              = out_dir + "hydrograph.csv"
     config.MASS_BALANCE_CSV            = out_dir + "mass_balance.csv"

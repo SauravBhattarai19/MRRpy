@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from ...utils import gpu_utils
+from ..io_utils import routing_grid_crs
 
 
 def _resolve_rowcol(spec, transform, target_crs, nrows, ncols):
@@ -103,7 +104,9 @@ class InflowBoundary:
 
         nrows, ncols = grid_data["nrows"], grid_data["ncols"]
         transform = grid_data["transform"]
-        target_crs = getattr(cfg, "TARGET_CRS_EPSG", None)
+        # CRS of the routing grid, read from the DEM file (falls back to
+        # cfg.TARGET_CRS_EPSG) so lat/lon BC points land on the right cells.
+        target_crs = routing_grid_crs(cfg)
         s_rows = gpu_utils.to_cpu(grid_data["s_rows"]).astype(np.int64)
         s_cols = gpu_utils.to_cpu(grid_data["s_cols"]).astype(np.int64)
         faccum_1d = gpu_utils.to_cpu(grid_data["faccum_1d"]).astype(np.float64)

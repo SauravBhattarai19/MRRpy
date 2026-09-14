@@ -97,7 +97,7 @@ def resolve_mannings_n(cfg, grid_data):
             result = download_lulc_raster(
                 dem_path=dem_path,
                 watershed_geojson_path=getattr(
-                    cfg, 'OPM_WATERSHED_GEOJSON', 'output/watershed.geojson'),
+                    cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson'),
                 output_path=cached,
                 project=getattr(cfg, 'GEE_PROJECT', None),
             )
@@ -139,7 +139,7 @@ def resolve_mannings_n(cfg, grid_data):
         result = download_lcz_raster(
             dem_path=dem_path,
             watershed_geojson_path=getattr(
-                cfg, 'OPM_WATERSHED_GEOJSON', 'output/watershed.geojson'),
+                cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson'),
             output_path=cached,
             project=getattr(cfg, 'GEE_PROJECT', None),
         )
@@ -292,7 +292,7 @@ def _lulc_class_1d(cfg, grid_data, source):
     s_cols = grid_data['s_cols']
     dem_path   = cfg.ROUTING_DEM_PATH
     output_dir = getattr(cfg, 'OUTPUT_DIR', 'output/')
-    geojson    = getattr(cfg, 'OPM_WATERSHED_GEOJSON', 'output/watershed.geojson')
+    geojson    = getattr(cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson')
     project    = getattr(cfg, 'GEE_PROJECT', None)
 
     if source == 'lcz':

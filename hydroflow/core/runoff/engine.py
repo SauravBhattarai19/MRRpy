@@ -17,7 +17,8 @@ Built-in modes (set via ``config.RUNOFF_SOURCE``):
   'coefficient' – multiply rainfall by static spatial Cf raster [0–1]
   'raster'      – read pre-computed runoff raster time series [m/s]
   'scs_cn'      – SCS Curve Number method (scalar / GEE GCN250 / raster CN)
-  'vsa_opm'     – Variable Source Area: Pradhan & Ogden (2010) OPM
+  'physical'    – process-based, composable mechanisms (impervious /
+                  infiltration_excess / saturation_excess); see physical.py
 
 Usage in the time loop (forward Euler):
     source_1d = runoff_engine.get_effective_1d(t_s, rain_1d)   # current state
@@ -42,7 +43,6 @@ import rasterio
 
 from ...utils import gpu_utils
 from ..io_utils import align_raster_to_dem
-from .vsa import VsaOpmMixin
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -133,13 +133,13 @@ class CoefficientMode(RunoffMode):
                 f"RUNOFF_COEFFICIENT_PATH '{path}' not found. Point it at a "
                 "runoff-coefficient GeoTIFF [0–1]."
             )
-        with rasterio.open(path) as src:
-            arr = src.read(1).astype(np.float64)
-            nd  = src.nodata
-        if nd is not None:
-            arr[arr == nd] = 0.0
-        arr = np.clip(arr, 0.0, 1.0)
-        self._Cf_1d = self._xp.asarray(arr[self._s_rows, self._s_cols])
+        # Reproject/resample onto the routing grid (any CRS/resolution/extent).
+        dem_path = getattr(cfg, 'ROUTING_DEM_PATH', '') or cfg.DEM_PATH
+        arr = align_raster_to_dem(path, dem_path, resampling='bilinear')
+        _to_np = lambda a: a.get() if hasattr(a, 'get') else np.asarray(a)
+        sr, sc = _to_np(self._s_rows), _to_np(self._s_cols)
+        Cf = np.clip(np.asarray(arr, dtype=np.float64)[sr, sc], 0.0, 1.0)
+        self._Cf_1d = self._xp.asarray(Cf)
 
     def get_effective_1d(self, t_seconds, rain_1d):
         return rain_1d * self._Cf_1d
@@ -161,23 +161,39 @@ class RasterMode(RunoffMode):
                 f"RUNOFF_RASTER_MANIFEST '{manifest_path}' not found."
             )
         mf = pd.read_csv(manifest_path)
-        s_rows, s_cols = self._s_rows, self._s_cols
+        for col in ('time_s', 'filepath'):
+            if col not in mf.columns:
+                raise ValueError(
+                    "RUNOFF_RASTER_MANIFEST must have columns 'time_s' and "
+                    f"'filepath'; missing '{col}'."
+                )
+        # Frames may be listed at irregular times and in any order.
+        mf = mf.sort_values('time_s').reset_index(drop=True)
+        dem_path = getattr(cfg, 'ROUTING_DEM_PATH', '') or cfg.DEM_PATH
+        _to_np = lambda a: a.get() if hasattr(a, 'get') else np.asarray(a)
+        s_rows, s_cols = _to_np(self._s_rows), _to_np(self._s_cols)
 
         self._raster_times = mf['time_s'].values.astype(np.float64)
         self._raster_cache = {}
         for _, row in mf.iterrows():
-            t_s  = float(row['time_s'])
+            t_s   = float(row['time_s'])
             fpath = row['filepath']
-            with rasterio.open(fpath) as src:
-                arr = src.read(1).astype(np.float64)
-                nd  = src.nodata
-            if nd is not None:
-                arr[arr == nd] = 0.0
-            arr = np.maximum(arr, 0.0)
-            self._raster_cache[t_s] = self._xp.asarray(arr[s_rows, s_cols])
+            if not os.path.exists(fpath):
+                raise FileNotFoundError(
+                    f"RUNOFF_RASTER_MANIFEST references missing raster '{fpath}'."
+                )
+            # Reproject/resample each frame onto the routing grid, so runoff
+            # rasters can be in any CRS/resolution/extent (uncovered → 0).
+            arr = align_raster_to_dem(fpath, dem_path, resampling='bilinear')
+            vals = np.asarray(arr, dtype=np.float64)[s_rows, s_cols]
+            vals = np.where(np.isfinite(vals), vals, 0.0)
+            vals = np.maximum(vals, 0.0)                     # runoff rate ≥ 0 [m/s]
+            self._raster_cache[t_s] = self._xp.asarray(vals)
 
     def _interp_raster(self, t_seconds):
         times = self._raster_times
+        if len(times) == 1:                                 # single frame → constant
+            return self._raster_cache[times[0]]
         idx   = np.searchsorted(times, t_seconds, side='right') - 1
         idx   = int(np.clip(idx, 0, len(times) - 2))
         t0, t1 = times[idx], times[idx + 1]
@@ -275,7 +291,7 @@ class ScsCnMode(RunoffMode):
         result = download_cn_raster(
             dem_path=dem_path,
             watershed_geojson_path=getattr(
-                cfg, 'OPM_WATERSHED_GEOJSON', 'output/watershed.geojson'),
+                cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson'),
             output_path=cached,
             amc=amc,
             project=getattr(cfg, 'GEE_PROJECT', None),
@@ -329,29 +345,8 @@ class ScsCnMode(RunoffMode):
         return bool((self._delta_Pe_m > 0).any())
 
 
-# ── VSA-OPM (Pradhan & Ogden 2010) ───────────────────────────────────────────
-@register('vsa_opm')
-class VsaOpmMode(RunoffMode, VsaOpmMixin):
-    """Variable Source Area one-parameter model; mechanics live in VsaOpmMixin."""
-    name = 'vsa_opm'
-
-    def __init__(self, cfg, grid_data):
-        RunoffMode.__init__(self, cfg, grid_data)
-        # _init_vsa_opm resets self._xp from the (possibly GPU) upslope area.
-        self._init_vsa_opm(cfg, grid_data)
-
-    def get_effective_1d(self, t_seconds, rain_1d):
-        return self._opm_effective_runoff(rain_1d)
-
-    def update_state(self, rain_1d, dt):
-        self._update_opm_sandbox(rain_1d, dt)
-
-    def is_active(self, t_seconds):
-        # Runoff can come from the VSA, impervious cells, or Horton's own
-        # infiltration-excess — any of which makes the engine "active".
-        return (bool(self._vsa_mask.any())
-                or bool((self._imperv_1d > 0).any())
-                or self._horton_on)
+# The process-based 'physical' mode (composable mechanisms) is registered in
+# physical.py, imported at the bottom of this module.
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -404,3 +399,8 @@ class RunoffEngine:
         except AttributeError:
             raise AttributeError(name)
         return getattr(impl, name)
+
+
+# Import at the bottom (after RunoffMode/register/RunoffEngine are defined) so the
+# process-based mechanisms register themselves without a circular import.
+from . import physical  # noqa: E402,F401  (registers the 'physical' RunoffMode)

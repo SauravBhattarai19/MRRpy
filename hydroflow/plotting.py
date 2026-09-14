@@ -176,7 +176,7 @@ def plot_watershed(source, ax=None, *, cmap="terrain", boundary_color="crimson",
     source : dict | Config | str | os.PathLike
         A run_pipeline()/stage_process_dem result dict (uses 'clipped_dem'
         and 'watershed_geojson'), a Config object (uses ROUTING_DEM_PATH and
-        OPM_WATERSHED_GEOJSON), or an OUTPUT_DIR path.
+        WATERSHED_GEOJSON), or an OUTPUT_DIR path.
     ax : matplotlib.axes.Axes, optional
     cmap : str, DEM colormap (ignored when hillshade=True)
     boundary_color : str, watershed boundary line color
@@ -192,7 +192,7 @@ def plot_watershed(source, ax=None, *, cmap="terrain", boundary_color="crimson",
                              cfg_attr="ROUTING_DEM_PATH",
                              default_filename="clipped_dem.tif")
     geojson_path = _resolve_path(source, key="watershed_geojson",
-                                 cfg_attr="OPM_WATERSHED_GEOJSON",
+                                 cfg_attr="WATERSHED_GEOJSON",
                                  default_filename="watershed.geojson")
 
     fig, ax = plot_raster(dem_path, ax=ax, cmap=cmap, hillshade=hillshade, **kwargs)

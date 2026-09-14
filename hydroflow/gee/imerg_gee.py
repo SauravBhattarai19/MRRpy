@@ -120,8 +120,11 @@ def download_imerg(cfg):
     start_local = getattr(cfg, 'IMERG_START_LOCAL', None)
     end_local   = getattr(cfg, 'IMERG_END_LOCAL',   None)
     buffer_m    = float(getattr(cfg, 'IMERG_BBOX_BUFFER_M', 11132.0))
-    target_crs  = getattr(cfg, 'TARGET_CRS_EPSG', 'EPSG:32645')
-    geojson     = getattr(cfg, 'OPM_WATERSHED_GEOJSON', 'output/watershed.geojson')
+    from ..core.io_utils import routing_grid_crs
+    # Read the routing grid's CRS from the DEM file (falls back to
+    # cfg.TARGET_CRS_EPSG) so IMERG pseudo-gauge coordinates match the grid.
+    target_crs  = routing_grid_crs(cfg)
+    geojson     = getattr(cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson')
 
     # Auto-derive window from EVENT_START_UTC + TOTAL_SIMULATION_TIME_HOURS.
     _evt   = getattr(cfg, 'EVENT_START_UTC', None)

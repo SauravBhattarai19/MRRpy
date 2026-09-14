@@ -14,7 +14,7 @@ Inputs (key ones — all config.py parameters are exposed)
   FLOW_ACCUM_TIF  : flow accumulation raster
   WATERSHED_TIF   : watershed mask raster
   PRECIP_METHOD   : uniform | thiessen | idw
-  RUNOFF_SOURCE   : none | coefficient | raster | scs_cn | vsa_opm
+  RUNOFF_SOURCE   : none | coefficient | raster | scs_cn | physical
   BACKEND         : cpu | gpu
   … (all routing parameters from config.py)
 
@@ -65,13 +65,13 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
 
     # Runoff
     RUNOFF_SOURCE = "RUNOFF_SOURCE"
-    OPM_SD_MAX = "OPM_SD_MAX"
-    OPM_Q_MAX = "OPM_Q_MAX"
-    OPM_PHI = "OPM_PHI"
-    OPM_K_SAT = "OPM_K_SAT"
-    OPM_INFILTRATION = "OPM_INFILTRATION"
+    VSA_SD_MAX = "VSA_SD_MAX"
+    VSA_Q_MAX = "VSA_Q_MAX"
+    VSA_PHI = "VSA_PHI"
+    VSA_K_SAT = "VSA_K_SAT"
+    INFILTRATION_EXCESS = "INFILTRATION_EXCESS"
     IMPERVIOUS_SOURCE = "IMPERVIOUS_SOURCE"
-    OPM_SD_SOURCE = "OPM_SD_SOURCE"
+    VSA_SD_SOURCE = "VSA_SD_SOURCE"
 
     # Manning source
     MANNINGS_N_SOURCE = "MANNINGS_N_SOURCE"
@@ -92,9 +92,9 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
     HYDROGRAPH_CSV = "HYDROGRAPH_CSV"
 
     _PRECIP_OPTIONS = ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw"]
-    _RUNOFF_OPTIONS = ["none", "coefficient", "raster", "scs_cn", "vsa_opm"]
+    _RUNOFF_OPTIONS = ["none", "coefficient", "raster", "scs_cn", "physical"]
     _BACKEND_OPTIONS = ["cpu", "gpu"]
-    _INFILTRATION_OPTIONS = ["none", "green_ampt"]
+    _INFIL_EXCESS_OPTIONS = ["off", "on"]
     _IMPERVIOUS_OPTIONS = ["none", "lcz", "lulc", "raster"]
     _SD_SOURCE_OPTIONS = ["manual", "gee"]
     _MANNINGS_SOURCE_OPTIONS = ["scalar", "lulc", "lcz", "raster"]
@@ -179,38 +179,38 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
         # ── Runoff ────────────────────────────────────────────────────────────
         self.addParameter(QgsProcessingParameterEnum(
             self.RUNOFF_SOURCE, "Runoff source",
-            options=self._RUNOFF_OPTIONS, defaultValue=4  # vsa_opm
+            options=self._RUNOFF_OPTIONS, defaultValue=4  # physical
         ))
         self.addParameter(QgsProcessingParameterNumber(
-            self.OPM_SD_MAX, "OPM SD_max initial (m)",
+            self.VSA_SD_MAX, "Saturation-excess SD_max initial (m)",
             type=QgsProcessingParameterNumber.Double, defaultValue=0.10,
             minValue=0.001, optional=True
         ))
         self.addParameter(QgsProcessingParameterNumber(
-            self.OPM_Q_MAX, "OPM Q_max (m³/s)",
+            self.VSA_Q_MAX, "Saturation-excess Q_max (m³/s)",
             type=QgsProcessingParameterNumber.Double, defaultValue=0.50,
             minValue=0.002, optional=True
         ))
         self.addParameter(QgsProcessingParameterNumber(
-            self.OPM_PHI, "OPM phi (porosity)",
+            self.VSA_PHI, "Saturation-excess phi (porosity)",
             type=QgsProcessingParameterNumber.Double, defaultValue=0.35,
             minValue=0.01, maxValue=0.99, optional=True
         ))
         self.addParameter(QgsProcessingParameterNumber(
-            self.OPM_K_SAT, "OPM K_sat lateral (m/day)",
+            self.VSA_K_SAT, "Saturation-excess K_sat lateral (m/day)",
             type=QgsProcessingParameterNumber.Double, defaultValue=44.0,
             minValue=0.001, optional=True
         ))
         self.addParameter(QgsProcessingParameterEnum(
-            self.OPM_INFILTRATION, "Green-Ampt infiltration (Horton mechanism)",
-            options=self._INFILTRATION_OPTIONS, defaultValue=0  # none
+            self.INFILTRATION_EXCESS, "Infiltration-excess mechanism (Green-Ampt)",
+            options=self._INFIL_EXCESS_OPTIONS, defaultValue=0  # off
         ))
         self.addParameter(QgsProcessingParameterEnum(
             self.IMPERVIOUS_SOURCE, "Impervious fraction source (needs GEE for lcz/lulc)",
             options=self._IMPERVIOUS_OPTIONS, defaultValue=0  # none
         ))
         self.addParameter(QgsProcessingParameterEnum(
-            self.OPM_SD_SOURCE, "SD_max / phi source (gee = SERVES, needs GEE)",
+            self.VSA_SD_SOURCE, "SD_max / phi source (gee = SERVES, needs GEE)",
             options=self._SD_SOURCE_OPTIONS, defaultValue=0  # manual
         ))
 
@@ -319,19 +319,28 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
         cfg.RUNOFF_SOURCE = self._RUNOFF_OPTIONS[
             self.parameterAsEnum(parameters, self.RUNOFF_SOURCE, context)
         ]
-        cfg.OPM_SD_MAX_INITIAL = self.parameterAsDouble(parameters, self.OPM_SD_MAX, context)
-        cfg.OPM_Q_MAX = self.parameterAsDouble(parameters, self.OPM_Q_MAX, context)
-        cfg.OPM_PHI = self.parameterAsDouble(parameters, self.OPM_PHI, context)
-        cfg.OPM_K_SAT = self.parameterAsDouble(parameters, self.OPM_K_SAT, context)
-        cfg.OPM_INFILTRATION = self._INFILTRATION_OPTIONS[
-            self.parameterAsEnum(parameters, self.OPM_INFILTRATION, context)
-        ]
+        cfg.VSA_SD_MAX_INITIAL = self.parameterAsDouble(parameters, self.VSA_SD_MAX, context)
+        cfg.VSA_Q_MAX = self.parameterAsDouble(parameters, self.VSA_Q_MAX, context)
+        cfg.VSA_PHI = self.parameterAsDouble(parameters, self.VSA_PHI, context)
+        cfg.VSA_K_SAT = self.parameterAsDouble(parameters, self.VSA_K_SAT, context)
         cfg.IMPERVIOUS_SOURCE = self._IMPERVIOUS_OPTIONS[
             self.parameterAsEnum(parameters, self.IMPERVIOUS_SOURCE, context)
         ]
-        cfg.OPM_SD_SOURCE = self._SD_SOURCE_OPTIONS[
-            self.parameterAsEnum(parameters, self.OPM_SD_SOURCE, context)
+        cfg.VSA_SD_SOURCE = self._SD_SOURCE_OPTIONS[
+            self.parameterAsEnum(parameters, self.VSA_SD_SOURCE, context)
         ]
+
+        # Compose the physical-runoff mechanisms from the toggles above:
+        # saturation-excess (this OPM router) + infiltration-excess (if on) +
+        # impervious (if a source is selected).
+        _infil_on = self.parameterAsEnum(
+            parameters, self.INFILTRATION_EXCESS, context) == 1
+        _mechs = ["saturation_excess"]
+        if _infil_on:
+            _mechs.append("infiltration_excess")
+        if cfg.IMPERVIOUS_SOURCE != "none":
+            _mechs.append("impervious")
+        cfg.RUNOFF_MECHANISMS = _mechs
 
         cfg.MANNINGS_N_SOURCE = self._MANNINGS_SOURCE_OPTIONS[
             self.parameterAsEnum(parameters, self.MANNINGS_N_SOURCE, context)

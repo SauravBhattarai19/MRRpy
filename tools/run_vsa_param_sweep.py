@@ -5,26 +5,26 @@ run_vsa_param_sweep.py
 VSA-sandbox PARAMETER sensitivity sweep for the 100 m OPM model.  Companion to
 tools/run_combinations.py (which sweeps channel/scheme/mechanism/infiltration
 axes); this script instead holds channel + infiltration fixed and sweeps the
-three OPM sandbox scalars — SD_min, OPM_K_SAT, SD_max — across routing scheme
+three OPM sandbox scalars — SD_min, VSA_K_SAT, SD_max — across routing scheme
 and a focused set of runoff-mechanism subsets.
 
 Axes (edit the lists below to add/trim)
 ---------------------------------------
     SCHEMES      = ['kinematic', 'diffusive', 'muskingum']
     MECH_SUBSETS = ['vsa'], ['vsa+impervious'], ['vsa+horton'], ['horton']
-    SD_MIN_OPTIONS  = [0.1, 0.001, 0.00001]                 m  (OPM_SD_MIN — trimmed
+    SD_MIN_OPTIONS  = [0.1, 0.001, 0.00001]                 m  (VSA_SD_MIN — trimmed
                        from an original 5-value list to 3, still spanning the
                        full 5-order-of-magnitude range)
-    KSAT_OPTIONS    = [4.4, 0.44, 0.044]                    m/day  (OPM_K_SAT, the
+    KSAT_OPTIONS    = [4.4, 0.44, 0.044]                    m/day  (VSA_K_SAT, the
                        sandbox's lateral Darcy conductivity — NOT the Green-Ampt
                        vertical Ksat used by Horton.  Trimmed from an original
                        4-value list; the calibrated default 44.0 is excluded here)
-    SD_MAX_OPTIONS  = [0.1, 0.3, 0.5]                       m  (OPM_SD_MAX_INITIAL —
+    SD_MAX_OPTIONS  = [0.1, 0.3, 0.5]                       m  (VSA_SD_MAX_INITIAL —
                        trimmed from an original 5-value list to 3)
 
 Fixed for every run in this study:
     CHANNEL_ROUTING = True           (channel cross-section routing always on)
-    OPM_SD_SOURCE   = 'manual'       (forced — otherwise SERVES/GEE would silently
+    VSA_SD_SOURCE   = 'manual'       (forced — otherwise SERVES/GEE would silently
                                        override SD_max/phi and the SD_max axis above
                                        would have zero effect on the result)
     OPM_INFILTRATION = 'green_ampt'  (sandbox recharge cap on; also what makes
@@ -34,7 +34,7 @@ Why 'horton'-only skips the SD_min/Ksat/SD_max cross-product
 --------------------------------------------------------------
 When 'vsa' is absent from RUNOFF_MECHANISMS the OPM sandbox is never built
 (hydroflow/core/runoff/vsa.py: `if not self._vsa_on: ... return`) — the VSA mask
-stays permanently empty.  SD_min, OPM_K_SAT and SD_max only affect that sandbox,
+stays permanently empty.  SD_min, VSA_K_SAT and SD_max only affect that sandbox,
 so for the 'horton'-only subset all 27 (3×3×3) combinations would produce an
 IDENTICAL result.  This script runs 'horton'-only once per routing scheme
 instead of 27 duplicate times.
@@ -137,7 +137,7 @@ SD_MAX_OPTIONS = [
 # Fixed knobs (held constant across every combo in this study).
 DIFFUSION_THETA  = 1.0            # only used when scheme == 'diffusive'
 CHANNEL_ROUTING  = True           # "chan on" for every run — not a swept axis here
-OPM_SD_SOURCE    = 'manual'       # forced so OPM_SD_MAX_INITIAL/OPM_SD_MIN actually apply
+VSA_SD_SOURCE    = 'manual'       # forced so VSA_SD_MAX_INITIAL/VSA_SD_MIN actually apply
 OPM_INFILTRATION = 'green_ampt'   # sandbox recharge cap on; enables Horton's f_p too
 
 
@@ -182,7 +182,7 @@ def _base_overrides(scheme, mset):
         'ROUTING_SCHEME':    scheme,
         'DIFFUSION_THETA':   DIFFUSION_THETA,
         'RUNOFF_MECHANISMS': list(mset),
-        'OPM_SD_SOURCE':     OPM_SD_SOURCE,
+        'VSA_SD_SOURCE':     VSA_SD_SOURCE,
         'OPM_INFILTRATION':  OPM_INFILTRATION,
         'IMPERVIOUS_SOURCE': 'lcz' if 'impervious' in mset else 'none',
     }
@@ -211,9 +211,9 @@ def all_configs():
                         leaf = _leaf(scheme, mset, sd_min_lbl, ksat_lbl, sd_max_lbl)
                         overrides = _base_overrides(scheme, mset)
                         overrides.update({
-                            'OPM_SD_MIN':         sd_min_val,
-                            'OPM_K_SAT':          ksat_val,
-                            'OPM_SD_MAX_INITIAL': sd_max_val,
+                            'VSA_SD_MIN':         sd_min_val,
+                            'VSA_K_SAT':          ksat_val,
+                            'VSA_SD_MAX_INITIAL': sd_max_val,
                         })
                         meta = {
                             'scheme': scheme, 'mechanisms': _mech_name(mset),
@@ -352,7 +352,7 @@ def run_study(filters=None, force=False, shard=None):
           f"\n        sd_min={[v for v, _ in SD_MIN_OPTIONS]}"
           f"  ksat={[v for v, _ in KSAT_OPTIONS]}"
           f"  sd_max={[v for v, _ in SD_MAX_OPTIONS]}"
-          f"\n  (fixed: CHANNEL_ROUTING={CHANNEL_ROUTING}  OPM_SD_SOURCE={OPM_SD_SOURCE!r}"
+          f"\n  (fixed: CHANNEL_ROUTING={CHANNEL_ROUTING}  VSA_SD_SOURCE={VSA_SD_SOURCE!r}"
           f"  OPM_INFILTRATION={OPM_INFILTRATION!r})"
           f"\n{'='*70}")
 
@@ -366,7 +366,7 @@ def run_study(filters=None, force=False, shard=None):
             continue
         key = {k: overrides[k] for k in
                ('ROUTING_SCHEME', 'RUNOFF_MECHANISMS',
-                'OPM_SD_MIN', 'OPM_K_SAT', 'OPM_SD_MAX_INITIAL')
+                'VSA_SD_MIN', 'VSA_K_SAT', 'VSA_SD_MAX_INITIAL')
                if k in overrides}
         print(f"  overrides: {key}")
         seed_leaf(leaf_path)
@@ -407,7 +407,7 @@ if __name__ == "__main__":
         for leaf, ov, _ in all_configs():
             tag = {k: ov[k] for k in
                    ('ROUTING_SCHEME', 'RUNOFF_MECHANISMS',
-                    'OPM_SD_MIN', 'OPM_K_SAT', 'OPM_SD_MAX_INITIAL')
+                    'VSA_SD_MIN', 'VSA_K_SAT', 'VSA_SD_MAX_INITIAL')
                    if k in ov}
             print(f"  {leaf:62s}  {tag}")
         print(f"\n  {len(all_configs())} configs × 4 floods.")

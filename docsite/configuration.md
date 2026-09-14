@@ -40,24 +40,27 @@ Discover them anytime with `hydroflow list-options` or
 | Option | Codes |
 |---|---|
 | `PRECIP_METHOD` | `0` uniform · `1` thiessen · `2` idw · `3` imerg_thiessen · `4` imerg_idw |
-| `RUNOFF_SOURCE` | `0` none · `1` coefficient · `2` raster · `3` scs_cn · `4` vsa_opm |
+| `RUNOFF_SOURCE` | `0` none · `1` coefficient · `2` raster · `3` scs_cn · `4` physical |
 | `RUNOFF_CN_SOURCE` | `0` scalar · `1` gee · `2` raster |
 | `RUNOFF_CN_AMC` | `0` i (dry) · `1` ii (normal) · `2` iii (wet) |
 | `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum |
 | `DELINEATION_ENGINE` | `0` pysheds · `1` pyflwdir |
 | `BACKEND` | `0` cpu · `1` gpu |
 | `GPU_PRECISION` | `0` float64 · `1` float32 |
-| `OPM_INFILTRATION` | `0` none · `1` green_ampt |
-| `OPM_GA_SUCTION_SOURCE` | `0` scalar · `1` texture |
-| `OPM_GA_KSAT_SOURCE` | `0` scalar · `1` gee · `2` raster |
+| `GA_SUCTION_SOURCE` | `0` scalar · `1` texture |
+| `GA_KSAT_SOURCE` | `0` scalar · `1` gee · `2` raster |
 | `IMPERVIOUS_SOURCE` | `0` none · `1` lcz · `2` lulc · `3` raster |
-| `OPM_SD_SOURCE` | `0` manual · `1` gee |
-| `OPM_SD_REDUCER` | `0` mean · `1` max · `2` divide |
+| `VSA_SD_SOURCE` | `0` manual · `1` gee |
+| `VSA_SD_REDUCER` | `0` mean · `1` max · `2` divide |
 | `SERVES_SATELLITE` | `0` landsat · `1` sentinel2 · `2` modis |
-| `OPM_SOILGRIDS_DEPTH` | `0` b0 · `1` b10 · `2` b30 · `3` b60 · `4` b100 · `5` b200 |
+| `SOILGRIDS_DEPTH` | `0` b0 · `1` b10 · `2` b30 · `3` b60 · `4` b100 · `5` b200 |
 | `MANNINGS_N_SOURCE` | `0` scalar · `1` lulc · `2` lcz · `3` raster |
 | `DEM_SOURCE` | `0` nasadem · `1` srtm · `2` merit · `3` alos · `4` copernicus_glo30 · `5` usgs_3dep_1m · `6` gmted2010 |
-| `RUNOFF_MECHANISMS` (list) | `0` vsa · `1` horton · `2` impervious |
+| `RUNOFF_MECHANISMS` (list) | `0` impervious · `1` infiltration_excess · `2` saturation_excess |
+
+!!! tip "What do these mean?"
+    See **[Methods](methods.md)** for what each runoff and routing option does,
+    how the mechanisms compose, and when to use each.
 
 ## Key parameter groups
 
@@ -89,9 +92,9 @@ Discover them anytime with `hydroflow list-options` or
     | `RUNOFF_CN_SOURCE` | where SCS curve numbers come from: `scalar` (uniform `RUNOFF_CN`), `gee` (GCN250 global CN via Earth Engine), or `raster` (`RUNOFF_CN_PATH`) |
     | `RUNOFF_CN_AMC` | antecedent moisture: `i` dry · `ii` normal · `iii` wet. For `gee` this picks the GCN250 Dry/Average/Wet image; for `scalar`/`raster` it applies the standard CN conversion |
     | `RUNOFF_CN`, `RUNOFF_CN_PATH`, `RUNOFF_SCS_Ia_FACTOR` | scalar CN / CN GeoTIFF / initial-abstraction factor (default 0.2) |
-    | `RUNOFF_MECHANISMS` | subset of `vsa`/`horton`/`impervious` |
-    | `OPM_SD_MAX_INITIAL`, `OPM_PHI`, `OPM_K_SAT` | VSA-OPM sandbox parameters |
-    | `OPM_INFILTRATION` | Green-Ampt on/off |
+    | `RUNOFF_MECHANISMS` | subset of `impervious`/`infiltration_excess`/`saturation_excess` (only for `RUNOFF_SOURCE=physical`) |
+    | `VSA_SD_MAX_INITIAL`, `VSA_PHI`, `VSA_K_SAT` | saturation-excess (VSA-OPM) sandbox parameters |
+    | `GA_SUCTION_M`, `GA_KSAT_MMHR` | infiltration-excess (Green-Ampt) parameters |
 
 === "Routing"
 
@@ -134,7 +137,7 @@ accepts (a list of ascending `(upper_elev, n)` pairs, a `{(min, max): n}`
 dict of bins, or a callable), or to a `dict{strahler_order: n}`, or to a path
 to a pre-computed channel-only raster. No intermediate raster file is needed
 for the rule-based forms. See
-[Examples #4b](examples.md#4b-lulc-overland--elevation-rule-channels).
+[Examples #4b](examples.md#4b-lulc-overland-elevation-rule-channels).
 
 ## Boundary conditions
 

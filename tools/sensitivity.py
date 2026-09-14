@@ -58,22 +58,21 @@ SEED_FILES = [
 # ── Locked baseline.  EVERY swept knob appears here so each config fully
 #    specifies it (prevents leakage from one config's override into the next). ──
 BASELINE = dict(
-    RUNOFF_SOURCE      = 'vsa_opm',
-    # Mechanism selection is authoritative (orthogonal toggles).  OPM_INFILTRATION
-    # / IMPERVIOUS_SOURCE below only supply the Horton params / impervious DATA
-    # source; whether each mechanism is ON is decided by RUNOFF_MECHANISMS.
-    RUNOFF_MECHANISMS  = ['vsa', 'horton', 'impervious'],
-    OPM_INFILTRATION   = 'green_ampt',
+    RUNOFF_SOURCE      = 'physical',
+    # Mechanism selection is authoritative: RUNOFF_MECHANISMS decides which
+    # processes are ON.  Activating infiltration_excess also caps the VSA
+    # sandbox recharge by the Green-Ampt capacity (no separate toggle).
+    RUNOFF_MECHANISMS  = ['saturation_excess', 'infiltration_excess', 'impervious'],
     IMPERVIOUS_SOURCE  = 'lcz',
     ROUTING_SCHEME     = 'diffusive',
     DIFFUSION_THETA    = 1.0,
     CHANNEL_ROUTING        = True,
     CHANNEL_WIDTH_BY_ORDER = {1: 3.0, 2: 5.0, 3: 8.0, 4: 12.0,
                               5: 18.0, 6: 28.0, 7: 45.0, 8: 70.0},
-    OPM_SD_SOURCE      = 'gee',
-    OPM_SD_REDUCER     = 'max',
-    OPM_SD_MAX_INITIAL = 0.1,
-    OPM_GA_KSAT_SCALE  = 1.0,
+    VSA_SD_SOURCE      = 'gee',
+    VSA_SD_REDUCER     = 'max',
+    VSA_SD_MAX_INITIAL = 0.1,
+    GA_KSAT_SCALE  = 1.0,
     # Routing is CFL-limited to ~0.9 s on this 100 m grid (Courant=5.68 at dt=5s
     # blows the hydrograph up 2-12x even though mass balance still closes).
     # dt=1s is the only stable choice — matches the validated baseline run.
@@ -93,21 +92,21 @@ def cfg(**kw):
 # config: theta=1.0 (C), ksat_scale=1.0 (D), channel width_1.0x (E), SD reducer
 # 'max' (F) all equal A0_full and are intentionally omitted.
 EXPERIMENTS = [
-    # A — runoff-mechanism ablation (orthogonal vsa / horton / impervious)
+    # A — runoff-mechanism ablation (saturation_excess / infiltration_excess / impervious)
     ("A_mechanism/A0_full",          cfg()),  # all three (baseline)
-    ("A_mechanism/A1_no_horton",     cfg(RUNOFF_MECHANISMS=['vsa', 'impervious'])),
-    ("A_mechanism/A2_no_imperv",     cfg(RUNOFF_MECHANISMS=['vsa', 'horton'])),
-    ("A_mechanism/A3_dunne_only",    cfg(RUNOFF_MECHANISMS=['vsa'])),
-    ("A_mechanism/A4_horton_imperv", cfg(RUNOFF_MECHANISMS=['horton', 'impervious'])),
+    ("A_mechanism/A1_no_horton",     cfg(RUNOFF_MECHANISMS=['saturation_excess', 'impervious'])),
+    ("A_mechanism/A2_no_imperv",     cfg(RUNOFF_MECHANISMS=['saturation_excess', 'infiltration_excess'])),
+    ("A_mechanism/A3_dunne_only",    cfg(RUNOFF_MECHANISMS=['saturation_excess'])),
+    ("A_mechanism/A4_horton_imperv", cfg(RUNOFF_MECHANISMS=['infiltration_excess', 'impervious'])),
     ("A_mechanism/A5_imperv_only",   cfg(RUNOFF_MECHANISMS=['impervious'])),
-    ("A_mechanism/A6_horton_only",   cfg(RUNOFF_MECHANISMS=['horton'])),
+    ("A_mechanism/A6_horton_only",   cfg(RUNOFF_MECHANISMS=['infiltration_excess'])),
 
     # B — SD / soil-moisture sensitivity (manual root-depth sweep)
-    ("B_sd/sd_0.05", cfg(OPM_SD_SOURCE='manual', OPM_SD_MAX_INITIAL=0.05)),
-    ("B_sd/sd_0.10", cfg(OPM_SD_SOURCE='manual', OPM_SD_MAX_INITIAL=0.10)),
-    ("B_sd/sd_0.20", cfg(OPM_SD_SOURCE='manual', OPM_SD_MAX_INITIAL=0.20)),
-    ("B_sd/sd_0.40", cfg(OPM_SD_SOURCE='manual', OPM_SD_MAX_INITIAL=0.40)),
-    ("B_sd/sd_0.80", cfg(OPM_SD_SOURCE='manual', OPM_SD_MAX_INITIAL=0.80)),
+    ("B_sd/sd_0.05", cfg(VSA_SD_SOURCE='manual', VSA_SD_MAX_INITIAL=0.05)),
+    ("B_sd/sd_0.10", cfg(VSA_SD_SOURCE='manual', VSA_SD_MAX_INITIAL=0.10)),
+    ("B_sd/sd_0.20", cfg(VSA_SD_SOURCE='manual', VSA_SD_MAX_INITIAL=0.20)),
+    ("B_sd/sd_0.40", cfg(VSA_SD_SOURCE='manual', VSA_SD_MAX_INITIAL=0.40)),
+    ("B_sd/sd_0.80", cfg(VSA_SD_SOURCE='manual', VSA_SD_MAX_INITIAL=0.80)),
 
     # C — routing scheme + diffusion weight (run WITH channel routing on)
     ("C_routing/kinematic",       cfg(ROUTING_SCHEME='kinematic')),
@@ -117,9 +116,9 @@ EXPERIMENTS = [
     ("C_routing/diff_theta_0.75", cfg(DIFFUSION_THETA=0.75)),
 
     # D — Ksat scale (Horton magnitude)
-    ("D_ksat/ksat_0.5", cfg(OPM_GA_KSAT_SCALE=0.5)),
-    ("D_ksat/ksat_2.0", cfg(OPM_GA_KSAT_SCALE=2.0)),
-    ("D_ksat/ksat_4.0", cfg(OPM_GA_KSAT_SCALE=4.0)),
+    ("D_ksat/ksat_0.5", cfg(GA_KSAT_SCALE=0.5)),
+    ("D_ksat/ksat_2.0", cfg(GA_KSAT_SCALE=2.0)),
+    ("D_ksat/ksat_4.0", cfg(GA_KSAT_SCALE=4.0)),
 
     # E — channel (river) cross-section routing (A0_full = width 1.0x reference)
     ("E_channel/off",        cfg(CHANNEL_ROUTING=False)),
@@ -129,8 +128,8 @@ EXPERIMENTS = [
                                                          5: 36.0, 6: 56.0, 7: 90.0, 8: 140.0})),
 
     # F — per-zone SD_max reducer (A0_full = 'max' reference)
-    ("F_sdreducer/mean",   cfg(OPM_SD_REDUCER='mean')),
-    ("F_sdreducer/divide", cfg(OPM_SD_REDUCER='divide')),
+    ("F_sdreducer/mean",   cfg(VSA_SD_REDUCER='mean')),
+    ("F_sdreducer/divide", cfg(VSA_SD_REDUCER='divide')),
 ]
 
 

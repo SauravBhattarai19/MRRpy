@@ -26,14 +26,14 @@ def resolve_sd_params(cfg, cell_size):
     deficit_raster.  Per-zone SD is reduced from 'deficit_raster' in
     _init_vsa_opm using the rainfall partition (cell_polygon), not here.
     """
-    sd_source   = getattr(cfg, 'OPM_SD_SOURCE', 'manual').lower()
-    ksat_ms     = float(getattr(cfg, 'OPM_K_SAT', 44.0)) / 86400.0
-    sd_min      = float(getattr(cfg, 'OPM_SD_MIN', OPM_SD_MIN))
+    sd_source   = getattr(cfg, 'VSA_SD_SOURCE', 'manual').lower()
+    ksat_ms     = float(getattr(cfg, 'VSA_K_SAT', 44.0)) / 86400.0
+    sd_min      = float(getattr(cfg, 'VSA_SD_MIN', OPM_SD_MIN))
 
     _manual_params = {
-        'sd_max': float(cfg.OPM_SD_MAX_INITIAL),
+        'sd_max': float(cfg.VSA_SD_MAX_INITIAL),
         'sd_min': sd_min,
-        'phi': float(getattr(cfg, 'OPM_PHI', 0.10)),
+        'phi': float(getattr(cfg, 'VSA_PHI', 0.10)),
         'sd_max_per_polygon': None,
         'ksat_ms': ksat_ms,
         'deficit_raster': None,
@@ -68,10 +68,10 @@ def resolve_sd_params(cfg, cell_size):
         print("  [WARN] earthengine-api not installed; using manual values.")
         return _manual_params
 
-    geojson = getattr(cfg, 'OPM_WATERSHED_GEOJSON', 'output/watershed.geojson')
+    geojson = getattr(cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson')
     sat     = getattr(cfg, 'SERVES_SATELLITE', 'landsat')
     window  = getattr(cfg, 'SERVES_SEARCH_WINDOW', 16)
-    band    = getattr(cfg, 'OPM_SOILGRIDS_DEPTH', 'b30')
+    band    = getattr(cfg, 'SOILGRIDS_DEPTH', 'b30')
     project = getattr(cfg, 'GEE_PROJECT', None)
 
     # Select lookup CSV and GEE land cover source to match MANNINGS_N_SOURCE.
@@ -89,7 +89,7 @@ def resolve_sd_params(cfg, cell_size):
         lookup_csv_path=lut, target_date=target_date,
         satellite=sat, search_window=window, soil_depth_band=band,
         project=project,
-        sd_reducer=getattr(cfg, 'OPM_SD_REDUCER', 'mean'),
+        sd_reducer=getattr(cfg, 'VSA_SD_REDUCER', 'mean'),
         lulc_source=gee_lc_source,
     )
 
@@ -97,8 +97,8 @@ def resolve_sd_params(cfg, cell_size):
         sd_max = gee_result['sd_max']
         phi    = gee_result['phi']
     else:
-        sd_max = float(cfg.OPM_SD_MAX_INITIAL)
-        phi    = float(getattr(cfg, 'OPM_PHI', 0.10))
+        sd_max = float(cfg.VSA_SD_MAX_INITIAL)
+        phi    = float(getattr(cfg, 'VSA_PHI', 0.10))
 
     # Per-cell deficit raster (aligned to the routing grid, clipped to the
     # watershed).  The engine reduces it per precipitation zone (cell_polygon),
@@ -108,7 +108,7 @@ def resolve_sd_params(cfg, cell_size):
     #   deficit_serves_2024-09-26.tif vs deficit_serves_2024-10-05.tif
     # Re-runs of the same event reuse the cached file (no re-download).
     # Falls back to the plain name when target_date is None (manual SD mode).
-    out_path = getattr(cfg, 'OPM_DEFICIT_RASTER', None) \
+    out_path = getattr(cfg, 'VSA_DEFICIT_RASTER', None) \
         or os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'), 'deficit_serves.tif')
     if target_date:
         _base, _ext = os.path.splitext(out_path)
@@ -212,7 +212,7 @@ def per_zone_sd_from_raster(deficit_path, cell_polygon, n_polygons,
     """
     Reduce the per-cell deficit raster into one SD_max per precipitation zone.
 
-    Reducer modes (``OPM_SD_REDUCER``):
+    Reducer modes (``VSA_SD_REDUCER``):
       'mean'   – zone-average deficit (representative; outlier-robust).
       'max'    – largest deficit in the zone (max soil-STORAGE-capacity cell;
                  biased toward deep-rooted cells via Z_r, not pure dryness).

@@ -44,7 +44,7 @@ FA_PATH  = REPO / config.ROUTING_FLOW_ACCUM_PATH
 LULC_PATH = OUTPUT / "lulc_mannings.tif"
 DEFICIT_PATH = OUTPUT / "deficit_serves.tif"
 LUT_CSV  = REPO / config.LULC_LOOKUP_CSV
-WS_JSON  = REPO / getattr(config, 'OPM_WATERSHED_GEOJSON',
+WS_JSON  = REPO / getattr(config, 'WATERSHED_GEOJSON',
                            'output/watershed.geojson')
 
 # Gauges/timeseries/event come from the active method (IMERG pixel pseudo-gauges

@@ -6,9 +6,9 @@ One-off, single-config run of the VSA-OPM model on the Pearl River basin
 (Mississippi-Louisiana), Feb 2020 flood — a brand-new, never-run-before basin.
 
 Applies the best config found by tools/run_vsa_param_sweep.py on the Nepal
-test basin (diffusive routing, vsa+impervious mechanisms, OPM_SD_MIN=0.1,
-OPM_K_SAT=0.044 m/day, channel routing on), but with SD_max/phi sourced live
-from satellite data (OPM_SD_SOURCE='gee', SERVES NDVI+SoilGrids) instead of a
+test basin (diffusive routing, vsa+impervious mechanisms, VSA_SD_MIN=0.1,
+VSA_K_SAT=0.044 m/day, channel routing on), but with SD_max/phi sourced live
+from satellite data (VSA_SD_SOURCE='gee', SERVES NDVI+SoilGrids) instead of a
 manual sweep value.
 
 Unlike tools/run_combinations.py / run_vsa_param_sweep.py, this basin has no
@@ -69,7 +69,7 @@ EVENT_START_UTC = "2020-02-08 00:00"    # 2-day lead-in before the Feb 10 rain o
 TOTAL_SIMULATION_TIME_HOURS = 288.0     # 12 days -> Feb 20 (rise + Feb 17 crest + early recession)
 IMERG_UTC_OFFSET_HOURS = -6.0           # US Central Standard Time (no DST in Feb)
 
-OPM_Q_MAX = 573.0                       # ~20,217 cfs, Feb median historical baseflow at Bogalusa
+VSA_Q_MAX = 573.0                       # ~20,217 cfs, Feb median historical baseflow at Bogalusa
 
 
 def main():
@@ -93,22 +93,24 @@ def main():
 
         PRECIP_METHOD="imerg_thiessen",
 
-        RUNOFF_SOURCE="vsa_opm",
-        RUNOFF_MECHANISMS=["vsa", "impervious"],
+        RUNOFF_SOURCE="physical",
+        # infiltration_excess added so the VSA sandbox recharge is Green-Ampt-
+        # capped (was OPM_INFILTRATION='green_ampt'); it also contributes the
+        # physically-real Hortonian runoff.
+        RUNOFF_MECHANISMS=["saturation_excess", "infiltration_excess", "impervious"],
         ROUTING_SCHEME="diffusive",
         DIFFUSION_THETA=1.0,
         CHANNEL_ROUTING=True,
 
-        OPM_SD_MIN=0.1,
-        OPM_K_SAT=0.044,
-        OPM_SD_SOURCE="gee",
-        OPM_SD_REDUCER="max",
-        OPM_GA_KSAT_SOURCE="gee",
-        OPM_GA_SUCTION_SOURCE="texture",
+        VSA_SD_MIN=0.1,
+        VSA_K_SAT=0.044,
+        VSA_SD_SOURCE="gee",
+        VSA_SD_REDUCER="max",
+        GA_KSAT_SOURCE="gee",
+        GA_SUCTION_SOURCE="texture",
         MANNINGS_N_SOURCE="lcz",
         IMPERVIOUS_SOURCE="lcz",
-        OPM_INFILTRATION="green_ampt",
-        OPM_Q_MAX=OPM_Q_MAX,
+        VSA_Q_MAX=VSA_Q_MAX,
 
         BACKEND="gpu",
     )

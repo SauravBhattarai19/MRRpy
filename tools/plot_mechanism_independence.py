@@ -72,7 +72,7 @@ def base_cfg():
     cat = pd.read_csv(LEAF / "event_catalogue.csv")
     row = cat[cat.event_tag == EVENT].iloc[0]
     apply_output_dir(config, str(LEAF) + "/")
-    config.OPM_SD_REDUCER         = 'max'
+    config.VSA_SD_REDUCER         = 'max'
     config.CHANNEL_ROUTING        = False
     config.ROUTING_SCHEME         = 'diffusive'
     config.DIFFUSION_THETA        = 1.0
@@ -89,8 +89,9 @@ def run_single_mechanism(mech: str):
     """Run the runoff engine ALONE with RUNOFF_MECHANISMS=[mech]; return
     (cum_depth_mm (n_cells,), grid_data) -- grid_data reused for reshaping."""
     row = base_cfg()
+    # infiltration_excess implicitly caps the sandbox; saturation_excess alone
+    # leaves it uncapped — matching the old ['horton']+green_ampt / ['vsa']+none.
     config.RUNOFF_MECHANISMS = [mech]
-    config.OPM_INFILTRATION  = 'green_ampt' if mech == 'horton' else 'none'
     config.IMPERVIOUS_SOURCE = 'none'
     config.RUN_TAG            = f"{EVENT}_{mech}alone"
 
@@ -108,7 +109,7 @@ def run_single_mechanism(mech: str):
     while t < T:
         rain_1d = precip_engine.get_field_1d(t)
         _ = runoff_engine.get_effective_1d(t, rain_1d)
-        if mech == 'vsa':
+        if mech == 'saturation_excess':
             cum_vol += asnumpy(runoff_engine._last_dunne_rate) * cell_area * DT
         else:
             cum_vol += asnumpy(runoff_engine._last_horton_rate) * cell_area * DT
@@ -126,8 +127,8 @@ def to_grid(arr_1d, s_rows, s_cols, nrows, ncols, fill=np.nan):
 
 
 def main():
-    depth_vsa, gd = run_single_mechanism('vsa')
-    depth_hor, _  = run_single_mechanism('horton')
+    depth_vsa, gd = run_single_mechanism('saturation_excess')
+    depth_hor, _  = run_single_mechanism('infiltration_excess')
 
     s_rows, s_cols = asnumpy(gd["s_rows"]), asnumpy(gd["s_cols"])
     nrows, ncols   = gd["nrows"], gd["ncols"]

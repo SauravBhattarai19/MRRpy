@@ -14,7 +14,7 @@ Tests
 4. VSA contracts on dry   — after rain stops sandbox drains → VSA contracts
 5. Backward compatibility — RUNOFF_SOURCE='none' → identical hydrograph
 6. Mass balance           — routed volume ≤ total rainfall at all times
-7. Q_max validation       — OPM_Q_MAX ≤ Q_min raises ValueError
+7. Q_max validation       — VSA_Q_MAX ≤ Q_min raises ValueError
 8. CSV output             — vsa_opm_results.csv has correct columns, no NaN
 
 Each test prints PASS or FAIL with a short reason.
@@ -85,7 +85,7 @@ def test_eq5_self_consistency(g):
     name = "1 · Eq 5 self-consistency"
     try:
         A_1, A_outlet, A_t_init, H_a, Rf_init = _opm_init(
-            g, config.OPM_SD_MAX_INITIAL, config.OPM_Q_MAX
+            g, config.VSA_SD_MAX_INITIAL, config.VSA_Q_MAX
         )
         # Eq 5 at t=0:  A_t = H_a * A_1 / (H_a - ln(Rf_init))
         # By construction this is singular (denominator ≈ 0 for large watersheds)
@@ -133,9 +133,9 @@ def test_vsa_grows_under_rain(g):
     """Under constant precipitation, VSA must be non-decreasing (Dunne mechanism)."""
     name = "3 · VSA grows under sustained rain"
     try:
-        SD_max_initial = config.OPM_SD_MAX_INITIAL
-        Q_max          = config.OPM_Q_MAX
-        phi            = getattr(config, 'OPM_PHI', 0.35)
+        SD_max_initial = config.VSA_SD_MAX_INITIAL
+        Q_max          = config.VSA_Q_MAX
+        phi            = getattr(config, 'VSA_PHI', 0.35)
         cell_area      = g["cell_area"]
         cell_size      = g["cell_size"]
         faccum_1d      = g["faccum_1d"]
@@ -185,9 +185,9 @@ def test_vsa_contracts_after_rain(g):
     """After rainfall ends, Darcy drainage reduces z → SD_max recovers → A_t grows → VSA shrinks."""
     name = "4 · VSA contracts after rain stops"
     try:
-        SD_max_initial = config.OPM_SD_MAX_INITIAL
-        Q_max          = config.OPM_Q_MAX
-        phi            = getattr(config, 'OPM_PHI', 0.35)
+        SD_max_initial = config.VSA_SD_MAX_INITIAL
+        Q_max          = config.VSA_Q_MAX
+        phi            = getattr(config, 'VSA_PHI', 0.35)
         cell_area      = g["cell_area"]
         cell_size      = g["cell_size"]
         faccum_1d      = g["faccum_1d"]
@@ -280,9 +280,9 @@ def test_mass_balance(g):
     """
     name = "6 · Mass balance (runoff ≤ rainfall)"
     try:
-        SD_max_initial = config.OPM_SD_MAX_INITIAL
-        Q_max          = config.OPM_Q_MAX
-        phi            = getattr(config, 'OPM_PHI', 0.35)
+        SD_max_initial = config.VSA_SD_MAX_INITIAL
+        Q_max          = config.VSA_Q_MAX
+        phi            = getattr(config, 'VSA_PHI', 0.35)
         cell_area      = g["cell_area"]
         cell_size      = g["cell_size"]
         faccum_1d      = g["faccum_1d"]
@@ -351,18 +351,19 @@ def test_mass_balance(g):
 # Test 7 — Q_max validation
 # ─────────────────────────────────────────────────────────────────────────────
 def test_qmax_validation():
-    """OPM_Q_MAX ≤ Q_min must raise ValueError before any computation."""
+    """VSA_Q_MAX ≤ Q_min must raise ValueError before any computation."""
     name = "7 · Q_max validation (raises ValueError for bad input)"
     try:
         from hydroflow.core import runoff as ri
 
         class _BadCfg:
-            RUNOFF_SOURCE       = 'vsa_opm'
-            OPM_SD_MAX_INITIAL  = 0.10
-            OPM_Q_MAX           = 0.0005   # below Q_MIN = 0.001
-            OPM_PHI             = 0.35
+            RUNOFF_SOURCE       = 'physical'
+            RUNOFF_MECHANISMS   = ['saturation_excess']
+            VSA_SD_MAX_INITIAL  = 0.10
+            VSA_Q_MAX           = 0.0005   # below Q_MIN = 0.001
+            VSA_PHI             = 0.35
 
-        # Minimal grid_data with enough keys for _init_vsa_opm
+        # Minimal grid_data with enough keys for the saturation-excess sandbox
         dummy_faccum = np.ones(10, dtype=np.float64)
         dummy_faccum[-1] = 1000.0
         gd = {
@@ -408,7 +409,7 @@ def test_csv_output():
         # Basic sanity: SD_max_t in (0, SD_max_init], A_t_m2 > 0, VSA_m2 >= 0
         ok = (
             (df['SD_max_t'] > 0).all() and
-            (df['SD_max_t'] <= config.OPM_SD_MAX_INITIAL + 1e-9).all() and
+            (df['SD_max_t'] <= config.VSA_SD_MAX_INITIAL + 1e-9).all() and
             (df['A_t_m2'] > 0).all() and
             (df['VSA_m2'] >= 0).all()
         )

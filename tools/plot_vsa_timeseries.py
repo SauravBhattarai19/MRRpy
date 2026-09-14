@@ -45,10 +45,9 @@ def main():
     row = cat[cat.event_tag == EVENT].iloc[0]
 
     apply_output_dir(config, str(LEAF) + "/")
-    config.RUNOFF_MECHANISMS      = ['vsa', 'horton', 'impervious']
-    config.OPM_INFILTRATION       = 'green_ampt'
+    config.RUNOFF_MECHANISMS      = ['saturation_excess', 'infiltration_excess', 'impervious']
     config.IMPERVIOUS_SOURCE      = 'lcz'
-    config.OPM_SD_REDUCER         = 'max'
+    config.VSA_SD_REDUCER         = 'max'
     config.CHANNEL_ROUTING        = False
     config.ROUTING_SCHEME         = 'diffusive'
     config.DIFFUSION_THETA        = 1.0

@@ -24,7 +24,7 @@ ROUTING_DEM_PATH: outputs collection/multiple_imerg/clipped_dem.tif
 ROUTING_FLOW_DIR_PATH: outputs collection/multiple_imerg/flow_direction.tif
 ROUTING_FLOW_ACCUM_PATH: outputs collection/multiple_imerg/clipped_flow_accumulation.tif
 ROUTING_WATERSHED_MASK_PATH: outputs collection/multiple_imerg/watershed.tif
-OPM_WATERSHED_GEOJSON: outputs collection/multiple_imerg/watershed.geojson
+WATERSHED_GEOJSON: outputs collection/multiple_imerg/watershed.geojson
 RAIN_INTENSITY_MM_HR: 20.0
 RAIN_DURATION_HOURS: 3.0
 PRECIP_METHOD: thiessen
@@ -39,36 +39,35 @@ IMERG_DATASET: NASA/GPM_L3/IMERG_V07
 IMERG_BAND: precipitation
 PRECIP_IMERG_FORCE_DOWNLOAD: false
 IMERG_BBOX_BUFFER_M: 11132
-RUNOFF_SOURCE: vsa_opm
+RUNOFF_SOURCE: physical
 RUNOFF_COEFFICIENT_PATH: runoff/runoff_coefficient.tif
 RUNOFF_RASTER_MANIFEST: runoff/manifest.csv
 RUNOFF_CN_PATH: runoff/curve_number.tif
 RUNOFF_SCS_Ia_FACTOR: 0.2
 RUNOFF_MECHANISMS:
-- vsa
-- horton
+- saturation_excess
+- infiltration_excess
 - impervious
-OPM_SD_MAX_INITIAL: 0.1
-OPM_Q_MAX: 100
-OPM_PHI: 0.35
-OPM_K_SAT: 44.0
-OPM_PER_POLYGON: true
-OPM_INFILTRATION: green_ampt
-OPM_GA_SUCTION_SOURCE: texture
-OPM_GA_SUCTION_M: 0.15
-OPM_GA_KSAT_SOURCE: gee
-OPM_GA_KSAT_MMHR: 12.0
-OPM_GA_KSAT_RASTER: null
-OPM_GA_KSAT_SCALE: 1.0
+VSA_SD_MAX_INITIAL: 0.1
+VSA_Q_MAX: 100
+VSA_PHI: 0.35
+VSA_K_SAT: 44.0
+VSA_PER_POLYGON: true
+GA_SUCTION_SOURCE: texture
+GA_SUCTION_M: 0.15
+GA_KSAT_SOURCE: gee
+GA_KSAT_MMHR: 12.0
+GA_KSAT_RASTER: null
+GA_KSAT_SCALE: 1.0
 IMPERVIOUS_SOURCE: lcz
 IMPERVIOUS_RASTER_PATH: null
-OPM_BASEFLOW: false
-OPM_SD_SOURCE: gee
-OPM_SD_REDUCER: max
-OPM_DEFICIT_RASTER: null
+VSA_BASEFLOW: false
+VSA_SD_SOURCE: gee
+VSA_SD_REDUCER: max
+VSA_DEFICIT_RASTER: null
 SERVES_SATELLITE: landsat
 SERVES_SEARCH_WINDOW: 30
-OPM_SOILGRIDS_DEPTH: b30
+SOILGRIDS_DEPTH: b30
 SERVES_TARGET_DATE: null
 MANNINGS_N_SOURCE: lcz
 MANNINGS_N: 0.09

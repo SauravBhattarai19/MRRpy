@@ -134,7 +134,7 @@ grid** — instead, `mannings_n_from_dem` generates a Manning's-n raster from
 your DEM using an elevation rule, and you point the existing
 `MANNINGS_N_SOURCE="raster"` path at it. If you only want an elevation rule
 on **channel cells** (keeping LULC/scalar roughness on overland cells), see
-[4b](#4b-lulc-overland--elevation-rule-channels) below — no raster file
+[4b](#4b-lulc-overland-elevation-rule-channels) below — no raster file
 needed there.
 
 ```python
@@ -242,9 +242,9 @@ cfg.MANNINGS_N_RASTER_PATH = n_path
 cfg.PRECIP_METHOD = "uniform"
 cfg.RAIN_INTENSITY_MM_HR = 15.0
 cfg.RAIN_DURATION_HOURS = 1.0
-cfg.RUNOFF_SOURCE = "vsa_opm"                    # or 4
-cfg.RUNOFF_MECHANISMS = ["vsa", "horton", "impervious"]
-cfg.OPM_INFILTRATION = "green_ampt"
+cfg.RUNOFF_SOURCE = "physical"                   # or 4
+# any subset composes; infiltration_excess also caps the VSA sandbox recharge
+cfg.RUNOFF_MECHANISMS = ["impervious", "infiltration_excess", "saturation_excess"]
 cfg.ROUTING_INFLOW_BC = [{
     "name": "upstream", "lat": 27.80667, "lon": 85.39830,
     "csv": "results/inflow_upstream.csv",        # from example 3

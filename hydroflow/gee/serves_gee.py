@@ -461,7 +461,7 @@ def download_ksat_raster(dem_path, watershed_geojson_path, output_path,
     value (cm/day) is raw × 0.0001 (verified against the dataset docs — same
     factor used for `wcsat`).  cm/day → mm/hr is × (10/24).  This Ksat is the
     *vertical* surface conductivity for Green-Ampt infiltration — NOT the lateral
-    transmissivity OPM_K_SAT that drives the sandbox Darcy drainage.
+    transmissivity VSA_K_SAT that drives the sandbox Darcy drainage.
 
     Returns the output path on success, or None on failure.
     """

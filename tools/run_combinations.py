@@ -28,7 +28,7 @@ Axes (edit the lists below to add/trim)
     completed runs are recognized as done and skipped; 'none' / 'divide' / and
     any 'muskingum' leaf are new work, run only once, safely resumable.
 
-Everything else (OPM_SD_SOURCE='gee', DIFFUSION_THETA, CFL, Manning's-n source,
+Everything else (VSA_SD_SOURCE='gee', DIFFUSION_THETA, CFL, Manning's-n source,
 SD reducer, …) comes from config.py; the gauge pipeline sets EVENT_START_UTC per
 event so the SERVES/GEE soil-moisture deficit is genuinely active.
 
@@ -169,7 +169,7 @@ def all_configs():
             'ROUTING_SCHEME':    scheme,
             'DIFFUSION_THETA':   DIFFUSION_THETA,
             'RUNOFF_MECHANISMS': list(mset),
-            'OPM_SD_REDUCER':    reducer,
+            'VSA_SD_REDUCER':    reducer,
             # See INFILT_OPTIONS comment above — independent of RUNOFF_MECHANISMS,
             # controls only the sandbox's own recharge cap (hydroflow/core/runoff/vsa.py).
             'OPM_INFILTRATION':  infilt,
@@ -314,7 +314,7 @@ def run_study(filters=None, force=False):
             continue
         key = {k: overrides[k] for k in
                ('CHANNEL_ROUTING', 'ROUTING_SCHEME', 'RUNOFF_MECHANISMS',
-                'OPM_INFILTRATION', 'OPM_SD_REDUCER')}
+                'OPM_INFILTRATION', 'VSA_SD_REDUCER')}
         print(f"  overrides: {key}")
         seed_leaf(leaf_path)
         t0 = time.time()
@@ -350,7 +350,7 @@ if __name__ == "__main__":
         for leaf, ov, _ in all_configs():
             tag = {k: ov[k] for k in ('CHANNEL_ROUTING', 'ROUTING_SCHEME',
                                       'RUNOFF_MECHANISMS', 'OPM_INFILTRATION',
-                                      'OPM_SD_REDUCER')}
+                                      'VSA_SD_REDUCER')}
             print(f"  {leaf:62s}  {tag}")
         print(f"\n  {len(all_configs())} configs × 4 floods.")
         sys.exit(0)

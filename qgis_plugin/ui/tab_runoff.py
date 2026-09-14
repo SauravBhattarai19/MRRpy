@@ -4,20 +4,19 @@ tab_runoff.py
 =============
 Tab 3 — Runoff Generation Engine.
 
-Modes: none · coefficient · raster · scs_cn · vsa_opm
+Generators (RUNOFF_SOURCE): none · coefficient · raster · scs_cn · physical
 
-The vsa_opm panel uses PROGRESSIVE DISCLOSURE — only the fields relevant to the
-current choices are shown:
-  • SD source = GEE/SERVES  → hide manual SD_max & phi, show SERVES options.
-  • Horton mechanism off AND sandbox cap off → hide the whole Green-Ampt group
-    (it's shown if EITHER is on, since both consume the same GA parameters).
-  • Impervious mechanism off → hide the whole impervious group.
+The 'physical' panel composes any subset of the three physics MECHANISMS and uses
+PROGRESSIVE DISCLOSURE — only the fields for the checked mechanisms are shown:
+  • saturation_excess (VSA-OPM) on  → show the VSA sandbox parameters + SD source
+    (SD source = GEE/SERVES → hide manual SD_max & phi, show SERVES options).
+  • infiltration_excess (Green-Ampt) on → show the Green-Ampt group.
+  • impervious on → show the impervious group.
   • A "…source" set to raster → show its file picker; scalar → show its value.
 
-Note: "Horton (Green-Ampt)" (whether Horton's own runoff is reported) and
-"Cap sandbox recharge by infiltration" (whether the VSA sandbox's water
-balance respects infiltration physics) are independent toggles — see
-hydroflow/core/runoff/vsa.py and OPM_INFILTRATION's docstring in config.py.
+Activating infiltration_excess both reports Hortonian runoff AND caps the VSA
+sandbox recharge by infiltration capacity — there is no longer a separate
+"sandbox recharge" toggle (see hydroflow/core/runoff/physical.py).
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -39,13 +38,13 @@ def _set_row_visible(form: QFormLayout, field, visible: bool):
 class TabRunoff(QWidget):
     """Runoff generation engine configuration tab."""
 
-    _MODES = ["none", "coefficient", "raster", "scs_cn", "vsa_opm"]
+    _MODES = ["none", "coefficient", "raster", "scs_cn", "physical"]
     _MODE_LABELS = [
         "None — all rainfall is runoff",
         "Runoff coefficient (static Cf raster)",
         "Pre-computed runoff raster time series",
         "SCS Curve Number (CN raster)",
-        "VSA-OPM — Variable Source Area (Pradhan & Ogden 2010)",
+        "Physical — composable mechanisms (impervious / infiltration / saturation)",
     ]
 
     _SD_REDUCERS = ["mean", "max", "divide"]
@@ -72,24 +71,25 @@ class TabRunoff(QWidget):
         form_mode = QFormLayout(grp_mode)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(self._MODE_LABELS)
-        self.mode_combo.setCurrentIndex(4)   # default: vsa_opm
+        self.mode_combo.setCurrentIndex(4)   # default: physical
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         form_mode.addRow("Mode:", self.mode_combo)
         root.addWidget(grp_mode)
 
-        # Earth Engine project — only used when a VSA-OPM satellite source is
-        # selected (SD=GEE, gridded Ksat, texture suction, LULC/LCZ Manning's n
-        # or impervious).  Mirrors the same field on the Precipitation tab; the
-        # event date lives there.  Blank is fine for gauge/manual runs.
+        # Earth Engine project — only used when a physical-mechanism satellite
+        # source is selected (SD=GEE, gridded Ksat, texture suction, LULC/LCZ
+        # Manning's n or impervious).  Mirrors the same field on the
+        # Precipitation tab; the event date lives there.  Blank is fine for
+        # gauge/manual runs.
         grp_ee = QGroupBox("Earth Engine  (only for satellite soil / land-cover sources)")
         form_ee = QFormLayout(grp_ee)
         self._gee_project = QLineEdit()
         self._gee_project.setPlaceholderText(
             "ee-yourusername  (shared with the Precipitation tab)")
         self._gee_project.setToolTip(
-            "Google Earth Engine cloud project ID.  Needed when a VSA-OPM source\n"
-            "downloads satellite data (SERVES deficit, gridded Ksat, SoilGrids\n"
-            "texture, LULC/LCZ).  Kept in sync with the Precipitation tab."
+            "Google Earth Engine cloud project ID.  Needed when a physical\n"
+            "mechanism downloads satellite data (SERVES deficit, gridded Ksat,\n"
+            "SoilGrids texture, LULC/LCZ).  Kept in sync with the Precipitation tab."
         )
         form_ee.addRow("GEE project:", self._gee_project)
         root.addWidget(grp_ee)
@@ -99,7 +99,7 @@ class TabRunoff(QWidget):
         self._stack.addWidget(self._build_coefficient_panel())  # 1
         self._stack.addWidget(self._build_raster_panel())       # 2
         self._stack.addWidget(self._build_scs_cn_panel())       # 3
-        self._stack.addWidget(self._build_vsa_opm_scroll())     # 4
+        self._stack.addWidget(self._build_physical_scroll())    # 4
         self._stack.setCurrentIndex(4)
         root.addWidget(self._stack)
 
@@ -140,63 +140,43 @@ class TabRunoff(QWidget):
         form.addRow("Ia factor:", self._ia_factor)
         return w
 
-    # ── VSA-OPM panel (scrollable) ─────────────────────────────────────────────
+    # ── Physical panel (scrollable) ────────────────────────────────────────────
 
-    def _build_vsa_opm_scroll(self):
+    def _build_physical_scroll(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setWidget(self._build_vsa_opm_panel())
+        scroll.setWidget(self._build_physical_panel())
         return scroll
 
-    def _build_vsa_opm_panel(self):
+    def _build_physical_panel(self):
         panel = QWidget()
         v = QVBoxLayout(panel)
         v.setContentsMargins(2, 2, 2, 2)
         v.setSpacing(8)
 
         # ── Runoff mechanisms ──────────────────────────────────────────────
-        grp_mech = QGroupBox("Runoff Mechanisms  (compose the OPM runoff model)")
+        grp_mech = QGroupBox("Runoff Mechanisms  (compose any subset — each runs alone or combined)")
         h_mech = QHBoxLayout(grp_mech)
-        self._chk_vsa = QCheckBox("VSA (saturation-excess)")
-        self._chk_vsa.setChecked(True)
-        self._chk_horton = QCheckBox("Horton (Green-Ampt)")
-        self._chk_horton.setChecked(True)
         self._chk_imperv = QCheckBox("Impervious (urban)")
         self._chk_imperv.setChecked(True)
-        for c in (self._chk_vsa, self._chk_horton, self._chk_imperv):
+        self._chk_infil = QCheckBox("Infiltration-excess (Green-Ampt / Horton)")
+        self._chk_infil.setChecked(True)
+        self._chk_sat = QCheckBox("Saturation-excess (VSA-OPM / Dunne)")
+        self._chk_sat.setChecked(True)
+        for c in (self._chk_imperv, self._chk_infil, self._chk_sat):
             h_mech.addWidget(c)
         h_mech.addStretch()
+        grp_mech.setToolTip(
+            "Effective runoff = rain · [ Imp + (1 − Imp) · max(in_VSA, infil_excess) ].\n"
+            "Activating infiltration-excess also caps the VSA sandbox recharge by\n"
+            "the Green-Ampt infiltration capacity (physically consistent)."
+        )
         v.addWidget(grp_mech)
 
-        # ── Sandbox recharge physics (independent of the Horton mechanism) ──
-        # This is NOT a 4th mechanism: it controls whether the VSA sandbox's
-        # OWN water balance (which sets the saturated-area size) is capped by
-        # Green-Ampt infiltration capacity, or recharges from uncapped
-        # rainfall.  Historically this was silently tied to the Horton
-        # checkbox above; it is now independent, matching OPM_INFILTRATION.
-        grp_sandbox_phys = QGroupBox("VSA Sandbox Recharge Physics")
-        h_sandbox_phys = QHBoxLayout(grp_sandbox_phys)
-        self._chk_sandbox_cap = QCheckBox(
-            "Cap sandbox recharge by infiltration capacity (physically realistic)")
-        self._chk_sandbox_cap.setChecked(True)
-        self._chk_sandbox_cap.setToolTip(
-            "When ON, the VSA sandbox's recharge at each zone's divide cell is\n"
-            "capped by Green-Ampt infiltration capacity (cfg.OPM_INFILTRATION =\n"
-            "'green_ampt') -- the saturated area grows realistically, whether or\n"
-            "not the Horton mechanism above is also selected. When OFF, the\n"
-            "sandbox recharges from uncapped rainfall (cfg.OPM_INFILTRATION =\n"
-            "'none') -- unphysical, but kept for backward compatibility / testing.\n"
-            "Independent of the Horton checkbox, which only controls whether\n"
-            "Horton's OWN infiltration-excess runoff is added to the output."
-        )
-        h_sandbox_phys.addWidget(self._chk_sandbox_cap)
-        h_sandbox_phys.addStretch()
-        v.addWidget(grp_sandbox_phys)
-
-        # ── Core OPM parameters ────────────────────────────────────────────
-        grp_core = QGroupBox("Core OPM Parameters  (Pradhan & Ogden 2010)")
-        self._core_form = QFormLayout(grp_core)
+        # ── Saturation-excess (VSA-OPM) parameters ─────────────────────────
+        self._grp_core = QGroupBox("Saturation-Excess Parameters  (VSA-OPM, Pradhan & Ogden 2010)")
+        self._core_form = QFormLayout(self._grp_core)
 
         self._sd_max = QDoubleSpinBox()
         self._sd_max.setRange(0.001, 5.0); self._sd_max.setDecimals(4)
@@ -228,11 +208,11 @@ class TabRunoff(QWidget):
         self._baseflow = QCheckBox("Seed baseflow from Q_max (start hydrograph at pre-storm discharge)")
         self._core_form.addRow(self._baseflow)
 
-        v.addWidget(grp_core)
+        v.addWidget(self._grp_core)
 
-        # ── Soil-moisture deficit source ───────────────────────────────────
-        grp_sd = QGroupBox("Soil-Moisture Deficit  (SD_max & phi source)")
-        form_sd = QFormLayout(grp_sd)
+        # ── Soil-moisture deficit source (saturation-excess) ───────────────
+        self._grp_sd = QGroupBox("Soil-Moisture Deficit  (SD_max & phi source)")
+        form_sd = QFormLayout(self._grp_sd)
         self._sd_source = QComboBox()
         self._sd_source.addItems([
             "Manual (use SD_max & phi above)",
@@ -240,7 +220,7 @@ class TabRunoff(QWidget):
         ])
         self._sd_source.setToolTip("GEE needs a project + event date on the DEM tab.")
         form_sd.addRow("SD source:", self._sd_source)
-        v.addWidget(grp_sd)
+        v.addWidget(self._grp_sd)
 
         # SERVES sub-options (shown only when SD source = GEE)
         self._grp_serves = QGroupBox("SERVES / SoilGrids Options")
@@ -263,8 +243,8 @@ class TabRunoff(QWidget):
         form_serves.addRow("SoilGrids depth band:", self._soilgrids_depth)
         v.addWidget(self._grp_serves)
 
-        # ── Green-Ampt infiltration (Horton mechanism) ─────────────────────
-        self._grp_ga = QGroupBox("Green-Ampt Infiltration  (Horton mechanism)")
+        # ── Infiltration-excess: Green-Ampt ────────────────────────────────
+        self._grp_ga = QGroupBox("Infiltration-Excess  (Green-Ampt)")
         self._ga_form = QFormLayout(self._grp_ga)
 
         self._suction_source = QComboBox()
@@ -322,29 +302,29 @@ class TabRunoff(QWidget):
     # ── Progressive disclosure wiring ──────────────────────────────────────────
 
     def _wire_disclosure(self):
-        self._sd_source.currentIndexChanged.connect(self._apply_disclosure)
-        self._chk_horton.toggled.connect(self._apply_disclosure)
-        self._chk_sandbox_cap.toggled.connect(self._apply_disclosure)
+        self._chk_sat.toggled.connect(self._apply_disclosure)
+        self._chk_infil.toggled.connect(self._apply_disclosure)
         self._chk_imperv.toggled.connect(self._apply_disclosure)
+        self._sd_source.currentIndexChanged.connect(self._apply_disclosure)
         self._suction_source.currentIndexChanged.connect(self._apply_disclosure)
         self._ksat_source.currentIndexChanged.connect(self._apply_disclosure)
         self._imperv_source.currentIndexChanged.connect(self._apply_disclosure)
 
     def _apply_disclosure(self, *args):
-        gee_sd = self._sd_source.currentIndex() == 1
-        # Manual SD_max & phi only when SD source is manual.
-        _set_row_visible(self._core_form, self._sd_max, not gee_sd)
-        _set_row_visible(self._core_form, self._phi, not gee_sd)
+        # Saturation-excess: show the VSA sandbox parameters + SD source.
+        sat = self._chk_sat.isChecked()
+        self._grp_core.setVisible(sat)
+        self._grp_sd.setVisible(sat)
+        gee_sd = sat and self._sd_source.currentIndex() == 1
+        if sat:
+            _set_row_visible(self._core_form, self._sd_max, not gee_sd)
+            _set_row_visible(self._core_form, self._phi, not gee_sd)
         self._grp_serves.setVisible(gee_sd)
 
-        # Green-Ampt parameters are needed whenever EITHER Horton's own
-        # runoff is being reported OR the sandbox recharge cap is on -- both
-        # consume the same suction/Ksat/texture machinery.
-        horton = self._chk_horton.isChecked()
-        sandbox_cap = self._chk_sandbox_cap.isChecked()
-        ga_active = horton or sandbox_cap
-        self._grp_ga.setVisible(ga_active)
-        if ga_active:
+        # Infiltration-excess: show the Green-Ampt group.
+        infil = self._chk_infil.isChecked()
+        self._grp_ga.setVisible(infil)
+        if infil:
             scalar_psi = self._suction_source.currentIndex() == 0
             _set_row_visible(self._ga_form, self._suction_m, scalar_psi)
             ksat_scalar = self._ksat_source.currentIndex() == 0
@@ -371,12 +351,12 @@ class TabRunoff(QWidget):
 
     def _mechanisms(self):
         mechs = []
-        if self._chk_vsa.isChecked():
-            mechs.append("vsa")
-        if self._chk_horton.isChecked():
-            mechs.append("horton")
         if self._chk_imperv.isChecked():
             mechs.append("impervious")
+        if self._chk_infil.isChecked():
+            mechs.append("infiltration_excess")
+        if self._chk_sat.isChecked():
+            mechs.append("saturation_excess")
         return mechs
 
     # ── Config I/O ────────────────────────────────────────────────────────────
@@ -393,36 +373,33 @@ class TabRunoff(QWidget):
             self._cn_file.setFilePath(cfg.RUNOFF_CN_PATH)
         self._ia_factor.setValue(cfg.RUNOFF_SCS_Ia_FACTOR)
 
-        mechs = getattr(cfg, "RUNOFF_MECHANISMS", None) or ["vsa", "horton", "impervious"]
-        infilt = getattr(cfg, "OPM_INFILTRATION", "none")
+        mechs = getattr(cfg, "RUNOFF_MECHANISMS", None) \
+            or ["impervious", "infiltration_excess", "saturation_excess"]
         imp_src = getattr(cfg, "IMPERVIOUS_SOURCE", "none") or "none"
-        self._chk_vsa.setChecked("vsa" in mechs)
-        self._chk_horton.setChecked("horton" in mechs)
+        self._chk_sat.setChecked("saturation_excess" in mechs)
+        self._chk_infil.setChecked("infiltration_excess" in mechs)
         self._chk_imperv.setChecked("impervious" in mechs or imp_src != "none")
-        # Sandbox recharge cap is read directly from OPM_INFILTRATION,
-        # independent of the Horton mechanism checkbox above.
-        self._chk_sandbox_cap.setChecked(infilt == "green_ampt")
 
-        self._sd_max.setValue(cfg.OPM_SD_MAX_INITIAL)
-        self._q_max.setValue(cfg.OPM_Q_MAX)
-        self._phi.setValue(cfg.OPM_PHI)
-        self._k_sat.setValue(cfg.OPM_K_SAT)
-        self._per_polygon.setChecked(bool(getattr(cfg, "OPM_PER_POLYGON", True)))
-        self._baseflow.setChecked(bool(getattr(cfg, "OPM_BASEFLOW", False)))
+        self._sd_max.setValue(cfg.VSA_SD_MAX_INITIAL)
+        self._q_max.setValue(cfg.VSA_Q_MAX)
+        self._phi.setValue(cfg.VSA_PHI)
+        self._k_sat.setValue(cfg.VSA_K_SAT)
+        self._per_polygon.setChecked(bool(getattr(cfg, "VSA_PER_POLYGON", True)))
+        self._baseflow.setChecked(bool(getattr(cfg, "VSA_BASEFLOW", False)))
 
-        self._sd_source.setCurrentIndex(1 if getattr(cfg, "OPM_SD_SOURCE", "manual") == "gee" else 0)
-        self._sd_reducer.setCurrentIndex(self._idx(self._SD_REDUCERS, getattr(cfg, "OPM_SD_REDUCER", "mean")))
+        self._sd_source.setCurrentIndex(1 if getattr(cfg, "VSA_SD_SOURCE", "manual") == "gee" else 0)
+        self._sd_reducer.setCurrentIndex(self._idx(self._SD_REDUCERS, getattr(cfg, "VSA_SD_REDUCER", "mean")))
         self._satellite.setCurrentIndex(self._idx(self._SATELLITES, getattr(cfg, "SERVES_SATELLITE", "landsat")))
         self._search_window.setValue(int(getattr(cfg, "SERVES_SEARCH_WINDOW", 30)))
-        self._soilgrids_depth.setCurrentText(getattr(cfg, "OPM_SOILGRIDS_DEPTH", "b30"))
+        self._soilgrids_depth.setCurrentText(getattr(cfg, "SOILGRIDS_DEPTH", "b30"))
 
-        self._suction_source.setCurrentIndex(self._idx(self._SUCTION_SOURCES, getattr(cfg, "OPM_GA_SUCTION_SOURCE", "scalar")))
-        self._suction_m.setValue(float(getattr(cfg, "OPM_GA_SUCTION_M", 0.15)))
-        self._ksat_source.setCurrentIndex(self._idx(self._KSAT_SOURCES, getattr(cfg, "OPM_GA_KSAT_SOURCE", "scalar")))
-        self._ga_ksat.setValue(float(getattr(cfg, "OPM_GA_KSAT_MMHR", 12.0)))
-        if getattr(cfg, "OPM_GA_KSAT_RASTER", None):
-            self._ga_ksat_raster.setFilePath(cfg.OPM_GA_KSAT_RASTER)
-        self._ga_ksat_scale.setValue(float(getattr(cfg, "OPM_GA_KSAT_SCALE", 1.0)))
+        self._suction_source.setCurrentIndex(self._idx(self._SUCTION_SOURCES, getattr(cfg, "GA_SUCTION_SOURCE", "scalar")))
+        self._suction_m.setValue(float(getattr(cfg, "GA_SUCTION_M", 0.15)))
+        self._ksat_source.setCurrentIndex(self._idx(self._KSAT_SOURCES, getattr(cfg, "GA_KSAT_SOURCE", "scalar")))
+        self._ga_ksat.setValue(float(getattr(cfg, "GA_KSAT_MMHR", 12.0)))
+        if getattr(cfg, "GA_KSAT_RASTER", None):
+            self._ga_ksat_raster.setFilePath(cfg.GA_KSAT_RASTER)
+        self._ga_ksat_scale.setValue(float(getattr(cfg, "GA_KSAT_SCALE", 1.0)))
 
         if imp_src in self._IMPERVIOUS_UI:
             self._imperv_source.setCurrentIndex(self._IMPERVIOUS_UI.index(imp_src))
@@ -443,28 +420,25 @@ class TabRunoff(QWidget):
 
         cfg.RUNOFF_MECHANISMS = self._mechanisms()
 
-        cfg.OPM_SD_MAX_INITIAL = self._sd_max.value()
-        cfg.OPM_Q_MAX = self._q_max.value()
-        cfg.OPM_PHI = self._phi.value()
-        cfg.OPM_K_SAT = self._k_sat.value()
-        cfg.OPM_PER_POLYGON = self._per_polygon.isChecked()
-        cfg.OPM_BASEFLOW = self._baseflow.isChecked()
+        cfg.VSA_SD_MAX_INITIAL = self._sd_max.value()
+        cfg.VSA_Q_MAX = self._q_max.value()
+        cfg.VSA_PHI = self._phi.value()
+        cfg.VSA_K_SAT = self._k_sat.value()
+        cfg.VSA_PER_POLYGON = self._per_polygon.isChecked()
+        cfg.VSA_BASEFLOW = self._baseflow.isChecked()
 
-        cfg.OPM_SD_SOURCE = "gee" if self._sd_source.currentIndex() == 1 else "manual"
-        cfg.OPM_SD_REDUCER = self._SD_REDUCERS[self._sd_reducer.currentIndex()]
+        cfg.VSA_SD_SOURCE = "gee" if self._sd_source.currentIndex() == 1 else "manual"
+        cfg.VSA_SD_REDUCER = self._SD_REDUCERS[self._sd_reducer.currentIndex()]
         cfg.SERVES_SATELLITE = self._SATELLITES[self._satellite.currentIndex()]
         cfg.SERVES_SEARCH_WINDOW = self._search_window.value()
-        cfg.OPM_SOILGRIDS_DEPTH = self._soilgrids_depth.currentText()
+        cfg.SOILGRIDS_DEPTH = self._soilgrids_depth.currentText()
 
-        # OPM_INFILTRATION is authoritative and independent of the Horton
-        # mechanism checkbox -- it controls the VSA sandbox's own recharge cap.
-        cfg.OPM_INFILTRATION = "green_ampt" if self._chk_sandbox_cap.isChecked() else "none"
-        cfg.OPM_GA_SUCTION_SOURCE = self._SUCTION_SOURCES[self._suction_source.currentIndex()]
-        cfg.OPM_GA_SUCTION_M = self._suction_m.value()
-        cfg.OPM_GA_KSAT_SOURCE = self._KSAT_SOURCES[self._ksat_source.currentIndex()]
-        cfg.OPM_GA_KSAT_MMHR = self._ga_ksat.value()
-        cfg.OPM_GA_KSAT_RASTER = self._ga_ksat_raster.filePath() or None
-        cfg.OPM_GA_KSAT_SCALE = self._ga_ksat_scale.value()
+        cfg.GA_SUCTION_SOURCE = self._SUCTION_SOURCES[self._suction_source.currentIndex()]
+        cfg.GA_SUCTION_M = self._suction_m.value()
+        cfg.GA_KSAT_SOURCE = self._KSAT_SOURCES[self._ksat_source.currentIndex()]
+        cfg.GA_KSAT_MMHR = self._ga_ksat.value()
+        cfg.GA_KSAT_RASTER = self._ga_ksat_raster.filePath() or None
+        cfg.GA_KSAT_SCALE = self._ga_ksat_scale.value()
 
         # Impervious source is gated by the Impervious mechanism.
         if self._chk_imperv.isChecked():

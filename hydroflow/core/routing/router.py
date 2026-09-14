@@ -299,12 +299,12 @@ def run_time_loop(grid_data, cfg):
 
     hydrograph = []  # list of (time_seconds, Q_m3s) — Python floats
 
-    # Baseflow offset: add the steady pre-storm discharge (OPM_Q_MAX) so the
+    # Baseflow offset: add the steady pre-storm discharge (VSA_Q_MAX) so the
     # reported outlet hydrograph starts at baseflow instead of zero, making it
     # directly comparable to observed (gauged) discharge.  Pure additive offset
     # on the routed stormflow — does not affect routing/runoff generation.
-    q_base = (float(getattr(cfg, 'OPM_Q_MAX', 0.0))
-              if getattr(cfg, 'OPM_BASEFLOW', False) else 0.0)
+    q_base = (float(getattr(cfg, 'VSA_Q_MAX', 0.0))
+              if getattr(cfg, 'VSA_BASEFLOW', False) else 0.0)
     if q_base:
         print(f"  Baseflow offset added to outlet: {q_base:.3f} m³/s")
 
@@ -370,11 +370,11 @@ def run_time_loop(grid_data, cfg):
     # Device 0-d scalar (xp.maximum each step), transferred to host once at the end.
     _frac_clip_max_dev = xp.zeros((), dtype=_dtype)
 
-    # ── Runoff-mechanism partition (vsa_opm only) ────────────────────────────
+    # ── Runoff-mechanism partition (physical mode only) ──────────────────────
     # Σ effective-runoff volume by generating mechanism [m³].  The three sum
     # EXACTLY to mb_in (effective runoff IN) by construction in the engine.
     _partition = (runoff_engine is not None
-                  and getattr(runoff_engine, '_mode', None) == 'vsa_opm')
+                  and getattr(runoff_engine, '_mode', None) == 'physical')
     mb_dunne  = xp.zeros((), dtype=_dtype)   # Σ Dunne / saturation-excess [m³]
     mb_horton = xp.zeros((), dtype=_dtype)   # Σ Horton / infiltration-excess [m³]
     mb_imperv = xp.zeros((), dtype=_dtype)   # Σ impervious (urban) shedding [m³]
@@ -725,7 +725,7 @@ def run_time_loop(grid_data, cfg):
     if status == "WARN":
         print("  [WARNING] Mass balance error exceeds 1e-6 — investigate routing/runoff.")
 
-    # ── Runoff-mechanism partition (vsa_opm only) ────────────────────────────
+    # ── Runoff-mechanism partition (physical mode only) ──────────────────────
     partition = None
     if _partition:
         dunne_m3  = float(mb_dunne.item())

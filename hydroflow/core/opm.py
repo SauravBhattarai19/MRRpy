@@ -20,9 +20,9 @@ Reads:  output/clipped_dem.tif, output/clipped_flow_accumulation.tif,
 Writes: output/vsa_opm_results.csv
 
 All parameters are read from config.py:
-    OPM_SD_MAX_INITIAL  [m]      initial max soil moisture deficit
-    OPM_Q_MAX           [m³/s]   initial observed outlet discharge
-    OPM_PHI             [-]      drainable porosity (default 0.35)
+    VSA_SD_MAX_INITIAL  [m]      initial max soil moisture deficit
+    VSA_Q_MAX           [m³/s]   initial observed outlet discharge
+    VSA_PHI             [-]      drainable porosity (default 0.35)
 """
 
 import os
@@ -116,11 +116,11 @@ def run_opm(cfg):
     phi             = params['phi']
     deficit_raster  = params['deficit_raster']
     K_MS            = params['ksat_ms']
-    Q_max = float(cfg.OPM_Q_MAX)
+    Q_max = float(cfg.VSA_Q_MAX)
 
     if Q_max <= Q_MIN:
         raise ValueError(
-            f"OPM_Q_MAX={Q_max} m³/s must be > {Q_MIN} m³/s (Q_min constant)."
+            f"VSA_Q_MAX={Q_max} m³/s must be > {Q_MIN} m³/s (Q_min constant)."
         )
 
     # A_1: upslope area of single divide cell [m²]
@@ -146,7 +146,7 @@ def run_opm(cfg):
 
     # ── Per-polygon vs single-sandbox ─────────────────────────────────────
     cell_polygon = precip_engine.cell_polygon
-    use_per_polygon = getattr(cfg, 'OPM_PER_POLYGON', True)
+    use_per_polygon = getattr(cfg, 'VSA_PER_POLYGON', True)
 
     if cell_polygon is not None and use_per_polygon:
         # Per-polygon mode: each precipitation zone gets its own sandbox
@@ -162,7 +162,7 @@ def run_opm(cfg):
         # cells — the SAME path as the production engine
         # (runoff_input._init_vsa_opm), so this diagnostic matches the real run
         # instead of falling back to a uniform watershed SD_max.
-        reducer = getattr(cfg, 'OPM_SD_REDUCER', 'mean').lower()
+        reducer = getattr(cfg, 'VSA_SD_REDUCER', 'mean').lower()
         if deficit_raster:
             sd_init_arr = per_zone_sd_from_raster(
                 deficit_raster, cell_polygon, n_polygons,

@@ -33,13 +33,13 @@ class TestOpmConfigDefaults:
         cfg = OpmConfig()
         assert pytest.approx(cfg.MANNINGS_N, abs=1e-6) == 0.09
 
-    def test_opm_phi_default(self):
+    def test_vsa_phi_default(self):
         cfg = OpmConfig()
-        assert pytest.approx(cfg.OPM_PHI, abs=1e-6) == 0.35
+        assert pytest.approx(cfg.VSA_PHI, abs=1e-6) == 0.35
 
-    def test_opm_k_sat_default(self):
+    def test_vsa_k_sat_default(self):
         cfg = OpmConfig()
-        assert pytest.approx(cfg.OPM_K_SAT, abs=1e-6) == 44.0
+        assert pytest.approx(cfg.VSA_K_SAT, abs=1e-6) == 44.0
 
     def test_precip_method_default(self):
         cfg = OpmConfig()
@@ -88,7 +88,7 @@ class TestOpmConfigKwargs:
         assert cfg.GPU_PRECISION == "float32"
 
     def test_invalid_attribute_raises(self):
-        with pytest.raises(AttributeError, match="OpmConfig has no attribute"):
+        with pytest.raises(AttributeError, match="has no attribute"):
             OpmConfig(INVALID_PARAM=42)
 
 
@@ -122,17 +122,19 @@ class TestOpmConfigValidation:
             cfg.validate()
 
     def test_invalid_backend_raises(self):
-        cfg = OpmConfig(BACKEND="tpu", DEM_PATH=__file__)
+        # Fixed-choice options are normalised (and rejected) at assignment,
+        # so an invalid BACKEND raises at construction, not in validate().
         with pytest.raises(ValueError, match="BACKEND"):
-            cfg.validate()
+            OpmConfig(BACKEND="tpu", DEM_PATH=__file__)
 
-    def test_opm_q_max_too_small_raises(self):
+    def test_vsa_q_max_too_small_raises(self):
         cfg = OpmConfig(
-            RUNOFF_SOURCE="vsa_opm",
-            OPM_Q_MAX=0.0005,
+            RUNOFF_SOURCE="physical",
+            RUNOFF_MECHANISMS=["saturation_excess"],
+            VSA_Q_MAX=0.0005,
             DEM_PATH=__file__,
         )
-        with pytest.raises(ValueError, match="OPM_Q_MAX"):
+        with pytest.raises(ValueError, match="VSA_Q_MAX"):
             cfg.validate()
 
     def test_valid_config_passes(self, tmp_path):

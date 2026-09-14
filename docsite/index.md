@@ -49,7 +49,7 @@ run_pipeline(cfg, stages=("process_dem", "routing"))   # → results/hydrograph.
 
     ---
 
-    `none · coefficient · raster · scs_cn · vsa_opm`. VSA saturation-excess +
+    `none · coefficient · raster · scs_cn · physical`. VSA saturation-excess +
     Green-Ampt infiltration + impervious shedding as composable mechanisms.
 
 -   :material-waves:{ .lg .middle } __Flood routing__

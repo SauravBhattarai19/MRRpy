@@ -413,8 +413,8 @@ save("07_sandbox_schematic.png")
 # ─────────────────────────────────────────────────────────────────────────────
 print("Fig 08 — A_t sensitivity")
 SD_MIN_v=0.001; Q_MIN_v=0.001
-Q_max_v  = float(config.OPM_Q_MAX)
-SD_max_0 = float(config.OPM_SD_MAX_INITIAL)
+Q_max_v  = float(config.VSA_Q_MAX)
+SD_max_0 = float(config.VSA_SD_MAX_INITIAL)
 faccum_ws = np.where(crop(ws_full), faccum_full[R0:R1,C0:C1], 0)
 A_outlet  = float(faccum_ws.max()) * cell_m**2
 A_1_v     = cell_m**2
@@ -565,7 +565,7 @@ for (x0,x1),lb in zip(arrs,lbls):
     ax.text((x0+x1)/2, 2.35, lb, ha='center', fontsize=7.5, color=TXT2)
 
 ax.text(6.4, 0.12,
-        "Modes:  'none'  ·  'coefficient'  ·  'raster'  ·  'scs_cn'  ·  'vsa_opm'",
+        "Modes:  'none'  ·  'coefficient'  ·  'raster'  ·  'scs_cn'  ·  'physical'",
         ha='center', fontsize=8, color=GREEN, alpha=0.9)
 ax.set_title("End-to-End Processing Pipeline",
              fontsize=12, fontweight='bold', color=TXT, pad=6)

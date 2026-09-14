@@ -188,7 +188,7 @@ def main():
     fig_best_worst(g)
     fig_mechanism_scheme(g)
     fig_sensitivity_curve(g, "sd_min", "SD_min (m)", "fig3_sensitivity_sdmin.png", logx=True)
-    fig_sensitivity_curve(g, "ksat", "OPM_K_SAT (m/day)", "fig4_sensitivity_ksat.png", logx=True)
+    fig_sensitivity_curve(g, "ksat", "VSA_K_SAT (m/day)", "fig4_sensitivity_ksat.png", logx=True)
     fig_sensitivity_curve(g, "sd_max", "SD_max (m)", "fig5_sensitivity_sdmax.png")
     ranges, order, effects = fig_sensitivity_ranking(g)
 

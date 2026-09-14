@@ -51,29 +51,29 @@ def _data_path(filename):
 # safe, reordering renumbers the codes.
 _ENUM_CHOICES = {
     "PRECIP_METHOD":         ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw"],
-    "RUNOFF_SOURCE":         ["none", "coefficient", "raster", "scs_cn", "vsa_opm"],
+    "RUNOFF_SOURCE":         ["none", "coefficient", "raster", "scs_cn", "physical"],
     "RUNOFF_CN_SOURCE":      ["scalar", "gee", "raster"],
     "RUNOFF_CN_AMC":         ["i", "ii", "iii"],
     "ROUTING_SCHEME":        ["kinematic", "diffusive", "muskingum"],
     "DELINEATION_ENGINE":    ["pysheds", "pyflwdir"],
     "BACKEND":               ["cpu", "gpu"],
     "GPU_PRECISION":         ["float64", "float32"],
-    "OPM_INFILTRATION":      ["none", "green_ampt"],
-    "OPM_GA_SUCTION_SOURCE": ["scalar", "texture"],
-    "OPM_GA_KSAT_SOURCE":    ["scalar", "gee", "raster"],
+    "GA_SUCTION_SOURCE":     ["scalar", "texture"],
+    "GA_KSAT_SOURCE":        ["scalar", "gee", "raster"],
     "IMPERVIOUS_SOURCE":     ["none", "lcz", "lulc", "raster"],
-    "OPM_SD_SOURCE":         ["manual", "gee"],
-    "OPM_SD_REDUCER":        ["mean", "max", "divide"],
+    "VSA_SD_SOURCE":         ["manual", "gee"],
+    "VSA_SD_REDUCER":        ["mean", "max", "divide"],
     "SERVES_SATELLITE":      ["landsat", "sentinel2", "modis"],
-    "OPM_SOILGRIDS_DEPTH":   ["b0", "b10", "b30", "b60", "b100", "b200"],
+    "SOILGRIDS_DEPTH":       ["b0", "b10", "b30", "b60", "b100", "b200"],
     "MANNINGS_N_SOURCE":     ["scalar", "lulc", "lcz", "raster"],
     "DEM_SOURCE":            list(_DEM_CATALOG),
 }
 
 # Options whose value is a *list* of choices (each element normalised the same
-# way as a scalar enum), rather than a single choice.
+# way as a scalar enum), rather than a single choice.  RUNOFF_MECHANISMS names
+# the composable physics processes for RUNOFF_SOURCE='physical'.
 _ENUM_LIST = {
-    "RUNOFF_MECHANISMS": ["vsa", "horton", "impervious"],
+    "RUNOFF_MECHANISMS": ["impervious", "infiltration_excess", "saturation_excess"],
 }
 
 
@@ -182,7 +182,7 @@ class Config:
     ROUTING_FLOW_DIR_PATH: str = "output/flow_direction.tif"
     ROUTING_FLOW_ACCUM_PATH: str = "output/clipped_flow_accumulation.tif"
     ROUTING_WATERSHED_MASK_PATH: str = "output/watershed.tif"
-    OPM_WATERSHED_GEOJSON: str = "output/watershed.geojson"
+    WATERSHED_GEOJSON: str = "output/watershed.geojson"
 
     # ═════════════════════════════════════════════════════════════════════════
     # 3.  PRECIPITATION
@@ -209,7 +209,11 @@ class Config:
     # ═════════════════════════════════════════════════════════════════════════
     # 4.  RUNOFF GENERATION
     # ═════════════════════════════════════════════════════════════════════════
-    # 'none'|'coefficient'|'raster'|'scs_cn'|'vsa_opm'
+    # Which runoff generator feeds routing:
+    #   'none'|'coefficient'|'raster'|'scs_cn'|'physical'
+    # 'physical' composes the mechanisms in RUNOFF_MECHANISMS (§5); the others
+    # are independent, monolithic methods.  New generators can be registered
+    # (@register in core/runoff/engine.py) and feed routing the same way.
     RUNOFF_SOURCE: str = "none"
     RUNOFF_COEFFICIENT_PATH: str = ""
     RUNOFF_RASTER_MANIFEST: str = ""
@@ -231,43 +235,45 @@ class Config:
     RUNOFF_SCS_Ia_FACTOR: float = 0.2
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 5.  OPM / VSA PARAMETERS  (used when RUNOFF_SOURCE='vsa_opm')
+    # 5.  PHYSICAL RUNOFF MECHANISMS  (used when RUNOFF_SOURCE='physical')
     # ═════════════════════════════════════════════════════════════════════════
-    # Which runoff-generation mechanisms are active (orthogonal subset).
-    #   'vsa' | 'horton' | 'impervious'
-    RUNOFF_MECHANISMS = ["vsa", "horton", "impervious"]
+    # Composable subset of physics processes; each runs alone or combined:
+    #   'impervious' | 'infiltration_excess' | 'saturation_excess'
+    RUNOFF_MECHANISMS = ["impervious", "infiltration_excess", "saturation_excess"]
 
-    OPM_SD_MAX_INITIAL: float = 0.10   # root zone depth D [m] (physical height)
-    OPM_Q_MAX: float = 100.0           # observed baseflow / initial discharge [m³/s]
-    OPM_PHI: float = 0.35              # drainable porosity [-]
-    OPM_K_SAT: float = 44.0            # lateral saturated conductivity [m/day]
-    OPM_PER_POLYGON: bool = True
+    # ── infiltration_excess: Green-Ampt (Hortonian overland flow) ────────────
+    GA_SUCTION_SOURCE: str = "scalar"   # 'scalar' | 'texture'
+    GA_SUCTION_M: float = 0.15          # wetting-front suction head ψ [m]
+    GA_KSAT_SOURCE: str = "scalar"      # 'scalar' | 'gee' | 'raster'
+    GA_KSAT_MMHR: float = 12.0          # vertical surface Ksat [mm/hr]
+    GA_KSAT_RASTER = None               # None → auto {OUTPUT_DIR}/ksat_hihydro.tif
+    GA_KSAT_SCALE: float = 1.0
 
-    # ── Infiltration (Green-Ampt) ────────────────────────────────────────────
-    OPM_INFILTRATION: str = "none"          # 'none' | 'green_ampt'
-    OPM_GA_SUCTION_SOURCE: str = "scalar"   # 'scalar' | 'texture'
-    OPM_GA_SUCTION_M: float = 0.15          # wetting-front suction head ψ [m]
-    OPM_GA_KSAT_SOURCE: str = "scalar"      # 'scalar' | 'gee' | 'raster'
-    OPM_GA_KSAT_MMHR: float = 12.0          # vertical surface Ksat [mm/hr]
-    OPM_GA_KSAT_RASTER = None               # None → auto {OUTPUT_DIR}/ksat_hihydro.tif
-    OPM_GA_KSAT_SCALE: float = 1.0
-
-    # ── Impervious fraction (urban shedding) ─────────────────────────────────
+    # ── impervious: urban shedding ───────────────────────────────────────────
     IMPERVIOUS_SOURCE: str = "none"         # 'none'|'lcz'|'lulc'|'raster'
     IMPERVIOUS_RASTER_PATH = None
 
-    # ── Baseflow ─────────────────────────────────────────────────────────────
-    OPM_BASEFLOW: bool = False
+    # ── saturation_excess: Pradhan & Ogden (2010) VSA-OPM sandbox ────────────
+    VSA_SD_MAX_INITIAL: float = 0.10   # root zone depth D [m] (physical height)
+    VSA_SD_MIN: float = 0.001          # minimum saturation deficit floor [m]
+    VSA_Q_MAX: float = 100.0           # observed baseflow / initial discharge [m³/s]
+    VSA_PHI: float = 0.35              # drainable porosity [-]
+    VSA_K_SAT: float = 44.0            # lateral saturated conductivity [m/day]
+    VSA_PER_POLYGON: bool = True
+    VSA_BASEFLOW: bool = False         # seed routing with the steady VSA_Q_MAX baseflow
+    # SD_max & phi source: 'manual' (values above) or 'gee' (SERVES + SoilGrids)
+    VSA_SD_SOURCE: str = "manual"
+    VSA_SD_REDUCER: str = "mean"       # per-zone reducer: 'mean'|'max'|'divide'
+    VSA_DEFICIT_RASTER = None          # None → auto {OUTPUT_DIR}/deficit_serves_{date}.tif
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 6.  SERVES / GEE SOIL-MOISTURE DEFICIT  (SD_max & phi from satellite)
+    # 6.  SHARED SOIL / SATELLITE FORCING  (SERVES deficit, SoilGrids texture)
     # ═════════════════════════════════════════════════════════════════════════
-    OPM_SD_SOURCE: str = "manual"           # 'manual' | 'gee'
-    OPM_SD_REDUCER: str = "mean"            # 'mean' | 'max' | 'divide'
-    OPM_DEFICIT_RASTER = None               # None → auto {OUTPUT_DIR}/deficit_serves_{date}.tif
+    # Consumed by saturation_excess (SD_max/phi/deficit) and infiltration_excess
+    # (texture → suction, HiHydroSoil → Ksat) when their sources are GEE-backed.
     SERVES_SATELLITE: str = "landsat"       # 'landsat' | 'sentinel2' | 'modis'
     SERVES_SEARCH_WINDOW: int = 30          # days backward from EVENT_START_UTC
-    OPM_SOILGRIDS_DEPTH: str = "b30"        # 'b0' 'b10' 'b30' 'b60' 'b100' 'b200'
+    SOILGRIDS_DEPTH: str = "b30"            # 'b0' 'b10' 'b30' 'b60' 'b100' 'b200'
     # Legacy / backward-compat (older model builds read this if present).
     SERVES_TARGET_DATE = None
 
@@ -415,7 +421,7 @@ class Config:
         self.ROUTING_FLOW_DIR_PATH = os.path.join(d, "flow_direction.tif")
         self.ROUTING_FLOW_ACCUM_PATH = os.path.join(d, "clipped_flow_accumulation.tif")
         self.ROUTING_WATERSHED_MASK_PATH = os.path.join(d, "watershed.tif")
-        self.OPM_WATERSHED_GEOJSON = os.path.join(d, "watershed.geojson")
+        self.WATERSHED_GEOJSON = os.path.join(d, "watershed.geojson")
         self.PRECIP_IMERG_DIR = os.path.join(d, "imerg/")
         self.HYDROGRAPH_CSV = os.path.join(d, "hydrograph.csv")
         self.MASS_BALANCE_CSV = os.path.join(d, "mass_balance.csv")
@@ -610,24 +616,27 @@ class Config:
             if not (self.EVENT_START_UTC or self.IMERG_START_LOCAL):
                 errors.append("IMERG precipitation needs EVENT_START_UTC (or IMERG_START_LOCAL).")
 
-        if self.RUNOFF_SOURCE == "vsa_opm":
-            if self.OPM_Q_MAX <= 0.001:
-                errors.append(f"OPM_Q_MAX must be > 0.001 m³/s (got {self.OPM_Q_MAX})")
-            if not (0 < self.OPM_PHI < 1):
-                errors.append(f"OPM_PHI must be in (0, 1) (got {self.OPM_PHI})")
+        if self.RUNOFF_SOURCE == "physical":
+            mechs = self.RUNOFF_MECHANISMS
+            if "saturation_excess" in mechs:
+                if self.VSA_Q_MAX <= 0.001:
+                    errors.append(f"VSA_Q_MAX must be > 0.001 m³/s (got {self.VSA_Q_MAX})")
+                if not (0 < self.VSA_PHI < 1):
+                    errors.append(f"VSA_PHI must be in (0, 1) (got {self.VSA_PHI})")
 
-        # GEE-backed parameter sources need a project.
-        _needs_gee = (
-            self.OPM_SD_SOURCE == "gee"
-            or self.OPM_GA_KSAT_SOURCE == "gee"
-            or self.OPM_GA_SUCTION_SOURCE == "texture"
-            or self.MANNINGS_N_SOURCE in ("lulc", "lcz")
-            or self.IMPERVIOUS_SOURCE in ("lulc", "lcz")
-        )
-        if _needs_gee and self.RUNOFF_SOURCE == "vsa_opm":
-            if not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
+            # GEE-backed parameter sources need a project — but only when the
+            # mechanism that needs them is actually active.
+            _needs_gee = (
+                ("saturation_excess" in mechs and self.VSA_SD_SOURCE == "gee")
+                or ("infiltration_excess" in mechs
+                    and (self.GA_KSAT_SOURCE == "gee"
+                         or self.GA_SUCTION_SOURCE == "texture"))
+                or self.MANNINGS_N_SOURCE in ("lulc", "lcz")
+                or self.IMPERVIOUS_SOURCE in ("lulc", "lcz")
+            )
+            if _needs_gee and not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
                 errors.append(
-                    "A GEE-backed option is selected (SERVES SD, gridded Ksat, "
+                    "A GEE-backed mechanism is active (SERVES SD, gridded Ksat, "
                     "texture suction, or LULC/LCZ Manning's/impervious) but "
                     "GEE_PROJECT is not set."
                 )
