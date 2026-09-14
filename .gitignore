@@ -6,7 +6,6 @@ site/
 presentation/
 outputs collection/
 docs/
-tests/
 runs/
 Extra/
 
@@ -56,9 +55,8 @@ key.json
 *.swp
 *.swo
 .claude/
-.github/
 .pytest_cache/
-tests/
+tests/_demo_out/
 
 
 # OS
