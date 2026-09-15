@@ -65,5 +65,4 @@ pymrr run -c run.yaml           # process_dem + routing
 
 ## License
 
-[MIT](LICENSE) © Saurav Bhattarai. Based on the One-Parameter Model of
-Pradhan & Ogden (2010).
+[MIT](LICENSE) © Saurav Bhattarai.
