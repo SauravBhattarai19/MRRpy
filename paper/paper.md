@@ -140,21 +140,60 @@ regardless of the chosen method or scheme — and by design closes to near
 machine precision.
 
 The model is backend-agnostic: every hot kernel is written against an array
-module (`xp`) that is NumPy on the CPU or CuPy on a CUDA GPU, selected at grid
-initialization with automatic CPU fallback when no device is present. Outputs
-include the delineated watershed (GeoTIFF and GeoJSON), the outlet hydrograph
-and mass-balance record as CSV, and optional virtual-gauge time series and
-compact per-cell field archives for animation and post-processing. Land-cover
-lookup tables ship inside the package, and all Earth Engine functionality is
-lazily imported so that the core has no cloud or GUI dependencies.
+module (`xp`) that is NumPy on the CPU or CuPy on a GPU, and all Earth Engine
+functionality is lazily imported so the core has no cloud or GUI dependencies.
+Its main capabilities include:
+
+- **Precipitation forcing:** uniform design storms; rain-gauge networks via
+  Thiessen polygons or inverse-distance weighting; and satellite IMERG V07
+  (Thiessen or IDW), optionally excluding out-of-basin gauges.
+- **Runoff generation:** none, a runoff-coefficient map, a prescribed
+  effective-runoff raster series (interpolated in time), the SCS Curve Number
+  method (curve numbers from a scalar, a user raster, or the GCN250 global
+  dataset [@jaafar2019], with antecedent-moisture classes), and a process-based
+  mode composing impervious, Green–Ampt infiltration-excess, and VSA
+  saturation-excess mechanisms in any combination; both runoff methods and
+  mechanisms are extensible through registries (`@register`,
+  `@register_mechanism`).
+- **Parameter sourcing:** Green–Ampt conductivity and suction, VSA soil-moisture
+  deficit, curve number, Manning's *n*, and impervious fraction can each be a
+  scalar, a user raster (reprojected to the grid), or derived from Earth
+  Engine — SERVES soil-moisture deficit, HiHydroSoil conductivity/porosity,
+  SoilGrids texture mapped to Rawls [@rawls1983] suction, ESA WorldCover land
+  cover, and WUDAPT local climate zones.
+- **Roughness and channels:** Manning's *n* by land-cover class or flexible
+  channel rules (per Strahler order, elevation bands or breakpoints, a callable,
+  or a raster), with optional order-based channel cross-sections.
+- **Routing:** kinematic, diffusive (with a tunable kinematic-to-diffusion
+  blend), or Muskingum–Cunge, on fixed or adaptive-CFL time steps, with a
+  volume-conservative flux limiter and always-on mass-balance and per-mechanism
+  runoff accounting logged one row per run for side-by-side comparison.
+- **Terrain and DEM:** delineation with pysheds or pyflwdir, and automatic DEM
+  download from a browsable seven-source global catalog (NASADEM, SRTM, MERIT,
+  ALOS, Copernicus GLO-30, USGS 3DEP, GMTED2010) at a chosen resolution.
+- **Boundary conditions and diagnostics:** external inflow hydrographs at any
+  number of points (lat/lon, row/col, or projected coordinates, snapped to the
+  channel), named virtual gauges, and per-cell depth/velocity/discharge field
+  archives.
+- **Interfaces:** one `Config` object (YAML, JSON, or Python; every fixed choice
+  as a string or an integer code) drives a Python API with built-in plotting
+  helpers, a `hydroflow` CLI (`init-config`, `validate`, `run`, `list-options`,
+  `list-dems`), and a five-tab QGIS plugin with Processing-toolbox tools; the GPU
+  path is selectable in float32 or float64 with automatic CPU fallback.
+
+Outputs include the delineated watershed (GeoTIFF and GeoJSON), the outlet
+hydrograph, an appended mass-balance ledger, and optional virtual-gauge and
+per-cell field archives.
 
 The project is distributed on the Python Package Index with `[gpu]`, `[gee]`,
 and `[notebook]` extras, is licensed under MIT, and supports Python 3.9–3.12.
 Documentation is published on Read the Docs, and a separate free interactive
-course explains the underlying physics. Quality is supported by a `pytest`
-suite covering the configuration bridge and an end-to-end routing run, together
-with a set of standalone verification scripts that double as reproducible demos
-of each major feature.
+course explains the underlying physics. Quality is supported by an automated
+`pytest` suite — covering the configuration contract, each runoff method,
+mechanism composition, all three routing schemes, raster reprojection, and
+end-to-end mass-balance closure — run in continuous integration across Python
+3.9–3.12, alongside standalone verification scripts that double as reproducible
+demos of each major feature.
 
 # Acknowledgements
 
