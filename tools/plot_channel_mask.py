@@ -39,8 +39,8 @@ ORDER_COLORS = ["#c9e8ff", "#9ecae1", "#6baed6", "#4292c6",
 def build():
     import config
     from tools.runners.common import apply_output_dir
-    from hydroflow.core.routing import router as kwr
-    from hydroflow.core import routing as ru
+    from pymrr.core.routing import router as kwr
+    from pymrr.core import routing as ru
 
     apply_output_dir(config, LEAF)
     config.BACKEND = "cpu"

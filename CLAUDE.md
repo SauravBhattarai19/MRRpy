@@ -10,9 +10,9 @@ Green-Ampt infiltration-excess (Horton) + impervious urban shedding, feeding
 explicit grid-based kinematic / diffusive-wave / Muskingum–Cunge channel
 routing. Optional Google Earth Engine forcing (IMERG rainfall, SERVES soil
 deficit, SoilGrids, LULC/LCZ). The science is pure NumPy/SciPy/rasterio — no
-QGIS, no Qt in `hydroflow/core/`.
+QGIS, no Qt in `pymrr/core/`.
 
-The pip package is **`hydroflow`** (`import hydroflow`). The config class is
+The pip package is **`pymrr`** (`import pymrr`). The config class is
 `Config` (with `OpmConfig` as a plain alias). Note the runoff-method value
 `RUNOFF_SOURCE="vsa_opm"`, the `vsa_opm` pipeline stage, and
 `runoff_engine._mode == 'vsa_opm'` name the Pradhan & Ogden VSA-OPM *science*,
@@ -20,7 +20,7 @@ not the package — leave them as-is.
 
 ## Current focus
 
-Scope is the **`hydroflow` package only** — the hydrologic model and its Python
+Scope is the **`pymrr` package only** — the hydrologic model and its Python
 package (core science, CLI, QGIS plugin). The active goal is making the
 package better and more user-friendly: cleaner packaging/distribution,
 clearer docs and examples, a smoother install/config/run experience, and
@@ -30,14 +30,14 @@ working run. Treat this as the standing task for this repo going forward.
 Out of scope: `runs/trishuli_*`, `runs/trishuli_avaflow*`, and any
 `r.avaflow`/GLOF/debris-flow material (e.g. `plan.md` at repo root) — that is
 an unrelated study that happens to share this workspace, not part of the
-`hydroflow` package.
+`pymrr` package.
 
 ## Install & environment
 
 ```bash
-pip install hydroflow          # core (CPU), from PyPI (currently on TestPyPI)
-pip install hydroflow[gpu]     # + CuPy/CUDA 12.x
-pip install hydroflow[gee]     # + earthengine-api
+pip install pymrr          # core (CPU), from PyPI (currently on TestPyPI)
+pip install pymrr[gpu]     # + CuPy/CUDA 12.x
+pip install pymrr[gee]     # + earthengine-api
 pip install .                  # or from a checkout of this repo
 ```
 
@@ -47,12 +47,12 @@ Batch research workflows expect a conda env named `opm`
 ## Running the model
 
 Three interfaces, one core, all driven by a `Config` (or any object with the
-same attributes) through `hydroflow.pipeline.run_pipeline`:
+same attributes) through `pymrr.pipeline.run_pipeline`:
 
-- **Python API**: `from hydroflow import Config, run_pipeline`
-- **CLI**: `hydroflow init-config -o run.yaml` → `hydroflow validate -c run.yaml` →
-  `hydroflow run -c run.yaml [--stages process_dem routing] [--backend cpu|gpu]`.
-  `hydroflow list-options` prints every fixed-choice option and its integer code.
+- **Python API**: `from pymrr import Config, run_pipeline`
+- **CLI**: `pymrr init-config -o run.yaml` → `pymrr validate -c run.yaml` →
+  `pymrr run -c run.yaml [--stages process_dem routing] [--backend cpu|gpu]`.
+  `pymrr list-options` prints every fixed-choice option and its integer code.
   Config files may be `.yaml`, `.json`, or a legacy flat `.py` settings module.
 - **QGIS plugin** (`qgis_plugin/`): a 5-tab dialog + Processing algorithms that
   build a `Config` and call the same pipeline in a `QThread`.
@@ -76,7 +76,7 @@ There is no single test runner. Two disjoint suites:
 
 ### The config object is the contract
 
-`hydroflow/config.py::Config` (aliased `OpmConfig`) is the single source of truth
+`pymrr/config.py::Config` (aliased `OpmConfig`) is the single source of truth
 for every knob. Every core function (`dem_processing.main`, `initialise_grid`,
 `run_time_loop`, `run_opm`, …) accepts any object exposing these attributes —
 that duck-typing is why the legacy flat `config.py` module can be passed directly
@@ -96,7 +96,7 @@ assignment via `Config.__setattr__`. The registries are `_ENUM_CHOICES` and
 `_ENUM_LIST` at the top of `config.py`; when adding a new enum option, add its
 ordered choices there so codes and validation come for free (order is API —
 appending is safe, reordering renumbers the codes). `Config.describe_options()`
-renders the table (also the `hydroflow list-options` CLI command). Because the
+renders the table (also the `pymrr list-options` CLI command). Because the
 value is normalised at assignment, `validate()` no longer re-checks enum
 membership — only cross-field rules.
 
@@ -169,17 +169,17 @@ local DEM yet.
 
 - `config.py` at the repo root is the **legacy research scenario module** (values
   only), used by `tools/` and `tests/`. It is distinct from
-  `hydroflow/config.py::Config`. Both are loadable by the CLI.
+  `pymrr/config.py::Config`. Both are loadable by the CLI.
 - `study/` is a separate Next.js MDX interactive textbook (the public course
   site); `docs/` is the LaTeX companion. They are documentation, not the model.
-- The plugin **source** (`qgis_plugin/`) imports `hydroflow`;
-  `bridge.ensure_core()` finds it pip-installed, in `_vendor/hydroflow`, or in
+- The plugin **source** (`qgis_plugin/`) imports `pymrr`;
+  `bridge.ensure_core()` finds it pip-installed, in `_vendor/pymrr`, or in
   the repo root (dev symlink). Rebuild the shipped zip with
   `./build_windows_plugin.sh`. The already-built `_plugin_build/` zip is a
   frozen artifact still on the old `vsa_opm` name — regenerate it to pick up the
   rename (pending follow-up).
 - Land-cover lookups (`lulc_lookup.csv`, `lcz_lookup.csv`) ship inside the
-  package at `hydroflow/data/` and are the config defaults.
-- Packaging lives in `pyproject.toml` (`hydroflow` dist, `hydroflow` console
+  package at `pymrr/data/` and are the config defaults.
+- Packaging lives in `pyproject.toml` (`pymrr` dist, `pymrr` console
   script, `[gpu]`/`[gee]` extras), plus `LICENSE` (MIT) and `MANIFEST.in`.
   Build with `python -m build`; `v0.1.0` is tagged (real PyPI upload pending).

@@ -9,9 +9,9 @@ brand-new basin from scratch).
 
 GEE datasets
 ------------
-    Any entry in ``hydroflow.gee.dem_catalog.DEM_CATALOG`` (NASADEM, SRTM,
+    Any entry in ``pymrr.gee.dem_catalog.DEM_CATALOG`` (NASADEM, SRTM,
     MERIT, ALOS AW3D30, Copernicus GLO-30, USGS 3DEP 1m, GMTED2010 — see
-    ``hydroflow.describe_available_dems()`` or ``hydroflow list-dems``), or a
+    ``pymrr.describe_available_dems()`` or ``pymrr list-dems``), or a
     raw GEE asset id for datasets outside the catalog.
 
 Downsamples with a real area-average (reduceResolution mean), not a naive
@@ -74,7 +74,7 @@ def download_dem(bbox_wgs84, target_crs_epsg, output_path, scale_m=None,
         Output pixel size in metres. None (default) uses the dataset's
         native resolution from the catalog.
     dataset : str
-        A catalog key from ``hydroflow.gee.dem_catalog`` (e.g. 'nasadem',
+        A catalog key from ``pymrr.gee.dem_catalog`` (e.g. 'nasadem',
         'merit', 'copernicus_glo30' — see ``list_dems()``/``describe_dems()``),
         or a raw GEE asset id (e.g. 'NASA/NASADEM_HGT/001') for datasets not
         in the catalog, in which case *band* must be given explicitly.
@@ -111,7 +111,7 @@ def download_dem(bbox_wgs84, target_crs_epsg, output_path, scale_m=None,
         if not band or not scale_m:
             raise ValueError(
                 f"'{dataset}' is not a known DEM catalog entry (see "
-                "hydroflow.list_available_dems()); pass both band= and "
+                "pymrr.list_available_dems()); pass both band= and "
                 "scale_m= explicitly to use a raw GEE asset id."
             )
         gee_id = dataset

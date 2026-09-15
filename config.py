@@ -4,12 +4,12 @@
 # model.  Values only — no logic.  Changing OUTPUT_DIR (§1) cascades to every
 # path derived from it.
 #
-# The model itself now lives in the pip-installable `hydroflow` package and is
-# configured with hydroflow.config.OpmConfig (YAML/JSON via the `hydroflow` CLI).
+# The model itself now lives in the pip-installable `pymrr` package and is
+# configured with pymrr.config.OpmConfig (YAML/JSON via the `pymrr` CLI).
 # This module is kept as the scenario file for the repository's research
 # workflows (tools/runner.py, tests/): they import it and pass it directly as
 # the cfg object — every core function accepts any object with these
-# attributes.  It also loads via `hydroflow run -c config.py`.
+# attributes.  It also loads via `pymrr run -c config.py`.
 #
 # Contents
 #   1.  Event & scenario          ← DEM, output folder, event timing, GEE

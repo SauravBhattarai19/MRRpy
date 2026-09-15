@@ -7,7 +7,7 @@ DEM by applying a user-supplied elevation rule.
 
 There's still no dedicated ``MANNINGS_N_SOURCE='elevation'`` config path for
 the *whole grid* — the existing ``'raster'`` source
-(``hydroflow.core.routing.surface.resolve_mannings_n``) already
+(``pymrr.core.routing.surface.resolve_mannings_n``) already
 reprojects/resamples an arbitrary GeoTIFF onto the routing grid via
 ``align_raster_to_dem`` and falls back bad values to ``MANNINGS_N``, so
 generating a Manning's-n GeoTIFF here and pointing ``MANNINGS_N_RASTER_PATH``

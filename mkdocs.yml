@@ -1,8 +1,8 @@
-site_name: hydroflow
-site_description: A distributed, physics-based hydrological + hydrodynamic model — rainfall-runoff generation and grid-based flood routing, driven by open satellite data.
-site_url: https://pyhydroflow.readthedocs.io/
-repo_url: https://github.com/SauravBhattarai19/hydroflow
-repo_name: hydroflow
+site_name: pymrr
+site_description: pymrr (Multi-Mechanism Runoff and Routing) — a distributed, physics-based hydrological + hydrodynamic model for rainfall-runoff generation and grid-based flood routing, driven by open satellite data.
+site_url: https://pymrr.readthedocs.io/
+repo_url: https://github.com/SauravBhattarai19/pymrr
+repo_name: pymrr
 docs_dir: docsite
 
 theme:
@@ -76,4 +76,4 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/SauravBhattarai19/hydroflow
+      link: https://github.com/SauravBhattarai19/pymrr

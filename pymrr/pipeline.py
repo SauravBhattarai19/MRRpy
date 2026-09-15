@@ -58,7 +58,7 @@ def stage_process_dem(cfg, log=print):
 
     If cfg.DEM_PATH is empty and cfg.DEM_BOUNDS_WGS84 is set, first downloads
     a DEM from Google Earth Engine (dataset = cfg.DEM_SOURCE) covering those
-    bounds and points cfg.DEM_PATH at it, so hydroflow/core/ stays GEE-free —
+    bounds and points cfg.DEM_PATH at it, so pymrr/core/ stays GEE-free —
     all Earth Engine access happens here in the orchestration layer.
     """
     from .core import dem_processing
@@ -80,7 +80,7 @@ def stage_process_dem(cfg, log=print):
         if not downloaded:
             raise RuntimeError(
                 "DEM auto-download from Google Earth Engine failed. Check: "
-                "'pip install hydroflow[gee]' is installed; GEE "
+                "'pip install pymrr[gee]' is installed; GEE "
                 "authentication (GOOGLE_APPLICATION_CREDENTIALS, or run "
                 "`earthengine authenticate`); GEE_PROJECT is set; and that "
                 "DEM_BOUNDS_WGS84 = (min_lon, min_lat, max_lon, max_lat) is "

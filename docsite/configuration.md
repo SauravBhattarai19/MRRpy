@@ -1,11 +1,11 @@
 # Configuration
 
-Every run is parameterised by a single [`Config`][hydroflow.Config] object. It
+Every run is parameterised by a single [`Config`][pymrr.Config] object. It
 is a plain mutable object with sensible, offline-friendly defaults — override
 only what you need, by keyword, attribute, or a config file.
 
 ```python
-from hydroflow import Config
+from pymrr import Config
 
 cfg = Config(DEM_PATH="dem.tif", BACKEND="gpu")   # keyword
 cfg.OUTPUT_DIR = "results/"                        # attribute
@@ -34,7 +34,7 @@ Config(PRECIP_METHOD="thiessen", ROUTING_SCHEME="muskingum")   # strings
 Config(PRECIP_METHOD=1,          ROUTING_SCHEME=2)             # codes — identical
 ```
 
-Discover them anytime with `hydroflow list-options` or
+Discover them anytime with `pymrr list-options` or
 `Config.describe_options()`:
 
 | Option | Codes |
@@ -124,7 +124,7 @@ for scheme in ["kinematic", "diffusive", "muskingum"]:   # or 0, 1, 2
 
 To apply an elevation rule to the **whole grid** (overland + channel cells
 alike), there's still no dedicated `MANNINGS_N_SOURCE` for elevation —
-instead, [`mannings_n_from_dem`][hydroflow.mannings_n_from_dem] generates a
+instead, [`mannings_n_from_dem`][pymrr.mannings_n_from_dem] generates a
 Manning's-n GeoTIFF from a DEM using an elevation rule (breakpoints, bins, or
 any callable), and you point the existing `MANNINGS_N_SOURCE="raster"` at it.
 See [Examples #4](examples.md#4-mannings-n-by-elevation) for a full
@@ -144,7 +144,7 @@ for the rule-based forms. See
 `ROUTING_INFLOW_BC` injects an external discharge hydrograph Q(t) at one or
 more cells — lat/lon (auto-reprojected and snapped to the nearest channel
 cell), row/col, or easting/northing; see the attribute's docstring in
-`hydroflow/config.py` for the full spec. Set `RAIN_INTENSITY_MM_HR=0` for
+`pymrr/config.py` for the full spec. Set `RAIN_INTENSITY_MM_HR=0` for
 pure routing driven only by the boundary condition. See
 [Examples #3](examples.md#3-add-an-upstream-boundary-condition-hydrograph).
 
@@ -165,9 +165,9 @@ call. Do this once, then every example in this documentation just works:
    `my-project-id`, visible on the Cloud Console dashboard) is what
    `GEE_PROJECT` needs.
 3. **Authenticate** — pick one:
-    - **Interactive (local dev / notebooks):** `pip install hydroflow[gee]`
+    - **Interactive (local dev / notebooks):** `pip install pymrr[gee]`
       installs the `earthengine-api` CLI too — run `earthengine authenticate`
-      once; it opens a browser and caches credentials locally. hydroflow also
+      once; it opens a browser and caches credentials locally. pymrr also
       triggers this automatically on first use if nothing else is
       configured.
     - **Service account (servers / CI / headless):** create a service
@@ -181,7 +181,7 @@ call. Do this once, then every example in this documentation just works:
    ```
    (or pass it explicitly per run: `Config(GEE_PROJECT="my-project-id", ...)`).
 
-hydroflow tries credentials in this order: `GOOGLE_APPLICATION_CREDENTIALS` →
+pymrr tries credentials in this order: `GOOGLE_APPLICATION_CREDENTIALS` →
 a `key.json` next to the package/repo root/cwd → cached default credentials
 from a prior `earthengine authenticate` → the interactive flow as a last
 resort. `Config.validate()` errors early if a GEE-backed option is selected
@@ -189,21 +189,21 @@ without `GEE_PROJECT` set, so offline runs never surprise you.
 
 ## No local DEM? Auto-download from Earth Engine
 
-If you don't have a DEM for your basin yet, hydroflow can fetch one from
+If you don't have a DEM for your basin yet, pymrr can fetch one from
 Google Earth Engine instead of requiring a local `DEM_PATH`. Browse the
 available datasets — this needs no `[gee]` install, it's static catalog
 metadata:
 
 ```python
-import hydroflow
-print(hydroflow.describe_available_dems())
+import pymrr
+print(pymrr.describe_available_dems())
 # or, programmatically:
-for d in hydroflow.list_available_dems():
+for d in pymrr.list_available_dems():
     print(d["id"], d["title"], d["resolution_m"], d["bbox"])
 ```
 
 ```bash
-hydroflow list-dems
+pymrr list-dems
 ```
 
 | Key | Dataset | Resolution | Coverage |
@@ -221,7 +221,7 @@ download, in `(min_lon, min_lat, max_lon, max_lat)` EPSG:4326 coordinates)
 and optionally `DEM_SOURCE`:
 
 ```python
-from hydroflow import Config, run_pipeline
+from pymrr import Config, run_pipeline
 
 cfg = Config(
     DEM_BOUNDS_WGS84=(85.25, 27.60, 85.34, 27.67),   # (min_lon, min_lat, max_lon, max_lat)
@@ -252,4 +252,4 @@ The `process_dem` stage downloads the DEM (cached to
 `{OUTPUT_DIR}/raw_dem_gee.tif` — re-runs skip the download if it already
 exists), area-averages/reprojects it to `TARGET_CRS_EPSG`, and proceeds with
 watershed delineation exactly as it would with a local file. Requires
-`pip install hydroflow[gee]` and Earth Engine authentication (see above).
+`pip install pymrr[gee]` and Earth Engine authentication (see above).

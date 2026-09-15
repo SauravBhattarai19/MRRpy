@@ -62,7 +62,7 @@ class TestRunnerCPU:
         Run a 6-hour simulation (uniform rain, vsa_opm runoff, CPU) and
         verify the hydrograph CSV is written with the expected columns.
         """
-        from hydroflow.core.routing import router as kwr
+        from pymrr.core.routing import router as kwr
 
         cfg = OpmConfig(
             ROUTING_DEM_PATH=os.path.join(_OPM_ROOT, "output", "clipped_dem.tif"),
@@ -104,7 +104,7 @@ class TestRunnerThiessen:
     """Test Thiessen precipitation with vsa_opm runoff."""
 
     def test_thiessen_vsa_opm_routing(self, tmp_path):
-        from hydroflow.core.routing import router as kwr
+        from pymrr.core.routing import router as kwr
 
         flood03 = os.path.join(_OPM_ROOT, "test_data", "opm_format", "FLOOD_03")
         cfg = OpmConfig(

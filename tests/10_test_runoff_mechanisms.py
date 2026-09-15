@@ -4,7 +4,7 @@ tests/10_test_runoff_mechanisms.py
 Verification tests for the composable, process-based runoff generator
 (RUNOFF_SOURCE='physical') and its three mechanisms
 (impervious / infiltration_excess / saturation_excess) in
-hydroflow/core/runoff/{physical,mechanisms}.py.
+pymrr/core/runoff/{physical,mechanisms}.py.
 
 Uses a small synthetic grid built in-memory (an 8-cell chain) plus two tiny
 on-disk rasters — no real watershed, no Earth Engine — so these checks isolate
@@ -41,8 +41,8 @@ from rasterio.transform import from_origin
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from hydroflow import Config
-from hydroflow.core.runoff import RunoffEngine, MECHANISM_REGISTRY, register_mechanism
+from pymrr import Config
+from pymrr.core.runoff import RunoffEngine, MECHANISM_REGISTRY, register_mechanism
 
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"

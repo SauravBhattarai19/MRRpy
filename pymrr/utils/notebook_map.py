@@ -6,14 +6,14 @@ Jupyter-only interactive bounding-box picker, for drawing ``DEM_BOUNDS_WGS84``
 on a map instead of typing coordinates by hand. Not usable from a plain
 ``.py`` script or the CLI — it needs a live ipywidgets/ipyleaflet frontend.
 
-Requires the ``notebook`` extra: ``pip install hydroflow[notebook]``
+Requires the ``notebook`` extra: ``pip install pymrr[notebook]``
 (geemap, ipyleaflet, ipywidgets) — kept separate from the ``gee`` extra so
 headless/script users doing scripted GEE downloads aren't forced into the
 widget stack.
 
 Usage (in a Jupyter cell)::
 
-    from hydroflow.utils.notebook_map import pick_bounds_map, get_drawn_bounds
+    from pymrr.utils.notebook_map import pick_bounds_map, get_drawn_bounds
 
     m = pick_bounds_map(center=(27.7, 85.3), zoom=9)
     m   # display the map, draw a rectangle with the toolbar
@@ -31,7 +31,7 @@ def _require_geemap():
     except ImportError as exc:
         raise ImportError(
             "Interactive map picking needs the notebook extra: "
-            "pip install hydroflow[notebook]"
+            "pip install pymrr[notebook]"
         ) from exc
 
 
@@ -59,7 +59,7 @@ def pick_bounds_map(center=(27.7, 85.3), zoom=9, **kwargs):
     ------
     ImportError
         If geemap/ipyleaflet/ipywidgets aren't installed
-        (``pip install hydroflow[notebook]``).
+        (``pip install pymrr[notebook]``).
     """
     geemap = _require_geemap()
     kwargs.setdefault("ee_initialize", False)

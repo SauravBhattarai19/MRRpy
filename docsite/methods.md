@@ -1,13 +1,13 @@
 # Methods
 
-hydroflow separates **runoff generation** (turning rainfall into effective
+pymrr separates **runoff generation** (turning rainfall into effective
 surface runoff) from **flood routing** (moving that water across the terrain to
 the outlet). The two are independent, so *any* runoff method can feed *any*
 routing scheme — pick one of each.
 
 Every fixed-choice option accepts its canonical **string** or a 0-based
 **integer code** (they are equivalent). List them anytime with
-`hydroflow list-options` or `Config.describe_options()`.
+`pymrr list-options` or `Config.describe_options()`.
 
 ```python
 Config(RUNOFF_SOURCE="scs_cn",  ROUTING_SCHEME="diffusive")   # strings
@@ -161,6 +161,6 @@ the [Configuration](configuration.md) reference for every parameter and the
 
 !!! tip "Add your own runoff method"
     Runoff generation is pluggable: you can register a brand-new `RUNOFF_SOURCE`
-    from your own package without editing hydroflow. See the
+    from your own package without editing pymrr. See the
     [API reference](api.md) for the `@register` decorator and the `RunoffMode`
     contract.

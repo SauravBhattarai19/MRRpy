@@ -7,9 +7,9 @@ curated for watershed/hydrology work.
 
 Listing the catalog (`list_dems`, `describe_dems`, `get_dem_info`) is plain
 metadata with no dependency on `earthengine-api` — safe to import and call
-even without `pip install hydroflow[gee]`, so users can browse options before
+even without `pip install pymrr[gee]`, so users can browse options before
 deciding whether to install the extra. Only the actual download
-(`hydroflow.gee.dem_gee.download_dem`) needs GEE auth.
+(`pymrr.gee.dem_gee.download_dem`) needs GEE auth.
 
 Each entry approximates a STAC collection record (id, title, description,
 spatial extent bbox) trimmed to what a DEM download needs: the GEE asset id,
@@ -128,10 +128,10 @@ def list_dems():
 
 
 def describe_dems():
-    """Human-readable table of the catalog (used by `hydroflow list-dems`)."""
+    """Human-readable table of the catalog (used by `pymrr list-dems`)."""
     lines = [
         "Available DEM sources (Google Earth Engine — requires "
-        "'pip install hydroflow[gee]' + authentication to download):",
+        "'pip install pymrr[gee]' + authentication to download):",
         "",
     ]
     for key, meta in DEM_CATALOG.items():
@@ -156,7 +156,7 @@ def get_dem_info(name):
     if key not in DEM_CATALOG:
         raise KeyError(
             f"Unknown DEM source '{name}'. Available: {', '.join(DEM_CATALOG)}. "
-            "See hydroflow.describe_available_dems() for details."
+            "See pymrr.describe_available_dems() for details."
         )
     return dict(id=key, **DEM_CATALOG[key])
 

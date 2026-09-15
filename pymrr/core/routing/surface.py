@@ -44,7 +44,7 @@ def resolve_mannings_n(cfg, grid_data):
       str (file path)               – channel-only Manning's-n raster (resampled)
 
     The elevation-bin/breakpoint/callable forms reuse
-    ``hydroflow.utils.terrain_rules.apply_elevation_rule`` and are evaluated
+    ``pymrr.utils.terrain_rules.apply_elevation_rule`` and are evaluated
     directly against ``grid_data['dem_1d']`` — no intermediate raster file is
     needed (contrast with ``mannings_n_from_dem``, which writes a whole-grid
     raster for use via ``MANNINGS_N_SOURCE='raster'``).

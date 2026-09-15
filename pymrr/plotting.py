@@ -12,7 +12,7 @@ a Config object (its OUTPUT_DIR / derived-path attributes are used). Every
 function returns ``(fig, ax)`` and accepts an optional ``ax=`` to draw into
 caller-provided axes, matplotlib convention.
 
-matplotlib/rasterio/geopandas/pandas are hard dependencies of hydroflow, so
+matplotlib/rasterio/geopandas/pandas are hard dependencies of pymrr, so
 these imports are unconditional — no optional-dependency handling needed.
 """
 

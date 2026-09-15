@@ -16,7 +16,7 @@ PROGRESSIVE DISCLOSURE — only the fields for the checked mechanisms are shown:
 
 Activating infiltration_excess both reports Hortonian runoff AND caps the VSA
 sandbox recharge by infiltration capacity — there is no longer a separate
-"sandbox recharge" toggle (see hydroflow/core/runoff/physical.py).
+"sandbox recharge" toggle (see pymrr/core/runoff/physical.py).
 """
 
 from qgis.PyQt.QtWidgets import (

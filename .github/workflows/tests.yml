@@ -24,7 +24,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install hydroflow (core) + test deps
+      - name: Install pymrr (core) + test deps
         run: |
           python -m pip install --upgrade pip
           pip install -e .
@@ -32,7 +32,7 @@ jobs:
 
       - name: Show environment
         run: |
-          python -c "import hydroflow, numpy, rasterio, pysheds, pyflwdir; print('hydroflow', hydroflow.__version__)"
+          python -c "import pymrr, numpy, rasterio, pysheds, pyflwdir; print('pymrr', pymrr.__version__)"
 
       - name: Run test suite
         run: pytest -v

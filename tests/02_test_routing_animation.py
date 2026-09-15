@@ -38,9 +38,9 @@ import rasterio
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
-from hydroflow.core import routing as ru
-from hydroflow.core import precip as pi
-from hydroflow.core.routing.router import initialise_grid
+from pymrr.core import routing as ru
+from pymrr.core import precip as pi
+from pymrr.core.routing.router import initialise_grid
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SETTINGS

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-hydroflow.core.runoff — rainfall → effective-runoff generation.
+pymrr.core.runoff — rainfall → effective-runoff generation.
 
 Modules
 -------

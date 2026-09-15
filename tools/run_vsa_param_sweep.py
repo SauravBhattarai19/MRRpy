@@ -33,7 +33,7 @@ Fixed for every run in this study:
 Why 'horton'-only skips the SD_min/Ksat/SD_max cross-product
 --------------------------------------------------------------
 When 'vsa' is absent from RUNOFF_MECHANISMS the OPM sandbox is never built
-(hydroflow/core/runoff/vsa.py: `if not self._vsa_on: ... return`) — the VSA mask
+(pymrr/core/runoff/vsa.py: `if not self._vsa_on: ... return`) — the VSA mask
 stays permanently empty.  SD_min, VSA_K_SAT and SD_max only affect that sandbox,
 so for the 'horton'-only subset all 27 (3×3×3) combinations would produce an
 IDENTICAL result.  This script runs 'horton'-only once per routing scheme

@@ -2,28 +2,28 @@
 """
 main.py
 =======
-The ``hydroflow`` command-line interface.
+The ``pymrr`` command-line interface.
 
 Commands
 --------
-    hydroflow run -c config.yaml [--stages process_dem routing]
+    pymrr run -c config.yaml [--stages process_dem routing]
         Run the pipeline with the given config file (YAML, JSON or a legacy
         flat python settings module).
 
-    hydroflow init-config [-o config.yaml]
+    pymrr init-config [-o config.yaml]
         Write a template config file with every parameter at its default,
         ready to edit.
 
-    hydroflow validate -c config.yaml
+    pymrr validate -c config.yaml
         Load the config file and run the pre-flight sanity checks without
         starting a simulation.
 
-    hydroflow list-options
+    pymrr list-options
         Print every fixed-choice option with its integer codes (each option
         accepts the string or the code, e.g. PRECIP_METHOD: uniform ≡ 0).
 
-    hydroflow list-dems
-        Print every DEM dataset hydroflow can auto-download from Google Earth
+    pymrr list-dems
+        Print every DEM dataset pymrr can auto-download from Google Earth
         Engine (dataset id, resolution, coverage) — set DEM_SOURCE to one of
         these keys.
 """
@@ -52,9 +52,9 @@ def _cmd_init_config(args):
     path = cfg.save(args.output)
     print(f"Template config written to: {path}")
     print("Edit at least DEM_PATH, OUTPUT_POINT, TARGET_CRS_EPSG and OUTPUT_DIR, then:")
-    print(f"  hydroflow run -c {path}")
+    print(f"  pymrr run -c {path}")
     print("Tip: fixed-choice options accept a string or an integer code "
-          "(see 'hydroflow list-options').")
+          "(see 'pymrr list-options').")
     return 0
 
 
@@ -82,8 +82,8 @@ def _cmd_list_dems(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="hydroflow",
-        description="hydroflow — distributed hydrological + hydrodynamic model "
+        prog="pymrr",
+        description="pymrr — distributed hydrological + hydrodynamic model "
                     "(VSA-OPM; Pradhan & Ogden 2010).",
     )
     sub = parser.add_subparsers(dest="command", required=True)

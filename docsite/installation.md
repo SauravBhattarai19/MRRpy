@@ -1,9 +1,9 @@
 # Installation
 
-hydroflow is a pure-Python package (Python 3.9+). Install it from PyPI:
+pymrr is a pure-Python package (Python 3.9+). Install it from PyPI:
 
 ```bash
-pip install hydroflow
+pip install pymrr
 ```
 
 ## Optional extras
@@ -14,7 +14,7 @@ pip install hydroflow
     is present — the GPU is used only when `BACKEND="gpu"` **and** CuPy imports.
 
     ```bash
-    pip install "hydroflow[gpu]"
+    pip install "pymrr[gpu]"
     ```
 
 === "Google Earth Engine"
@@ -24,22 +24,22 @@ pip install hydroflow
     settings run fully offline.
 
     ```bash
-    pip install "hydroflow[gee]"
+    pip install "pymrr[gee]"
     ```
 
 === "From source"
 
     ```bash
-    git clone https://github.com/SauravBhattarai19/hydroflow
-    cd hydroflow
+    git clone https://github.com/SauravBhattarai19/pymrr
+    cd pymrr
     pip install .            # or pip install -e . for a live checkout
     ```
 
 ## Verify
 
 ```bash
-python -c "import hydroflow; print(hydroflow.__version__)"
-hydroflow --help
+python -c "import pymrr; print(pymrr.__version__)"
+pymrr --help
 ```
 
 ## Dependencies
@@ -58,9 +58,9 @@ prebuilt wheels for the geospatial libraries — no system GDAL required.
     conda/venv environment with Python 3.10, 3.11, or 3.12 instead:
 
     ```bash
-    conda create -n hydroflow-env python=3.11 -y
-    conda activate hydroflow-env
-    pip install hydroflow
+    conda create -n pymrr-env python=3.11 -y
+    conda activate pymrr-env
+    pip install pymrr
     ```
 
 !!! tip "Earth Engine authentication"

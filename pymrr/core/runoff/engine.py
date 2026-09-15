@@ -9,7 +9,7 @@ transforming raw rainfall into effective surface runoff based on the selected
 mode.  Each mode is a small self-contained ``RunoffMode`` subclass that
 registers itself under a name via the ``@register`` decorator, so a method can
 be *plugged in / plugged out* from one place — including from a third-party
-package (``from hydroflow.core.runoff import register``) without editing this
+package (``from pymrr.core.runoff import register``) without editing this
 file.
 
 Built-in modes (set via ``config.RUNOFF_SOURCE``):

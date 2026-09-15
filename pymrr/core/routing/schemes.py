@@ -25,7 +25,7 @@ loop; adding one that reuses an existing kernel with different traits is just a
 new ``RoutingScheme`` entry.
 
 The scheme *names* must match the ``ROUTING_SCHEME`` entries in
-``hydroflow.config._ENUM_CHOICES`` (that registry drives config validation and
+``pymrr.config._ENUM_CHOICES`` (that registry drives config validation and
 the integer option codes; this one drives runtime dispatch).
 """
 

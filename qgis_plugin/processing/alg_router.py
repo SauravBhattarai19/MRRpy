@@ -288,8 +288,8 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
 
         ensure_core()
 
-        from hydroflow.config import OpmConfig
-        from hydroflow.core.routing import router as kwr
+        from pymrr.config import OpmConfig
+        from pymrr.core.routing import router as kwr
 
         # ── Build config ──────────────────────────────────────────────────────
         cfg = OpmConfig()
