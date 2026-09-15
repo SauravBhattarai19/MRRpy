@@ -18,11 +18,11 @@ authors:
     affiliation: 1
   - name: Nawa Raj Pradhan
     orcid: 0000-0001-5210-0896
-    corresponding: true
+    corresponding: false
     affiliation: 2
   - name: Rocky Talchabhadel
     orcid: 0000-0003-0526-7663
-    corresponding: true
+    corresponding: false
     affiliation: 1
 affiliations:
   - name: Department of Civil and Environmental Engineering, Jackson State University, Jackson, MS, USA
