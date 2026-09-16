@@ -83,6 +83,32 @@ def mannings_discharge(depth, slope, n, width, chan_mask, cell_size, xp):
     return Q, A_xs
 
 
+def local_inertial_update(Q_inertia, Q_fric, A_xs, R, S, n, dt, xp, g=9.81):
+    """
+    One local-inertial (LISFLOOD-FP) momentum update per face, with de Almeida &
+    Bates (2013) flux centering for stability.
+
+    Keeps the local acceleration term ∂Q/∂t (dropped by kinematic/diffusive) so a
+    sharp wave propagates at the true dynamic-wave celerity √(gh)+u and is preserved
+    (no numerical diffusion, no MC coefficient damping).  ``Q_inertia`` is the
+    *centered* previous flux q* = θ·q_i + (1−θ)/2·(q_up + q_down) — the de Almeida
+    stabilisation that suppresses the checkerboard oscillation the original Bates
+    (θ=1) scheme suffers.  Friction is semi-implicit on the own-face flux ``Q_fric``,
+    which also caps velocity physically (high |Q| grows the denominator):
+
+        Q_{t+dt} = (q* + g·A·dt·S) / (1 + g·dt·n²·|q_i| / (A·R^{4/3}))
+
+    S is the (signed) water-surface slope, POSITIVE downhill (caller's convention
+    S = (WSE_i − WSE_ds)/Δx), so the pressure term ACCELERATES downstream flow.  A is
+    the flow area, R the hydraulic radius over the flow-depth-above-the-higher-bed.
+    Mass is conserved by the caller's volume ledger (Q·dt scattered downstream).
+    """
+    num = Q_inertia + g * A_xs * dt * S
+    den = 1.0 + g * dt * (n * n) * xp.abs(Q_fric) \
+        / xp.maximum(A_xs * R ** (4.0 / 3.0), 1e-30)
+    return num / den
+
+
 def diffusive_wave_discharge(depth, dem, dist, slope_bnd, n, ds_safe, valid_ds,
                              theta, cell_size, xp, min_depth, width, chan_mask):
     """

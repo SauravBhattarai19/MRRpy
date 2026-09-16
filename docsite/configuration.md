@@ -43,7 +43,7 @@ Discover them anytime with `pymrr list-options` or
 | `RUNOFF_SOURCE` | `0` none · `1` coefficient · `2` raster · `3` scs_cn · `4` physical |
 | `RUNOFF_CN_SOURCE` | `0` scalar · `1` gee · `2` raster |
 | `RUNOFF_CN_AMC` | `0` i (dry) · `1` ii (normal) · `2` iii (wet) |
-| `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum |
+| `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum · `3` dynamic |
 | `DELINEATION_ENGINE` | `0` pysheds · `1` pyflwdir |
 | `BACKEND` | `0` cpu · `1` gpu |
 | `GPU_PRECISION` | `0` float64 · `1` float32 |
@@ -138,6 +138,19 @@ dict of bins, or a callable), or to a `dict{strahler_order: n}`, or to a path
 to a pre-computed channel-only raster. No intermediate raster file is needed
 for the rule-based forms. See
 [Examples #4b](examples.md#4b-lulc-overland-elevation-rule-channels).
+
+## Routing numerics & precipitation phase
+
+| Parameter | Meaning | Default |
+|---|---|---|
+| `DYNAMIC_FLUX_THETA` | de Almeida flux-centering weight for `ROUTING_SCHEME="dynamic"` (1.0 = original Bates, oscillation-prone; 0.6–0.9 damps it) | `0.8` |
+| `FLUX_LIMITER` | volume-conservative `Q ≤ V/dt` clip for kinematic/diffusive/dynamic (off only with a CFL-safe dt) | `True` |
+| `MANNING_SLOPE_CAP` | cap the friction slope (m/m) used in Manning velocity/celerity, bounding unphysical celerity on near-vertical cells; `None` = uncapped | `None` |
+| `RAIN_SNOW_ELEV_LOW` / `RAIN_SNOW_ELEV_HIGH` | rain/snow partition: precip is all rain ≤ LOW, all snow (excluded from runoff) ≥ HIGH, linear between; both `None` = all rain | `None` |
+| `ADAPTIVE_TIMESTEP`, `CFL_TARGET`, `CFL_DT_MAX/MIN` | adaptive celerity-CFL time stepping | on, 0.85, … |
+
+See [Methods → Routing](methods.md#routing-routing_scheme) for when to use each
+scheme, and the [Nepal flood example](examples-nepal.md) for a GLOF dynamic-wave run.
 
 ## Boundary conditions
 

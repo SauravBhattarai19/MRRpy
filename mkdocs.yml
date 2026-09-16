@@ -38,6 +38,7 @@ nav:
   - Installation: installation.md
   - Quickstart: quickstart.md
   - Examples: examples.md
+  - Nepal flood example: examples-nepal.md
   - Methods: methods.md
   - Configuration: configuration.md
   - CLI: cli.md

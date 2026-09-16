@@ -123,13 +123,14 @@ runoff. A worked, everything-on run is [Examples #5](examples.md#5-capstone-ever
 
 ## Routing (`ROUTING_SCHEME`)
 
-Three interchangeable channel-routing schemes run on the D8 drainage network:
+Four interchangeable channel-routing schemes run on the D8 drainage network:
 
 | Scheme | Code | What it is | Reach for it when… |
 |---|---|---|---|
 | `kinematic` | 0 | kinematic wave (Manning on bed slope) | steep terrain; fastest; no backwater |
 | `diffusive` | 1 | diffusive wave (water-surface slope) | mild slopes / backwater matter |
 | `muskingum` | 2 | variable-parameter Muskingum–Cunge | channel routing with matched diffusion |
+| `dynamic` | 3 | local-inertial dynamic wave (LISFLOOD-FP style) | sharp surges: GLOF / dam-break routing |
 
 ### `kinematic`
 Discharge from Manning's equation on the **bed** slope. The lightest, fastest
@@ -146,11 +147,31 @@ Variable-parameter Muskingum–Cunge (Ponce–Yevjevich): the routing coefficien
 are tuned so the scheme's numerical diffusion matches the reach's physical
 hydraulic diffusivity.
 
+### `dynamic`
+Local-inertial dynamic wave (LISFLOOD-FP / Bates et al. 2010, with de Almeida
+2012 flux-centering). It keeps the local acceleration term ∂Q/∂t, so a **sharp
+surge propagates at the true dynamic-wave celerity √(gh)+u and is preserved** —
+where the kinematic scheme diffuses it away and Muskingum–Cunge damps it out.
+Its semi-implicit friction also bounds velocity physically on steep cells (no
+artificial slope cap needed). Use it for **shock-like flood waves — glacial-lake
+outburst floods (GLOFs), dam breaks, sudden reservoir releases** — typically
+with an inflow boundary condition (`ROUTING_INFLOW_BC`) and no rainfall.
+`DYNAMIC_FLUX_THETA` (default 0.8) is the de Almeida flux-centering weight;
+lower it (0.6–0.8) to damp residual oscillation, at the cost of some sharpness.
+
 !!! note "Shared routing machinery"
-    All three schemes use the same adaptive CFL time-stepping, a
-    volume-conservative flux limiter, and always-on mass-balance reporting — so
-    results from different schemes are directly comparable on the same terrain and
-    forcing.
+    All four schemes use the same adaptive CFL time-stepping and always-on
+    mass-balance reporting, so results are directly comparable on the same terrain
+    and forcing. `kinematic`/`diffusive`/`dynamic` share a **volume-conservative
+    flux limiter** (`FLUX_LIMITER=True`, toggleable) and an optional **Manning
+    slope cap** (`MANNING_SLOPE_CAP`, m/m) that bounds unphysical celerity on
+    near-vertical cells; Muskingum–Cunge uses its own outflow-state update.
+
+!!! tip "Rain/snow partition for high-relief basins"
+    In basins that reach the freezing level, set `RAIN_SNOW_ELEV_LOW` /
+    `RAIN_SNOW_ELEV_HIGH` (m) to treat precipitation above the snow line as snow
+    (excluded from event runoff), ramping linearly between the two elevations.
+    Both `None` (default) = all precipitation is rain.
 
 ## Selecting a method
 

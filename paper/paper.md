@@ -58,11 +58,14 @@ merged without double-counting, with each mechanism's contribution tracked
 separately. The registry is deliberately open: a `@register` decorator lets a
 third-party package contribute an entirely new runoff method without modifying
 `pymrr`, so further established schemes can be added as needed. The routing
-layer provides three interchangeable numerical schemes on the D8 drainage
-network — kinematic-wave, diffusive-wave, and variable-parameter Muskingum–Cunge
-[@cunge1969; @ponce1978] — with adaptive time-stepping and always-on
-mass-balance verification, so different process representations and routing
-numerics can be compared on identical terrain and forcing.
+layer is a parallel open registry providing four interchangeable numerical
+schemes on the D8 drainage network — kinematic-wave, diffusive-wave,
+variable-parameter Muskingum–Cunge [@cunge1969; @ponce1978], and a
+local-inertial dynamic wave [@bates2010; @dealmeida2012] that preserves sharp
+surges (e.g. glacial-lake-outburst or dam-break fronts) which the diffusive
+schemes smear — with adaptive time-stepping and always-on mass-balance
+verification, so different process representations and routing numerics can be
+compared on identical terrain and forcing.
 
 The scientific core is pure NumPy/SciPy/rasterio [@harris2020], with an optional
 CuPy GPU backend that falls back to the CPU automatically. A single
@@ -80,7 +83,8 @@ one routing solver behind a monolithic interface. This makes a common and
 important task awkward: holding the terrain, forcing, and numerics fixed while
 varying a *single* modeling choice — for example, testing whether
 saturation-excess or infiltration-excess dominates a catchment's response, or how
-a kinematic, diffusive, or Muskingum–Cunge router changes the simulated peak. The
+a kinematic, diffusive, Muskingum–Cunge, or local-inertial dynamic-wave router
+changes the simulated peak. The
 tools most trusted in engineering practice — HEC-HMS/HEC-RAS, TUFLOW, and
 comparable commercial packages — are largely closed-source and GUI-centric, and
 are hard to script or embed in a reproducible pipeline. Powerful open-source
@@ -165,9 +169,14 @@ Its main capabilities include:
   channel rules (per Strahler order, elevation bands or breakpoints, a callable,
   or a raster), with optional order-based channel cross-sections.
 - **Routing:** kinematic, diffusive (with a tunable kinematic-to-diffusion
-  blend), or Muskingum–Cunge, on fixed or adaptive-CFL time steps, with a
-  volume-conservative flux limiter and always-on mass-balance and per-mechanism
-  runoff accounting logged one row per run for side-by-side comparison.
+  blend), Muskingum–Cunge, or a local-inertial dynamic wave (with de Almeida
+  flux-centering, for shock-preserving GLOF/dam-break surges), on fixed or
+  adaptive-CFL time steps, with an optional volume-conservative flux limiter, an
+  optional Manning slope cap for steep terrain, and always-on mass-balance and
+  per-mechanism runoff accounting logged one row per run for side-by-side
+  comparison.
+- **Precipitation phase:** an optional elevation-based rain/snow partition
+  excludes snow-zone precipitation from event runoff in high-relief basins.
 - **Terrain and DEM:** delineation with pysheds or pyflwdir, and automatic DEM
   download from a browsable seven-source global catalog (NASADEM, SRTM, MERIT,
   ALOS, Copernicus GLO-30, USGS 3DEP, GMTED2010) at a chosen resolution.
@@ -190,7 +199,7 @@ and `[notebook]` extras, is licensed under MIT, and supports Python 3.9–3.12.
 Documentation is published on Read the Docs, and a separate free interactive
 course explains the underlying physics. Quality is supported by an automated
 `pytest` suite — covering the configuration contract, each runoff method,
-mechanism composition, all three routing schemes, raster reprojection, and
+mechanism composition, all four routing schemes, raster reprojection, and
 end-to-end mass-balance closure — run in continuous integration across Python
 3.9–3.12, alongside standalone verification scripts that double as reproducible
 demos of each major feature.

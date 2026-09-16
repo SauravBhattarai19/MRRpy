@@ -39,6 +39,7 @@ class RoutingScheme:
     label: str                              # printed at run start (may use {theta})
     rate_based: bool = False                # Muskingum–Cunge: state is outflow rate
     needs_water_surface_slope: bool = False  # diffusion wave: water-surface slope
+    momentum_state: bool = False            # local-inertial: carries per-face discharge (∂Q/∂t)
 
     def describe(self, theta=1.0):
         """The run-start log line, with the diffusion weight substituted in."""
@@ -69,6 +70,13 @@ register_scheme(RoutingScheme(
     label="MUSKINGUM–CUNGE (variable-parameter; physical diffusion "
           "D=Q/(2BS₀), grid-independent)",
     rate_based=True,
+))
+register_scheme(RoutingScheme(
+    name="dynamic",
+    label="DYNAMIC wave (local-inertial / LISFLOOD-FP; ∂Q/∂t + surface "
+          "slope + semi-implicit friction — shock-preserving)",
+    needs_water_surface_slope=True,   # uses WSE gradient + h-over-higher-bed geometry
+    momentum_state=True,              # persists per-face Q across steps
 ))
 
 

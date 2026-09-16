@@ -101,6 +101,12 @@ def initialise_grid(cfg):
 
     # --- Extract 1-D arrays in topological order (fast indexing) ---
     slope_1d  = slope_2d[s_rows, s_cols]       # slope at each active cell [m/m]
+    _slope_cap = getattr(cfg, 'MANNING_SLOPE_CAP', None)
+    if _slope_cap is not None:                  # bound unphysical steep-cell celerity
+        _n_capped = int((slope_1d > float(_slope_cap)).sum())
+        slope_1d = np.minimum(slope_1d, float(_slope_cap))
+        print(f"  Slope cap      |  S <= {float(_slope_cap):.3f} m/m  "
+              f"({_n_capped:,}/{len(slope_1d):,} cells capped)")
     faccum_1d = faccum[s_rows, s_cols]         # flow accumulation [cell count] for VSA/OPM
     cell_area = cell_size ** 2                  # [m²]  (same for every cell)
 
@@ -254,6 +260,27 @@ def run_time_loop(grid_data, cfg):
     precip_engine  = grid_data["precip_engine"]
     runoff_engine  = grid_data.get("runoff_engine")   # None when RUNOFF_SOURCE='none'
     inflow_bc      = grid_data.get("inflow_bc")       # None when no upstream BC
+    _flux_limiter  = bool(getattr(cfg, "FLUX_LIMITER", True))  # kinematic/diffusive Q<=V/dt clip
+
+    # ── Optional rain/snow elevation partition ───────────────────────────────
+    # Scale precip per cell by a rain fraction ramping 1.0 (<= LOW) → 0.0
+    # (>= HIGH); snow-zone precip is excluded from event runoff.  None → off.
+    rain_frac_1d = None
+    _sn_lo = getattr(cfg, 'RAIN_SNOW_ELEV_LOW', None)
+    _sn_hi = getattr(cfg, 'RAIN_SNOW_ELEV_HIGH', None)
+    if _sn_lo is not None or _sn_hi is not None:
+        _xp = grid_data["xp"]
+        lo = float(_sn_lo) if _sn_lo is not None else float(_sn_hi)
+        hi = float(_sn_hi) if _sn_hi is not None else float(_sn_lo)
+        if hi <= lo:
+            rain_frac_1d = _xp.where(dem_1d >= hi, 0.0, 1.0)
+        else:
+            rain_frac_1d = _xp.clip((hi - dem_1d) / (hi - lo), 0.0, 1.0)
+        rain_frac_1d = rain_frac_1d.astype(dem_1d.dtype)
+        _full = int((rain_frac_1d <= 0.0).sum())
+        _part = int((rain_frac_1d < 1.0).sum())
+        print(f"  Rain/snow      |  rain<={lo:.0f}m  snow>={hi:.0f}m  |  "
+              f"{_full:,} snow-only, {_part:,} reduced / {n_cells:,} cells")
 
     # Optional spatiotemporal field recorder (depth/velocity/discharge over time)
     recorder = None
@@ -296,6 +323,14 @@ def run_time_loop(grid_data, cfg):
     I_prev_1d    = xp.zeros(n_cells, dtype=_dtype)    # [m³/s] inflow rate previous step
     _dt_prev_mc  = cfg.TIME_STEP_SECONDS              # [s] seeds I₂ recovery on step 0
     _mc_neg_max  = xp.zeros((), dtype=_dtype)         # peak negative-outflow fraction
+
+    # Local-inertial (dynamic wave) extra state: the per-face discharge carried
+    # across steps so the ∂Q/∂t term has memory.  Unused by other schemes.
+    _dyn         = scheme_desc.momentum_state
+    Q_face_1d    = xp.zeros(n_cells, dtype=_dtype)    # [m³/s] downstream-face discharge
+    _dt_prev_dyn = cfg.TIME_STEP_SECONDS             # [s] for upstream-inflow-rate centering
+    _dyn_theta   = float(getattr(cfg, 'DYNAMIC_FLUX_THETA', 0.8))  # de Almeida centering weight
+    _GRAV        = 9.81
 
     hydrograph = []  # list of (time_seconds, Q_m3s) — Python floats
 
@@ -402,6 +437,8 @@ def run_time_loop(grid_data, cfg):
 
         # ── 1. Rainfall array for this step ──────────────────────────────────
         rain_1d = precip_engine.get_field_1d(t_seconds)   # [m/s], (n_cells,)
+        if rain_frac_1d is not None:
+            rain_1d = rain_1d * rain_frac_1d              # exclude snow-zone precip
 
         # ── 1b. Upstream inflow boundary condition (point discharge) ─────────
         # Per-cell external inflow RATE [m³/s] (zero except at BC cells).  dt-
@@ -471,6 +508,33 @@ def run_time_loop(grid_data, cfg):
             c_mc_1d  = (5.0 / 3.0) * Q_ref / xp.maximum(A_xs_1d, _eps_div)
             Q_out_1d = Q_ref
             S_eff_1d = slope_1d
+        elif _dyn:
+            # Local-inertial (dynamic) wave.  Build the water-surface slope and the
+            # flow depth over the higher bed (as in the diffusion wave); the actual
+            # momentum discharge is computed AFTER dt is final (like Muskingum's O₂),
+            # because it needs dt.  Here we only stage geometry + a celerity proxy.
+            _depth_ds = depth_1d[ds_safe]
+            _dem_ds   = dem_1d[ds_safe]
+            _wse      = dem_1d + depth_1d
+            _wse_ds   = _wse[ds_safe]
+            S_dyn      = xp.where(valid_ds, (_wse - _wse_ds) / dist_1d, slope_1d)
+            h_flow_dyn = xp.where(valid_ds,
+                                  xp.maximum(_wse, _wse_ds) - xp.maximum(dem_1d, _dem_ds),
+                                  depth_1d)
+            h_flow_dyn = xp.maximum(h_flow_dyn, cfg.MIN_DEPTH_M)
+            _A_chan   = h_flow_dyn * width_1d
+            A_xs_1d   = xp.where(chan_mask_1d, _A_chan, h_flow_dyn * dx)
+            R_dyn     = xp.where(chan_mask_1d,
+                                 _A_chan / (width_1d + 2.0 * h_flow_dyn), h_flow_dyn)
+            S_eff_1d  = xp.maximum(S_dyn, 0.0)
+            Q_out_1d  = Q_face_1d      # previous face discharge → celerity proxy for dt
+            # de Almeida (2013) flux centering: blend the own face flux with the
+            # upstream inflow rate (I₂) and the downstream face flux to suppress the
+            # local-inertial checkerboard oscillation (θ=1 → original Bates).
+            _I2_dyn    = inflow_vol_1d / max(_dt_prev_dyn, _eps)
+            _q_down    = xp.where(valid_ds, Q_face_1d[ds_safe], Q_face_1d)
+            Q_cent_dyn = (_dyn_theta * Q_face_1d
+                          + (1.0 - _dyn_theta) * 0.5 * (_I2_dyn + _q_down))
         elif scheme_desc.needs_water_surface_slope:
             # Diffusion wave: Manning on the water-surface slope along the flow path,
             # with conveyance on the flow-depth-over-the-higher-bed (CASC2D/GSSHA-style).
@@ -494,7 +558,13 @@ def run_time_loop(grid_data, cfg):
             # with the conveyance section: for the diffusive scheme A_xs is built from
             # h_flow = h_higher (depth over the higher bed), and for channel cells from
             # the confined width B, so dt tracks the true wave speed in both.
-            c_1d   = (5.0 / 3.0) * Q_out_1d / xp.maximum(A_xs_1d, _eps_div)
+            if _dyn:
+                # Dynamic wave: gravity-wave celerity |u| + √(g·h) (Q_out_1d is the
+                # previous face discharge here; h from the staged flow depth).
+                _u_dyn = xp.abs(Q_out_1d) / xp.maximum(A_xs_1d, _eps_div)
+                c_1d   = _u_dyn + xp.sqrt(_GRAV * h_flow_dyn)
+            else:
+                c_1d   = (5.0 / 3.0) * Q_out_1d / xp.maximum(A_xs_1d, _eps_div)
             # Advective CFL only.  A von Neumann diffusion-number limit
             # (dt ≤ ½dx²/D, D = Q/(2·dx·S_eff) = h_flow^(5/3)/(2n·√S_eff)) was tried
             # and REMOVED: D ∝ S_eff^(-1/2) blows up on the always-present flat-water
@@ -541,6 +611,20 @@ def run_time_loop(grid_data, cfg):
                 I2_1d, I1_1d, O1_1d, Q_L_1d, c_mc_1d, A_xs_1d,
                 width_1d, slope_1d, dist_1d, dt, xp)
             _mc_neg_max = xp.maximum(_mc_neg_max, _mc_neg)
+        elif _dyn:
+            # dt final → local-inertial momentum update from the staged geometry,
+            # then the same volume-conservative limiter as the other volume schemes.
+            Q_out_1d = hydraulics.local_inertial_update(
+                Q_cent_dyn, Q_face_1d, A_xs_1d, R_dyn, S_dyn, n, dt, xp, g=_GRAV)
+            Q_out_1d = xp.where(h_flow_dyn > cfg.MIN_DEPTH_M, Q_out_1d, 0.0)
+            Q_out_1d = xp.maximum(Q_out_1d, 0.0)   # D8 network: downstream-only (no backflow)
+            if _flux_limiter:
+                _q_cap = xp.maximum(volume_1d, 0.0) / dt
+                _wet   = volume_1d > 0.0
+                _frac_clip_max_dev = xp.maximum(
+                    _frac_clip_max_dev,
+                    ((Q_out_1d > _q_cap) & _wet).sum() / xp.maximum(_wet.sum(), 1))
+                Q_out_1d = xp.minimum(Q_out_1d, _q_cap)
         else:
             # Apply volume-conservative CFL limiter: a cell cannot eject more
             # water than it stores in one time step (prevents Courant runaway).
@@ -551,13 +635,14 @@ def run_time_loop(grid_data, cfg):
             # dt is too aggressive (artificial diffusion / outlet ringing).
             # On-device scalars (transferred to host once at the end, like the
             # mass-balance accumulators) so the hot loop stays sync-free on GPU.
-            _q_cap     = xp.maximum(volume_1d, 0.0) / dt
-            _wet       = volume_1d > 0.0
-            _n_wet     = _wet.sum()
-            _n_clipped = ((Q_out_1d > _q_cap) & _wet).sum()
-            _frac_clip = _n_clipped / xp.maximum(_n_wet, 1)
-            _frac_clip_max_dev = xp.maximum(_frac_clip_max_dev, _frac_clip)
-            Q_out_1d = xp.minimum(Q_out_1d, _q_cap)
+            if _flux_limiter:
+                _q_cap     = xp.maximum(volume_1d, 0.0) / dt
+                _wet       = volume_1d > 0.0
+                _n_wet     = _wet.sum()
+                _n_clipped = ((Q_out_1d > _q_cap) & _wet).sum()
+                _frac_clip = _n_clipped / xp.maximum(_n_wet, 1)
+                _frac_clip_max_dev = xp.maximum(_frac_clip_max_dev, _frac_clip)
+                Q_out_1d = xp.minimum(Q_out_1d, _q_cap)
 
         # Convert outflow rate → volume for this step.  This is the value that
         # the NEXT step's scatter-add will use — decoupled from dt_next.
@@ -606,6 +691,9 @@ def run_time_loop(grid_data, cfg):
             if bc_rate_1d is not None:
                 volume_1d = volume_1d + bc_rate_1d * dt  # [m³] upstream BC inflow
             volume_1d  = xp.maximum(volume_1d, 0.0)     # no negative storage
+            if _dyn:
+                Q_face_1d = Q_out_1d      # persist face discharge for next step's ∂Q/∂t
+                _dt_prev_dyn = dt         # for next step's upstream-inflow-rate centering
 
         # ── Mass-balance accumulation (device reductions; transferred once at end) ──
         mb_in   += rain_vol.sum()                              # effective runoff entering routing

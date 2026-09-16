@@ -54,7 +54,7 @@ _ENUM_CHOICES = {
     "RUNOFF_SOURCE":         ["none", "coefficient", "raster", "scs_cn", "physical"],
     "RUNOFF_CN_SOURCE":      ["scalar", "gee", "raster"],
     "RUNOFF_CN_AMC":         ["i", "ii", "iii"],
-    "ROUTING_SCHEME":        ["kinematic", "diffusive", "muskingum"],
+    "ROUTING_SCHEME":        ["kinematic", "diffusive", "muskingum", "dynamic"],
     "DELINEATION_ENGINE":    ["pysheds", "pyflwdir"],
     "BACKEND":               ["cpu", "gpu"],
     "GPU_PRECISION":         ["float64", "float32"],
@@ -206,6 +206,15 @@ class Config:
     PRECIP_IMERG_FORCE_DOWNLOAD: bool = False
     IMERG_BBOX_BUFFER_M: float = 11132.0
 
+    # Rain/snow elevation partition (event models): above the freezing level,
+    # precip falls as snow and does NOT run off during the event.  Effective
+    # precip is scaled per cell by a rain fraction that ramps linearly from
+    # 1.0 (<= RAIN_SNOW_ELEV_LOW) to 0.0 (>= RAIN_SNOW_ELEV_HIGH).  Both None
+    # (default) → feature off, all precip treated as rain (byte-identical to
+    # prior behaviour).  A single threshold = set LOW=HIGH (hard cutoff).
+    RAIN_SNOW_ELEV_LOW = None       # m; all precip is rain at/below this elevation
+    RAIN_SNOW_ELEV_HIGH = None      # m; all precip is snow (excluded) at/above this
+
     # ═════════════════════════════════════════════════════════════════════════
     # 4.  RUNOFF GENERATION
     # ═════════════════════════════════════════════════════════════════════════
@@ -303,8 +312,11 @@ class Config:
     CELL_SIZE = None                        # None → auto-detect from DEM
 
     # ── Routing scheme ───────────────────────────────────────────────────────
-    ROUTING_SCHEME: str = "kinematic"       # 'kinematic' | 'diffusive'
+    ROUTING_SCHEME: str = "kinematic"       # 'kinematic'|'diffusive'|'muskingum'|'dynamic'
     DIFFUSION_THETA: float = 1.0            # diffusion weight θ∈[0,1]
+    # de Almeida flux-centering weight for ROUTING_SCHEME='dynamic' (local-inertial).
+    # 1.0 = original Bates (oscillation-prone); 0.7-0.9 damps the checkerboard.
+    DYNAMIC_FLUX_THETA: float = 0.8
 
     # ── Channel (river) cross-section routing ────────────────────────────────
     CHANNEL_ROUTING: bool = False
@@ -347,6 +359,18 @@ class Config:
     MIN_SLOPE: float = 1e-4
     MIN_DEPTH_M: float = 1e-6
     MAX_DEPTH_M: float = 10.0               # display use only
+    # Cap the friction slope used in the Manning velocity/celerity (all schemes).
+    # On near-vertical cells raw Manning gives unphysical velocities (>100 m/s) and
+    # celerities that no explicit dt can satisfy (→ flux-limiter takes over the
+    # routing).  Capping S at a physical maximum (e.g. 0.05-0.10) keeps celerity
+    # realistic and lets the explicit schemes convey steep-terrain surges.  None
+    # (default) = uncapped (byte-identical to prior behaviour).
+    MANNING_SLOPE_CAP = None                # m/m, e.g. 0.05; None = off
+    # Volume-conservative flux limiter (Q <= V/dt) for kinematic/diffusive.  It is
+    # the scheme's stability net; disable ONLY with a CFL-safe adaptive dt (the
+    # volume ledger is signed, so mass still closes globally via the scatter).
+    # Muskingum-Cunge never uses it.  True (default) = on.
+    FLUX_LIMITER: bool = True
 
     # ═════════════════════════════════════════════════════════════════════════
     # 9.  OUTPUTS
