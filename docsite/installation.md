@@ -1,9 +1,9 @@
 # Installation
 
-pymrr is a pure-Python package (Python 3.9+). Install it from PyPI:
+MRRpy is a pure-Python package (Python 3.9+). Install it from PyPI:
 
 ```bash
-pip install pymrr
+pip install MRRpy
 ```
 
 ## Optional extras
@@ -14,7 +14,7 @@ pip install pymrr
     is present — the GPU is used only when `BACKEND="gpu"` **and** CuPy imports.
 
     ```bash
-    pip install "pymrr[gpu]"
+    pip install "MRRpy[gpu]"
     ```
 
 === "Google Earth Engine"
@@ -24,22 +24,22 @@ pip install pymrr
     settings run fully offline.
 
     ```bash
-    pip install "pymrr[gee]"
+    pip install "MRRpy[gee]"
     ```
 
 === "From source"
 
     ```bash
-    git clone https://github.com/SauravBhattarai19/pymrr
-    cd pymrr
+    git clone https://github.com/SauravBhattarai19/MRRpy
+    cd MRRpy
     pip install .            # or pip install -e . for a live checkout
     ```
 
 ## Verify
 
 ```bash
-python -c "import pymrr; print(pymrr.__version__)"
-pymrr --help
+python -c "import MRRpy; print(MRRpy.__version__)"
+MRRpy --help
 ```
 
 ## Dependencies
@@ -58,9 +58,9 @@ prebuilt wheels for the geospatial libraries — no system GDAL required.
     conda/venv environment with Python 3.10, 3.11, or 3.12 instead:
 
     ```bash
-    conda create -n pymrr-env python=3.11 -y
-    conda activate pymrr-env
-    pip install pymrr
+    conda create -n MRRpy-env python=3.11 -y
+    conda activate MRRpy-env
+    pip install MRRpy
     ```
 
 !!! tip "Earth Engine authentication"

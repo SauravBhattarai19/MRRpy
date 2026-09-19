@@ -38,9 +38,9 @@ import rasterio
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
-from pymrr.core import routing as ru
-from pymrr.core import precip as pi
-from pymrr.core.routing.router import initialise_grid
+from MRRpy.core import routing as ru
+from MRRpy.core import precip as pi
+from MRRpy.core.routing.router import initialise_grid
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SETTINGS

@@ -2,7 +2,7 @@
 tests/09_test_scs_cn.py
 =======================
 Verification tests for the SCS Curve Number runoff mode
-(ScsCnMode in pymrr/core/runoff/engine.py).
+(ScsCnMode in MRRpy/core/runoff/engine.py).
 
 Uses a small synthetic grid_data built in-memory — no real DEM/watershed and
 no Earth Engine needed — so these checks isolate the CN math, the AMC
@@ -32,15 +32,15 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pymrr.core.runoff import RunoffEngine, RunoffMode, register, RUNOFF_MODES
-from pymrr.core.runoff.engine import _apply_amc
+from MRRpy.core.runoff import RunoffEngine, RunoffMode, register, RUNOFF_MODES
+from MRRpy.core.runoff.engine import _apply_amc
 
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"
 
 
 class _Cfg:
-    """Minimal stand-in for pymrr.Config exposing only what ScsCnMode reads."""
+    """Minimal stand-in for MRRpy.Config exposing only what ScsCnMode reads."""
     RUNOFF_SOURCE = "scs_cn"
     RUNOFF_CN_SOURCE = "scalar"
     RUNOFF_CN = 75.0

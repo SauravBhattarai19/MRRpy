@@ -24,7 +24,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install pymrr (core) + test deps
+      - name: Install MRRpy (core) + test deps
         run: |
           python -m pip install --upgrade pip
           pip install -e .
@@ -32,7 +32,7 @@ jobs:
 
       - name: Show environment
         run: |
-          python -c "import pymrr, numpy, rasterio, pysheds, pyflwdir; print('pymrr', pymrr.__version__)"
+          python -c "import MRRpy, numpy, rasterio, pysheds, pyflwdir; print('MRRpy', MRRpy.__version__)"
 
       - name: Run test suite
         run: pytest -v

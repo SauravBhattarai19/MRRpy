@@ -13,9 +13,9 @@ Two contrasting jobs on one basin:
    rainfall using the `dynamic` scheme, calibrated to observed wave-arrival times.
 
 !!! note "Prerequisites"
-    `pip install pymrr[gee]`, an authenticated Earth Engine project (see
+    `pip install MRRpy[gee]`, an authenticated Earth Engine project (see
     [Configuration → Earth Engine setup](configuration.md#earth-engine-setup-first-time)),
-    and a DEM covering the basin. GPU (`pip install pymrr[gpu]`) is optional but
+    and a DEM covering the basin. GPU (`pip install MRRpy[gpu]`) is optional but
     recommended for the 30–90 m grids below.
 
 ---
@@ -27,7 +27,7 @@ priority-flood conditioning avoids the D8 flow collapse `pysheds` can show acros
 wide flats.
 
 ```python
-from pymrr import Config, run_pipeline, plot_watershed
+from MRRpy import Config, run_pipeline, plot_watershed
 
 cfg = Config(
     DEM_PATH="dem.tif",                       # 30 m DEM covering the basin
@@ -47,7 +47,7 @@ plot_watershed(out)[0].savefig("trishuli/watershed.png")
 
 ## 2. Post-monsoon IMERG rainfall
 
-pymrr pulls NASA GPM **IMERG V07** (half-hourly, 0.1°) straight from Earth Engine
+MRRpy pulls NASA GPM **IMERG V07** (half-hourly, 0.1°) straight from Earth Engine
 and turns each pixel into a pseudo-gauge, so the same Thiessen/IDW machinery drives
 the router. Point it at an event window with `EVENT_START_UTC` +
 `TOTAL_SIMULATION_TIME_HOURS`; it downloads once and caches to `PRECIP_IMERG_DIR`.

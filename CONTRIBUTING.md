@@ -1,26 +1,26 @@
-# Contributing to pymrr
+# Contributing to MRRpy
 
-Thanks for your interest in improving **pymrr** — a distributed,
+Thanks for your interest in improving **MRRpy** — a distributed,
 physics-based rainfall–runoff and flood-routing model. Contributions of all
 kinds are welcome: bug reports, documentation fixes, new examples, and code.
 
 ## Getting help / seeking support
 
 - **Questions and usage help:** open a
-  [GitHub Discussion](https://github.com/SauravBhattarai19/pymrr/discussions)
-  or a [GitHub Issue](https://github.com/SauravBhattarai19/pymrr/issues)
+  [GitHub Discussion](https://github.com/SauravBhattarai19/MRRpy/discussions)
+  or a [GitHub Issue](https://github.com/SauravBhattarai19/MRRpy/issues)
   with the `question` label.
-- **Documentation:** <https://pymrr.readthedocs.io>.
+- **Documentation:** <https://mrrpy.readthedocs.io>.
 
 ## Reporting a bug or problem
 
-Please open an [issue](https://github.com/SauravBhattarai19/pymrr/issues)
+Please open an [issue](https://github.com/SauravBhattarai19/MRRpy/issues)
 and include, where possible:
 
 1. What you did (the `Config` settings, CLI command, or a minimal code snippet).
 2. What you expected to happen and what actually happened (full traceback).
-3. Your environment: OS, Python version, `pymrr` version
-   (`python -c "import pymrr; print(pymrr.__version__)"`), and whether
+3. Your environment: OS, Python version, `MRRpy` version
+   (`python -c "import MRRpy; print(MRRpy.__version__)"`), and whether
    you use the `[gpu]` or `[gee]` extras.
 4. A minimal, reproducible example if you can — a small synthetic DEM is often
    enough (see `tests/test_core_science.py` for how to build one in-memory).
@@ -36,16 +36,16 @@ would expect on the `Config` object.
 1. **Fork** the repository and create a topic branch off `main`.
 2. **Set up a dev environment:**
    ```bash
-   git clone https://github.com/<you>/pymrr
-   cd pymrr
+   git clone https://github.com/<you>/MRRpy
+   cd MRRpy
    pip install -e ".[gee]"   # add [gpu] only if you have CUDA 12.x
    pip install pytest
    ```
 3. **Make your change.** Please keep the scientific core
-   (`pymrr/core/`) free of QGIS/Qt and of hard Earth Engine dependencies —
+   (`MRRpy/core/`) free of QGIS/Qt and of hard Earth Engine dependencies —
    all Earth Engine code is optional and lazily imported, and every GEE-backed
    option must retain an offline fallback. New configuration knobs go on
-   `pymrr/config.py::Config` first (see the `_ENUM_CHOICES` / `_ENUM_LIST`
+   `MRRpy/config.py::Config` first (see the `_ENUM_CHOICES` / `_ENUM_LIST`
    registries for fixed-choice options).
 4. **Add or update tests** for your change (see below) and make sure the whole
    suite passes.

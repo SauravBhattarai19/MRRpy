@@ -2,7 +2,7 @@
 """
 config.py
 =========
-Config — the single configuration object for the pymrr model.
+Config — the single configuration object for the MRRpy model.
 
 Every simulation function in the package (process_dem.main, initialise_grid,
 run_time_loop, run_opm, …) accepts any object exposing these attributes, so
@@ -16,7 +16,7 @@ the value is always normalised and stored as the canonical string.  See
 
 Usage
 -----
-    from pymrr import Config
+    from MRRpy import Config
 
     cfg = Config(DEM_PATH="/path/to/dem.tif", BACKEND="gpu")   # or BACKEND=1
     cfg.OUTPUT_DIR = "/path/to/results"
@@ -35,7 +35,7 @@ from .gee.dem_catalog import DEM_CATALOG as _DEM_CATALOG
 
 
 def _data_path(filename):
-    """Absolute path of a lookup file shipped inside the package (pymrr/data)."""
+    """Absolute path of a lookup file shipped inside the package (MRRpy/data)."""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", filename)
 
 
@@ -141,12 +141,12 @@ class Config:
     # DEM_BOUNDS_WGS84: (min_lon, min_lat, max_lon, max_lat) in EPSG:4326 —
     # None (default) means "no auto-download, DEM_PATH must point to a local
     # file". DEM_SOURCE picks which catalog dataset to pull (see
-    # pymrr.describe_available_dems() / `pymrr list-dems`). Requires
-    # `pip install pymrr[gee]` + GEE_PROJECT (or the GEE_PROJECT env var).
+    # MRRpy.describe_available_dems() / `MRRpy list-dems`). Requires
+    # `pip install MRRpy[gee]` + GEE_PROJECT (or the GEE_PROJECT env var).
     DEM_BOUNDS_WGS84 = None
     DEM_SOURCE: str = "nasadem"
     # Output pixel size [m] for the auto-download. None (default) uses
-    # DEM_SOURCE's native resolution (see pymrr.describe_available_dems());
+    # DEM_SOURCE's native resolution (see MRRpy.describe_available_dems());
     # set e.g. 100.0 to area-average to a coarser grid at download time.
     DEM_SCALE_M = None
 
@@ -431,7 +431,7 @@ class Config:
             if not hasattr(self, key):
                 raise AttributeError(
                     f"Config has no attribute '{key}'.  "
-                    f"Check pymrr/config.py for valid parameter names."
+                    f"Check MRRpy/config.py for valid parameter names."
                 )
             setattr(self, key, value)
 
@@ -465,7 +465,7 @@ class Config:
         if unknown:
             raise AttributeError(
                 "Unknown config parameter(s): " + ", ".join(sorted(unknown))
-                + ".  Check pymrr/config.py for valid names."
+                + ".  Check MRRpy/config.py for valid names."
             )
         cfg = cls()
         if "OUTPUT_DIR" in data:
@@ -509,7 +509,7 @@ class Config:
 
         if ext == ".py":
             import importlib.util
-            spec = importlib.util.spec_from_file_location("_pymrr_user_config", path)
+            spec = importlib.util.spec_from_file_location("_MRRpy_user_config", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             data = {k: v for k, v in vars(module).items()
@@ -556,7 +556,7 @@ class Config:
                     "DEM_PATH is empty — provide a local DEM file, or set "
                     "DEM_BOUNDS_WGS84 (+ optionally DEM_SOURCE) to "
                     "auto-download from Google Earth Engine (requires "
-                    "pymrr[gee] + GEE_PROJECT)."
+                    "MRRpy[gee] + GEE_PROJECT)."
                 )
             elif not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
                 errors.append(
@@ -739,7 +739,7 @@ class Config:
 
         Lists each option that accepts an integer code alongside its canonical
         strings, e.g. ``PRECIP_METHOD : 0=uniform  1=thiessen  …``.  Handy for
-        the CLI (`pymrr list-options`) and docs.
+        the CLI (`MRRpy list-options`) and docs.
         """
         lines = ["Fixed-choice options (pass the string OR the integer code):", ""]
         width = max(len(k) for k in list(_ENUM_CHOICES) + list(_ENUM_LIST))

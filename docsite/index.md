@@ -1,8 +1,8 @@
-# pymrr
+# MRRpy
 
 **A distributed, physics-based hydrological + hydrodynamic model.**
 
-pymrr — the **M**ulti-**M**echanism **R**unoff and **R**outing model — turns a
+MRRpy — the **M**ulti-**M**echanism **R**unoff and **R**outing model — turns a
 bare-earth DEM and a rain event into a routed flood
 hydrograph. It implements Variable Source Area (VSA) saturation-excess runoff,
 Green-Ampt infiltration and impervious urban shedding (the Pradhan & Ogden 2010
@@ -20,11 +20,11 @@ forcing.
 </div>
 
 ```bash
-pip install pymrr
+pip install MRRpy
 ```
 
 ```python
-from pymrr import Config, run_pipeline
+from MRRpy import Config, run_pipeline
 
 cfg = Config(DEM_PATH="dem.tif", OUTPUT_DIR="results/")
 cfg.update_output_paths()
@@ -34,7 +34,7 @@ run_pipeline(cfg, stages=("process_dem", "routing"))   # → results/hydrograph.
 [Get started](quickstart.md){ .md-button .md-button--primary }
 [See examples](examples.md){ .md-button }
 
-## What pymrr offers
+## What MRRpy offers
 
 <div class="grid cards" markdown>
 
@@ -78,7 +78,7 @@ run_pipeline(cfg, stages=("process_dem", "routing"))   # → results/hydrograph.
 
     ---
 
-    A Python API, a config-file `pymrr` CLI, and a QGIS plugin — all driven
+    A Python API, a config-file `MRRpy` CLI, and a QGIS plugin — all driven
     by one `Config` object.
 
 </div>
@@ -102,4 +102,4 @@ Every run is driven by a single [`Config`](configuration.md) object through
 A free, interactive companion textbook walks through the physics from the ground
 up (DEMs, delineation, runoff, and each routing scheme) with in-browser
 simulations:
-[**the pymrr course**](https://sauravbhattarai19.github.io/pymrr/).
+[**the MRRpy course**](https://sauravbhattarai19.github.io/MRRpy/).

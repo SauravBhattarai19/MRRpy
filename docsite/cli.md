@@ -1,10 +1,10 @@
 # Command-line interface
 
-Installing pymrr provides the `pymrr` command. It is config-file driven,
+Installing MRRpy provides the `MRRpy` command. It is config-file driven,
 so a run is fully reproducible from a single `.yaml` / `.json` / `.py` file.
 
 ```bash
-pymrr --help
+MRRpy --help
 ```
 
 ## Commands
@@ -12,7 +12,7 @@ pymrr --help
 ### `init-config` — write a template
 
 ```bash
-pymrr init-config -o my_run.yaml
+MRRpy init-config -o my_run.yaml
 ```
 
 Writes every parameter at its default, ready to edit. At minimum set
@@ -21,7 +21,7 @@ Writes every parameter at its default, ready to edit. At minimum set
 ### `validate` — pre-flight checks
 
 ```bash
-pymrr validate -c my_run.yaml
+MRRpy validate -c my_run.yaml
 ```
 
 Loads the config and runs sanity checks (DEM exists, GEE project present when
@@ -30,9 +30,9 @@ needed, valid option values, …) **without** starting a simulation.
 ### `run` — run the pipeline
 
 ```bash
-pymrr run -c my_run.yaml
-pymrr run -c my_run.yaml --stages process_dem routing
-pymrr run -c my_run.yaml --backend gpu --output-dir results/
+MRRpy run -c my_run.yaml
+MRRpy run -c my_run.yaml --stages process_dem routing
+MRRpy run -c my_run.yaml --backend gpu --output-dir results/
 ```
 
 | Flag | Purpose |
@@ -44,7 +44,7 @@ pymrr run -c my_run.yaml --backend gpu --output-dir results/
 ### `list-options` — discover option codes
 
 ```bash
-pymrr list-options
+MRRpy list-options
 ```
 
 Prints every fixed-choice option with its integer codes, e.g.
@@ -54,10 +54,10 @@ either the string or the code.
 ### `list-dems` — discover DEM sources
 
 ```bash
-pymrr list-dems
+MRRpy list-dems
 ```
 
-Prints every DEM dataset pymrr can auto-download from Google Earth
+Prints every DEM dataset MRRpy can auto-download from Google Earth
 Engine (dataset id, native resolution, coverage) — set `DEM_SOURCE` to one
 of these keys and `DEM_BOUNDS_WGS84` to skip needing a local `DEM_PATH`. See
 [Configuration → No local DEM?](configuration.md#no-local-dem-auto-download-from-earth-engine).
@@ -65,8 +65,8 @@ of these keys and `DEM_BOUNDS_WGS84` to skip needing a local `DEM_PATH`. See
 ## Typical session
 
 ```bash
-pymrr init-config -o run.yaml
+MRRpy init-config -o run.yaml
 $EDITOR run.yaml            # set DEM_PATH, OUTPUT_POINT, TARGET_CRS_EPSG, OUTPUT_DIR
-pymrr validate -c run.yaml
-pymrr run -c run.yaml
+MRRpy validate -c run.yaml
+MRRpy run -c run.yaml
 ```

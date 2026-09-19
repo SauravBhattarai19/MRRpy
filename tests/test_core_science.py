@@ -2,7 +2,7 @@
 """
 tests/test_core_science.py
 ==========================
-Pytest suite that exercises the scientific core of ``pymrr`` without any
+Pytest suite that exercises the scientific core of ``MRRpy`` without any
 external data, Earth Engine access, or a GPU. It is fast (a few seconds),
 deterministic, and safe to run in CI.
 
@@ -33,8 +33,8 @@ import rasterio
 from rasterio.transform import from_origin
 from pyproj import Transformer
 
-from pymrr import Config, run_pipeline
-from pymrr.core.runoff import RunoffEngine, MECHANISM_REGISTRY
+from MRRpy import Config, run_pipeline
+from MRRpy.core.runoff import RunoffEngine, MECHANISM_REGISTRY
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ def test_raster_to_grid_aligns_foreign_crs_and_nodata(chain_rasters, tmp_path):
     reprojects a foreign-CRS raster onto the model grid, and maps nodata to
     NaN so callers can fall back per cell."""
     import rasterio.warp
-    from pymrr.core.io_utils import raster_to_grid
+    from MRRpy.core.io_utils import raster_to_grid
 
     dem_p, _ = chain_rasters
     with rasterio.open(dem_p) as d:

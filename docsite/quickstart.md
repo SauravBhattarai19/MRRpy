@@ -6,7 +6,7 @@ digital elevation model (GeoTIFF) and the latitude/longitude of your outlet.
 ## Python API
 
 ```python
-from pymrr import Config, run_pipeline
+from MRRpy import Config, run_pipeline
 
 cfg = Config(
     DEM_PATH="dem.tif",
@@ -36,17 +36,17 @@ report.
 !!! tip "Strings or integer codes"
     Every fixed-choice option accepts its string **or** a short integer code —
     `PRECIP_METHOD="uniform"` and `PRECIP_METHOD=0` are identical. See
-    [Configuration](configuration.md) or run `pymrr list-options`.
+    [Configuration](configuration.md) or run `MRRpy list-options`.
 
 ## CLI
 
 The same run, driven by a config file:
 
 ```bash
-pymrr init-config -o my_run.yaml     # write a template with every parameter
+MRRpy init-config -o my_run.yaml     # write a template with every parameter
 # edit DEM_PATH, OUTPUT_POINT, TARGET_CRS_EPSG, OUTPUT_DIR …
-pymrr validate -c my_run.yaml        # pre-flight checks
-pymrr run -c my_run.yaml             # process_dem + routing
+MRRpy validate -c my_run.yaml        # pre-flight checks
+MRRpy run -c my_run.yaml             # process_dem + routing
 ```
 
 Config files may be `.yaml`, `.json`, or a legacy flat `.py` settings module.

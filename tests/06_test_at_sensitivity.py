@@ -41,7 +41,7 @@ Q_MIN = 0.001  # model constant [m³/s]
 
 
 def main():
-    from pymrr.core.routing import router as kwr
+    from MRRpy.core.routing import router as kwr
     import rasterio
 
     print("=" * 65)
@@ -106,7 +106,7 @@ def main():
     vsa_histories = {}
 
     # Get SD params once (they don't change with Q_max)
-    from pymrr.core.runoff import resolve_sd_params, OPM_SD_MIN
+    from MRRpy.core.runoff import resolve_sd_params, OPM_SD_MIN
     sd_params = resolve_sd_params(config, cell_size)
     SD_max_initial = sd_params['sd_max']
     sd_min = sd_params['sd_min']

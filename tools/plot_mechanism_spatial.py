@@ -89,7 +89,7 @@ def main():
     config.EVENT_START_UTC        = row.start_utc
     config.RUN_TAG                = EVENT
 
-    from pymrr.core.routing import router as kwr
+    from MRRpy.core.routing import router as kwr
     print(f"Initialising grid for {EVENT} (runoff-generation only, no routing)...")
     grid_data = kwr.initialise_grid(config)
 

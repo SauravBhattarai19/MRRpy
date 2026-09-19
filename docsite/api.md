@@ -4,26 +4,26 @@ The public API is small: build a [`Config`](#config), then call
 [`run_pipeline`](#run_pipeline). Both are importable from the top level:
 
 ```python
-from pymrr import Config, run_pipeline, OpmConfig, DEFAULT_STAGES
+from MRRpy import Config, run_pipeline, OpmConfig, DEFAULT_STAGES
 ```
 
 ## `run_pipeline`
 
-::: pymrr.run_pipeline
+::: MRRpy.run_pipeline
     options:
       heading_level: 3
 
 ## `list_available_dems` / `describe_available_dems`
 
-Browse the DEM datasets pymrr can auto-download from Google Earth Engine
+Browse the DEM datasets MRRpy can auto-download from Google Earth Engine
 (see [Configuration → No local DEM?](configuration.md#no-local-dem-auto-download-from-earth-engine)).
 No `[gee]` install required just to list them.
 
-::: pymrr.list_available_dems
+::: MRRpy.list_available_dems
     options:
       heading_level: 3
 
-::: pymrr.describe_available_dems
+::: MRRpy.describe_available_dems
     options:
       heading_level: 3
 
@@ -33,19 +33,19 @@ Small helpers to visualize a run's outputs — each accepts a path, a
 DataFrame, a `run_pipeline()` result dict, or a `Config`, and returns
 `(fig, ax)`. See [Examples](examples.md) for them in context.
 
-::: pymrr.plot_watershed
+::: MRRpy.plot_watershed
     options:
       heading_level: 3
 
-::: pymrr.plot_hydrograph
+::: MRRpy.plot_hydrograph
     options:
       heading_level: 3
 
-::: pymrr.plot_raster
+::: MRRpy.plot_raster
     options:
       heading_level: 3
 
-::: pymrr.plot_mass_balance
+::: MRRpy.plot_mass_balance
     options:
       heading_level: 3
 
@@ -54,7 +54,7 @@ DataFrame, a `run_pipeline()` result dict, or a `Config`, and returns
 Generate a spatially-varying Manning's-n raster from a DEM using an elevation
 rule — see [Configuration → Elevation-based Manning's n](configuration.md#elevation-based-mannings-n).
 
-::: pymrr.mannings_n_from_dem
+::: MRRpy.mannings_n_from_dem
     options:
       heading_level: 3
 
@@ -64,7 +64,7 @@ The elevation-rule dispatch shared by `mannings_n_from_dem` and by
 `MANNINGS_N_CHANNEL` (channel-only elevation rules, no raster needed) — see
 [Configuration → Elevation-based Manning's n](configuration.md#elevation-based-mannings-n).
 
-::: pymrr.apply_elevation_rule
+::: MRRpy.apply_elevation_rule
     options:
       heading_level: 3
 
@@ -72,10 +72,10 @@ The elevation-rule dispatch shared by `mannings_n_from_dem` and by
 
 Runoff generation is pluggable: each `RUNOFF_SOURCE` is a small `RunoffMode`
 subclass registered by name. Register your own — even from another package — to
-add a method without editing pymrr:
+add a method without editing MRRpy:
 
 ```python
-from pymrr.core.runoff import RunoffMode, register, RUNOFF_MODES
+from MRRpy.core.runoff import RunoffMode, register, RUNOFF_MODES
 
 @register("my_method")                      # name used by RUNOFF_SOURCE
 class MyMethod(RunoffMode):
@@ -105,7 +105,7 @@ chooses where curve numbers come from, `RUNOFF_CN_AMC` (`i`/`ii`/`iii`) sets the
 antecedent moisture condition, `RUNOFF_CN` is the scalar CN, `RUNOFF_CN_PATH` a
 CN GeoTIFF, and `RUNOFF_SCS_Ia_FACTOR` the initial-abstraction factor (0.2). The
 `gee` source pulls the GCN250 global curve-number dataset via
-`pymrr.gee.cn_gee.download_cn_raster`.
+`MRRpy.gee.cn_gee.download_cn_raster`.
 
 ## `Config`
 
@@ -113,7 +113,7 @@ The single configuration object for a run. `OpmConfig` is an alias of this
 class. See [Configuration](configuration.md) for the parameter groups and the
 string/integer option codes.
 
-::: pymrr.Config
+::: MRRpy.Config
     options:
       heading_level: 3
       members:

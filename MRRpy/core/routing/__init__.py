@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-pymrr.core.routing — the flood-routing engine.
+MRRpy.core.routing — the flood-routing engine.
 
 Modules
 -------
@@ -16,7 +16,7 @@ reporting  : hydrograph CSV, VSA partition series, mass-balance ledger.
 gpu        : CuPy-vectorized variants of the terrain kernels.
 
 The flat namespace below mirrors the historical `routing_utils` module, so
-`from pymrr.core import routing as ru` exposes the same API.
+`from MRRpy.core import routing as ru` exposes the same API.
 """
 
 from .terrain import (

@@ -3,7 +3,7 @@ tests/08_test_mannings_n_channel_modes.py
 ==========================================
 Verification tests for independent overland / channel Manning's-n sources
 (resolve_mannings_n's MANNINGS_N_CHANNEL dispatch in
-pymrr/core/routing/surface.py).
+MRRpy/core/routing/surface.py).
 
 Uses a small synthetic grid_data built in-memory — no real DEM/watershed
 needed — so these checks isolate the channel-override dispatch logic.
@@ -32,15 +32,15 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pymrr.core.routing.surface import resolve_mannings_n
-from pymrr.utils.terrain_rules import apply_elevation_rule, mannings_n_from_dem
+from MRRpy.core.routing.surface import resolve_mannings_n
+from MRRpy.utils.terrain_rules import apply_elevation_rule, mannings_n_from_dem
 
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"
 
 
 class _Cfg:
-    """Minimal stand-in for pymrr.Config exposing only what
+    """Minimal stand-in for MRRpy.Config exposing only what
     resolve_mannings_n reads."""
     MANNINGS_N_SOURCE = "scalar"
     MANNINGS_N = 0.09

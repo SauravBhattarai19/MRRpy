@@ -288,8 +288,8 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
 
         ensure_core()
 
-        from pymrr.config import OpmConfig
-        from pymrr.core.routing import router as kwr
+        from MRRpy.config import OpmConfig
+        from MRRpy.core.routing import router as kwr
 
         # ── Build config ──────────────────────────────────────────────────────
         cfg = OpmConfig()

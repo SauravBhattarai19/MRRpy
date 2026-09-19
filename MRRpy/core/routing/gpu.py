@@ -16,7 +16,7 @@ load_rasters and topological_order are CPU-only initialisation routines
 
 Usage
 -----
-    from pymrr.core.routing import gpu as ru
+    from MRRpy.core.routing import gpu as ru
     # All callers use the same API as routing_utils.
 """
 

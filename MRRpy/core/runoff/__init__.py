@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-pymrr.core.runoff — rainfall → effective-runoff generation.
+MRRpy.core.runoff — rainfall → effective-runoff generation.
 
 Modules
 -------

@@ -1,7 +1,7 @@
 include README.md
 include LICENSE
 include requirements.txt
-recursive-include pymrr/data *.csv
+recursive-include MRRpy/data *.csv
 recursive-include configs *.yaml *.yml *.json
 
 # Keep build noise out of the sdist.

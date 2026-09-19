@@ -3,9 +3,9 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pymrr"
+name = "MRRpy"
 version = "0.2.0"
-description = "pymrr (Multi-Mechanism Runoff and Routing): a distributed, physics-based hydrological + hydrodynamic model — DEM preprocessing, gauge/IMERG precipitation, VSA + Green-Ampt + impervious runoff generation, and kinematic/diffusive-wave/Muskingum–Cunge/local-inertial dynamic-wave routing, with optional Google Earth Engine forcing and CPU/GPU backends."
+description = "MRRpy (Multi-Mechanism Runoff and Routing): a distributed, physics-based hydrological + hydrodynamic model — DEM preprocessing, gauge/IMERG precipitation, VSA + Green-Ampt + impervious runoff generation, and kinematic/diffusive-wave/Muskingum–Cunge/local-inertial dynamic-wave routing, with optional Google Earth Engine forcing and CPU/GPU backends."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -56,12 +56,12 @@ gee = ["earthengine-api"]
 notebook = ["geemap", "ipyleaflet", "ipywidgets"]
 
 [project.scripts]
-pymrr = "pymrr.cli.main:main"
+MRRpy = "MRRpy.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/SauravBhattarai19/pymrr"
-Documentation = "https://pymrr.readthedocs.io"
-Issues = "https://github.com/SauravBhattarai19/pymrr/issues"
+Homepage = "https://github.com/SauravBhattarai19/MRRpy"
+Documentation = "https://mrrpy.readthedocs.io"
+Issues = "https://github.com/SauravBhattarai19/MRRpy/issues"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -71,7 +71,7 @@ python_files = ["test_*.py"]
 addopts = "-ra --ignore=tests/test_random.py"
 
 [tool.setuptools.packages.find]
-include = ["pymrr*"]
+include = ["MRRpy*"]
 
 [tool.setuptools.package-data]
-pymrr = ["data/*.csv"]
+MRRpy = ["data/*.csv"]

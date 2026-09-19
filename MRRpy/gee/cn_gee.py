@@ -19,7 +19,7 @@ algebra is needed for this source.
 Catalog / example:
     https://gee-community-catalog.org/projects/gcn250/
 
-Authentication mirrors the rest of pymrr.gee: lazy `import ee`, then
+Authentication mirrors the rest of MRRpy.gee: lazy `import ee`, then
 `auth.authenticate(project)` (GOOGLE_APPLICATION_CREDENTIALS → key.json →
 GEE_PROJECT).  Everything degrades gracefully — a missing earthengine-api or a
 failed download returns None so the caller can raise a clear, actionable error.

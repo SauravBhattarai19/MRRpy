@@ -4,12 +4,12 @@
 # model.  Values only — no logic.  Changing OUTPUT_DIR (§1) cascades to every
 # path derived from it.
 #
-# The model itself now lives in the pip-installable `pymrr` package and is
-# configured with pymrr.config.OpmConfig (YAML/JSON via the `pymrr` CLI).
+# The model itself now lives in the pip-installable `MRRpy` package and is
+# configured with MRRpy.config.OpmConfig (YAML/JSON via the `MRRpy` CLI).
 # This module is kept as the scenario file for the repository's research
 # workflows (tools/runner.py, tests/): they import it and pass it directly as
 # the cfg object — every core function accepts any object with these
-# attributes.  It also loads via `pymrr run -c config.py`.
+# attributes.  It also loads via `MRRpy run -c config.py`.
 #
 # Contents
 #   1.  Event & scenario          ← DEM, output folder, event timing, GEE

@@ -1,5 +1,5 @@
 ---
-title: 'pymrr: A modular Python model for distributed rainfall–runoff generation and flood routing'
+title: 'MRRpy: A modular Python model for distributed rainfall–runoff generation and flood routing'
 tags:
   - Python
   - hydrology
@@ -35,7 +35,7 @@ bibliography: paper.bib
 
 # Summary
 
-`pymrr` is an open-source Python package for distributed rainfall–runoff
+`MRRpy` is an open-source Python package for distributed rainfall–runoff
 and flood-routing modeling. It is organized around two independent,
 interchangeable layers connected by a simple contract: a **runoff-generation**
 layer that converts precipitation into effective surface runoff, and a
@@ -57,7 +57,7 @@ urban shedding — which can be enabled individually or in any combination and a
 merged without double-counting, with each mechanism's contribution tracked
 separately. The registry is deliberately open: a `@register` decorator lets a
 third-party package contribute an entirely new runoff method without modifying
-`pymrr`, so further established schemes can be added as needed. The routing
+`MRRpy`, so further established schemes can be added as needed. The routing
 layer is a parallel open registry providing four interchangeable numerical
 schemes on the D8 drainage network — kinematic-wave, diffusive-wave,
 variable-parameter Muskingum–Cunge [@cunge1969; @ponce1978], and a
@@ -95,7 +95,7 @@ with the code base. Focused Python libraries such as `pysheds` [@bartos2020] and
 `pyflwdir` [@eilander2021] handle terrain analysis and flow routing on grids but
 stop short of coupled runoff generation and channel hydraulics.
 
-`pymrr` addresses this gap by making runoff generation and routing
+`MRRpy` addresses this gap by making runoff generation and routing
 **independent, interchangeable, and extensible** under one mass-conservative
 engine. Its target users — environmental engineers, hydrologists, geospatial
 researchers, and students — can mix and match built-in components from a single
@@ -122,7 +122,7 @@ offline from local files when Earth Engine is unavailable.
 
 # Software architecture and functionality
 
-A `pymrr` run is organized as an ordered pipeline of stages. `process_dem`
+A `MRRpy` run is organized as an ordered pipeline of stages. `process_dem`
 reprojects, pit-fills, and computes D8 flow direction and accumulation, then
 delineates the contributing watershed to a chosen outlet; two interchangeable
 engines are provided (`pysheds` [@bartos2020], following @ocallaghan1984, and
@@ -186,7 +186,7 @@ Its main capabilities include:
   archives.
 - **Interfaces:** one `Config` object (YAML, JSON, or Python; every fixed choice
   as a string or an integer code) drives a Python API with built-in plotting
-  helpers, a `pymrr` CLI (`init-config`, `validate`, `run`, `list-options`,
+  helpers, a `MRRpy` CLI (`init-config`, `validate`, `run`, `list-options`,
   `list-dems`), and a five-tab QGIS plugin with Processing-toolbox tools; the GPU
   path is selectable in float32 or float64 with automatic CPU fallback.
 
@@ -206,7 +206,7 @@ demos of each major feature.
 
 # Acknowledgements
 
-`pymrr` is built on the open-source scientific-Python and geospatial
+`MRRpy` is built on the open-source scientific-Python and geospatial
 ecosystem — including NumPy, SciPy, `rasterio`, GeoPandas, `pysheds`, and
 `pyflwdir` — and we thank their developers and maintainers.
 

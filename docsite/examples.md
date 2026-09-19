@@ -11,7 +11,7 @@ Run just the `process_dem` stage to reproject, pit-fill, compute D8 flow
 direction/accumulation, and delineate the catchment draining to your outlet.
 
 ```python
-from pymrr import Config, run_pipeline, plot_watershed
+from MRRpy import Config, run_pipeline, plot_watershed
 
 cfg = Config(
     DEM_PATH="dem_250.tif",
@@ -36,20 +36,20 @@ rasterio/geopandas overlay yourself.
 
 ## 2. Get a DEM from Earth Engine and delineate
 
-No local DEM yet? Skip `DEM_PATH` and give a bounding box instead — pymrr
+No local DEM yet? Skip `DEM_PATH` and give a bounding box instead — MRRpy
 downloads, area-averages and reprojects a DEM from Google Earth Engine before
-delineating. Requires `pip install pymrr[gee]` and authentication (see
+delineating. Requires `pip install MRRpy[gee]` and authentication (see
 [Configuration](configuration.md)).
 
 ```python
-import pymrr
-from pymrr import Config, run_pipeline, plot_watershed
+import MRRpy
+from MRRpy import Config, run_pipeline, plot_watershed
 
-print(pymrr.describe_available_dems())   # browse options — no [gee] needed just to look
+print(MRRpy.describe_available_dems())   # browse options — no [gee] needed just to look
 
 cfg = Config(
     DEM_BOUNDS_WGS84=(85.05, 27.55, 85.55, 27.90),  # (min_lon, min_lat, max_lon, max_lat)
-    DEM_SOURCE="nasadem",                            # see pymrr list-dems
+    DEM_SOURCE="nasadem",                            # see MRRpy list-dems
     OUTPUT_DIR="results/",
     OUTPUT_POINT=(27.632222, 85.293333),             # (lat, lon), inside the box
     TARGET_CRS_EPSG="EPSG:32645",
@@ -80,7 +80,7 @@ pixel-perfect.
 
 ```python
 import numpy as np, pandas as pd
-from pymrr import Config, run_pipeline, plot_hydrograph
+from MRRpy import Config, run_pipeline, plot_hydrograph
 
 # Synthetic upstream inflow: rises to a 12 m3/s peak at t=1h, recedes to a
 # 2 m3/s baseflow by t=3h.
@@ -138,7 +138,7 @@ on **channel cells** (keeping LULC/scalar roughness on overland cells), see
 needed there.
 
 ```python
-from pymrr import Config, run_pipeline, mannings_n_from_dem, plot_raster, plot_hydrograph
+from MRRpy import Config, run_pipeline, mannings_n_from_dem, plot_raster, plot_hydrograph
 
 cfg = Config(
     DEM_BOUNDS_WGS84=(85.3809, 27.7625, 85.4773, 27.8223),
@@ -217,7 +217,7 @@ condition, and full VSA-OPM physics (saturation-excess + Green-Ampt +
 impervious shedding) — all in one run.
 
 ```python
-from pymrr import (Config, run_pipeline, mannings_n_from_dem,
+from MRRpy import (Config, run_pipeline, mannings_n_from_dem,
                         plot_watershed, plot_hydrograph, plot_mass_balance)
 
 cfg = Config(
@@ -283,9 +283,9 @@ classic SCS Curve Number method. Curve numbers can come from three places via
 - **`scalar`** — a single basin-wide `RUNOFF_CN`.
 
 ```python
-from pymrr import Config, run_pipeline, plot_hydrograph
+from MRRpy import Config, run_pipeline, plot_hydrograph
 
-# --- Option A: GCN250 from Earth Engine (needs pymrr[gee] + a project) ---
+# --- Option A: GCN250 from Earth Engine (needs MRRpy[gee] + a project) ---
 cfg = Config(
     DEM_PATH="dem_250.tif",
     OUTPUT_DIR="results/",
@@ -336,10 +336,10 @@ to machine precision in every case.
 
 !!! tip "Pluggable runoff methods"
     Every runoff source is a small `RunoffMode` class registered by name.
-    To add your own without touching pymrr's source:
+    To add your own without touching MRRpy's source:
 
     ```python
-    from pymrr.core.runoff import RunoffMode, register
+    from MRRpy.core.runoff import RunoffMode, register
 
     @register("my_method")
     class MyMethod(RunoffMode):
