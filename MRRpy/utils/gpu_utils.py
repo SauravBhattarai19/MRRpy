@@ -26,8 +26,8 @@ def cupy_available() -> bool:
     if not _CUPY_AVAILABLE:
         return False
     try:
-        _cupy.cuda.Device(0).id   # raises RuntimeError if no device
-        return True
+        # Device(0).id only echoes the requested ordinal; it need not contact CUDA.
+        return _cupy.cuda.runtime.getDeviceCount() > 0
     except Exception:
         return False
 

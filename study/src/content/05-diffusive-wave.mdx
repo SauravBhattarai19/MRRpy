@@ -5,6 +5,8 @@ chapter: 5
 
 # Chapter 5 — Diffusive-Wave Routing
 
+The wide-channel formulas and historical widgets below illustrate the classical law. The current production kernel regularizes very small water-surface slopes and uses a diffusion timestep bound; §5.5 describes these safeguards. The widgets are not production validation tools.
+
 Chapter 4 builds the kinematic wave from the Saint-Venant equations and shows it **translating** a flood pulse downstream without ever changing its shape. That assumption — friction balances gravity, full stop — is exactly right on a steep mountain reach and exactly wrong on a flat valley floor. This chapter is entirely about the gap between those two cases: where the kinematic wave actually gives the wrong answer, what extra physics fixes it, how that physics is written into OPM's production router, and what it costs to run all of it under one single, global time step.
 
 ---
@@ -25,7 +27,7 @@ The widget below runs the same two-cell setup three ways — Normal, Backwater, 
 
 <KinematicFailureWidget />
 
-In the **Adverse** lane, the downstream water surface is *higher* than the upstream one — flow should stop. The diffusive scheme correctly clamps to $Q_\text{diff} = 0$. The kinematic scheme keeps draining at $0.02024\ \text{m}^3/\text{s}$ regardless, **into an already-fuller cell** — not a rounding error, a physically wrong answer.
+In the **Adverse** lane, the downstream water surface is higher. The directed model clamps $Q_\text{diff}=0$; physical reverse flow is excluded by this modeling choice. The kinematic scheme keeps draining at $0.02024\ \text{m}^3/\text{s}$ regardless, **into an already-fuller cell** — not a rounding error, a physically wrong answer.
 
 ---
 
@@ -41,7 +43,7 @@ Three cases fall out immediately:
 
 - $h_i > h_\text{ds}$ — the upstream cell is fuller than the bed slope alone would suggest. $S_w > S_0$: a small boost.
 - $h_i = h_\text{ds}$ — both cells equally full. $S_w = S_0$ exactly: identical to kinematic.
-- $h_i < h_\text{ds}$ — the downstream water surface is higher. $S_w < S_0$, and once $h_\text{ds} - h_i$ exceeds $S_0\,\Delta x$, $S_w$ goes **negative**. OPM clamps it: $S_\text{eff} = \max(S_w, 0)$ — flow halts rather than running backward.
+- $h_i < h_\text{ds}$ — the downstream water depth is greater; its water surface need not yet be higher. $S_w < S_0$, and once $h_\text{ds} - h_i$ exceeds $S_0\,\Delta x$, $S_w$ goes **negative**. OPM clamps it: $S_\text{eff} = \max(S_w, 0)$ — flow halts rather than running backward.
 
 Drag $h_i$ and $h_\text{ds}$ below and watch the water-surface line tilt, flatten, and reverse. With $S_0 = 0.001$ and $\Delta x = 100\,\text{m}$, the exact halt threshold is $h_\text{ds} - h_i = 0.10\,\text{m}$ — verify it on the slider.
 
@@ -91,64 +93,47 @@ The widget below walks through the full derivation step by step, then lets you t
 
 ---
 
-## 5.4 — The Real OPM Code: GSSHA-Style Conveyance Depth
+## 5.4 — Conveyance Depth and the Current Implementation
 
 $S_w$ alone is not quite enough. On a normal downhill bed the upstream cell's own depth $h_i$ is the right depth to carry the flow. But at a D8 saddle or a local DEM step, the *downstream* cell's ground can sit higher than the upstream cell's ($z_\text{ds} > z_i$) even while its water surface is still lower — water is conveyed across that higher lip, and the relevant depth is the depth of water **over that higher bed**, not over the upstream one.
 
-OPM's `diffusive_wave_discharge()` in `routing_utils.py` borrows the answer from the **CASC2D family of models** (Julien et al., 1995; later GSSHA, and the LISFLOOD-FP diffusion wave): use the depth above whichever of the two beds is higher,
+OPM's `diffusive_wave_discharge()` in `MRRpy/core/routing/hydraulics.py` borrows the answer from the **CASC2D family of models** (Julien et al., 1995; later GSSHA, and the LISFLOOD-FP diffusion wave): use the depth above whichever of the two beds is higher,
 
 $$
 h_\text{higher} = \max(\text{WSE}_i, \text{WSE}_\text{ds}) - \max(z_i, z_\text{ds})
 $$
 
-A single blend weight $\theta$ ties the slope and the conveyance depth together as a coherent pair: $\theta=0$ reduces to kinematic exactly (own depth, bed slope); $\theta=1$ — OPM's production default — is the full diffusion wave (water-over-higher-bed, water-surface slope). The widget below renders the **actual, unabridged function body** from the production code, with six numbered callouts, plus the `ds_safe` trick that lets every cell — including the outlet, which has no downstream neighbor — run the identical branch-free formula on the GPU.
+A single blend weight $\theta$ ties the slope and the conveyance depth together as a coherent pair: $\theta=0$ reduces to kinematic exactly (own depth, bed slope); $\theta=1$ — OPM's production default — is the full diffusion wave (water-over-higher-bed, water-surface slope). The widget below illustrates an older wide-sheet formula. It is not a verbatim copy of the current kernel: the production code also handles rectangular channels, zero dry conveyance, true bed-elevation differences, and slope regularization. Consult the current Python function for executable mathematics.
 
 <ConveyanceDepthWidget />
 
 ---
 
-## 5.5 — One Global Δt, Many Slopes: The Hidden Cost
+## 5.5 — Why Level Water Can Control the Explicit Step
 
-Every explicit scheme needs a stable $\Delta t$, and OPM picks exactly one for the whole watershed. Look at the real self-check in `kinematic_wave_router.py`:
+The current router recomputes a scheme-specific bound from the wet state. It does not choose the diffusive step solely from the steepest bed slope. Write $Q=K(h)\sqrt{S}$ for positive water-surface slope $S$. Holding conveyance fixed gives
 
-```python
-max_slope         = float(slope_1d.max().item())
-n_min             = float(n.min().item()) if hasattr(n, 'min') else float(n)
-V_at_1m_max_slope = (1.0 / n_min) * (1.0 ** (2.0 / 3.0)) * (max_slope ** 0.5)
-C_indicator       = V_at_1m_max_slope * dt / dx
-safe_dt           = dx / V_at_1m_max_slope
-```
+$$
+\frac{\partial Q}{\partial(h_i-h_j)}=\frac{K}{2L\sqrt{S}}.
+$$
 
-This runs once, on the **static bed-slope grid**, using the single steepest cell and the smallest roughness anywhere in the basin — and it runs identically whether `ROUTING_SCHEME` is `'kinematic'` or `'diffusive'`. Diffusive routing inherits the kinematic CFL's global $\Delta t$; it does not get its own.
+As water levels approach equality, discharge tends to zero but its sensitivity grows without bound. For a wide uniform channel, the linearized diffusivity is $D=h^{5/3}/(2n\sqrt{S})$. Explicit stepping therefore has a diffusion restriction proportional to $\Delta x^2/D$, in addition to its advective restriction. Small velocity is not evidence of a safe large step.
 
-That single choice is sized for the steepest cell, which means every gentler cell is running far below its own stability limit — and an under-sized Courant number is exactly what manufactures **numerical diffusion** ($D_\text{num} \approx \tfrac{c\,\Delta x}{2}(1-C)$, from Chapter 4 §4.4; the global-vs-local trade-off is Chapter 4 §4.5). The widget below puts OPM's real $\Delta x \approx 100\,\text{m}$ and default $\Delta t = 0.7\,\text{s}$ into three illustrative zones spanning a real watershed's slope range:
+The production kernel uses $\phi_\epsilon(S)=S/\sqrt{\max(S,\epsilon)}$ for nonnegative interior slopes. This keeps discharge zero at level water and bounds its derivative. The controller sums twice the tangent head conductance and conveyance terms over incident edges, including all tributaries, divided by actual storage area. At/below epsilon, doubling the linear conductance prevents the alternating-mode sign reversal found with the earlier positivity-only bound. A narrow receiver can be more restrictive than its donors. `CFL_DT_MIN` is a warning threshold; it cannot override the safe step.
 
-<GlobalDtTyrannyWidget />
-
-At the default settings, the flat valley-floor cell's Courant number is **164× smaller** than the steep headwater cell that set $\Delta t$ in the first place — and it is **131× smaller** than Chapter 4's already-failing "Too Small Δt" demo lane. The consequence: at that flat cell, the scheme's own numerical smoothing is already **≈28%** the size of the physical backwater diffusivity it was built to capture. $D_\text{num}$ and $D_\text{phys}$ enter the exact same equation, so OPM has no way to report which fraction of a flat-valley hydrograph's attenuation is real physics and which is a grid artifact. (At the steep cell the ratio looks huge too, but both numbers are negligible there in absolute terms — consistent with §5.3's table that steep slopes barely diffuse regardless.)
+Regularization changes the small-gradient law. Increasing epsilon can speed explicit stepping while changing relaxation. A slope cap or a volume limiter alone does not fix this stiffness. Averaging output can hide oscillation without fixing the state update.
 
 ---
 
-## 5.6 — Should OPM Have Used Implicit?
+## 5.6 — What an Implicit Solve Can and Cannot Fix
 
-An implicit scheme removes the CFL limit entirely — but it is not free:
+Backward Euler treats the diffusive transfer at the new time level. For linear diffusion it damps stiff modes without the explicit diffusion restriction. Nonlinear routing still requires a converged conservative solve, nonnegative water, boundary handling, and timestep refinement for accuracy. Crank–Nicolson is stable for linear diffusion but can ring after an abrupt release; stability does not imply nonoscillatory behavior.
 
-| Issue | Implicit | Explicit (what OPM uses) |
-|---|---|---|
-| Stability | any $\Delta t$ | needs $C \lesssim 1$ |
-| Cost per step (2-D grid) | sparse matrix solve | one elementwise pass |
-| Nonlinear $Q(h)$ | Newton iterations each step | direct formula |
-| GPU parallelism | global communication | embarrassingly parallel |
+An acyclic D8 network with one downstream neighbor per cell is a tree or forest. Confluences break a chain's tridiagonal ordering, but **do not require a general sparse solver**. Eliminate leaves toward the roots, then back-substitute: each edge is processed once. This gives an $O(N)$ linear solve per Newton iteration, including nonsymmetric edge Jacobians. Cycles, multiple-flow-direction links, and a full 2-D mesh require a different solver.
 
-Chapter 4 §4.6 already showed a real implicit scheme — the Preissmann θ-method solved by the Thomas algorithm — and noted it works because a single 1-D channel is a **chain**: each interior cell has exactly one upstream and one downstream neighbor, which collapses the linear system to a lower-bidiagonal matrix solvable in one forward sweep.
+The independent prototype in `tools/diffusive_independent_lab.py` checks this tree solve against dense and sparse linear algebra, then tests nonlinear reservoir releases against SciPy Radau. It also tests a flux-variable formulation without slope epsilon. These are research implementations, not production routing options or GPU benchmarks. A contraction makes a large Newton step fail; timestep rejection and retry are essential.
 
-OPM's domain is not a chain. It is a watershed-wide D8 flow-direction graph, assembled and routed with `scatter_add`, where a **confluence** — two or more upstream cells feeding one downstream cell — is the normal case, not the exception.
-
-<DagVsChannelDiagram />
-
-A confluence breaks the tridiagonal/bidiagonal structure a Thomas algorithm needs: the downstream row in the matrix now has two or more nonzero upstream entries, not one. Solving that requires a general sparse solver, not a cheap single-sweep elimination — architecturally different, and far more expensive, at the $10^4$–$10^6$-cell scale OPM targets.
-
-**Verdict:** explicit was the right call for OPM's actual architecture and scale — the per-step cost of a sparse implicit solve over a branching DAG would dwarf the savings, and the flux limiter already neutralizes the one thing implicit buys (robustness to large $C$). But that decision leaves the §5.5 cost sitting on the table: a watershed with both steep and flat cells pays needless numerical diffusion on every flat cell, every step. The fix that *would* address it without a full implicit rewrite is **local/block time stepping, a TVD flux, or Muskingum–Cunge matched diffusion** (Chapter 4 §4.5 lays out all four routes and the GPU trade-off) — none implemented in OPM today, and left here as clearly scoped future work rather than a flaw to patch immediately.
+See `docsite/diffusive-flat-water-investigation.md` for measured errors, failures, and source references. The earlier claim that a flux limiter replaces diffusion stability, or that implicit D8 routing is inherently impractical, was incorrect.
 
 ---
 
@@ -161,7 +146,7 @@ A confluence breaks the tridiagonal/bidiagonal structure a Thomas algorithm need
 | Flat valley floors ($S_0 < 0.005$) | $< 20$ | **Diffusive** | Backwater and attenuation matter |
 | Urban / ponding areas | varies | **Diffusive** | Stormwater pools |
 
-This is why OPM defaults to `ROUTING_SCHEME = 'diffusive'`: a basin with both steep hillslopes and flat valley floors is handled correctly by one scheme, because the diffusive formula automatically collapses to the kinematic answer wherever $h_\text{higher} \approx h_i$ and $S_w \approx S_0$.
+Diffusive routing can model downstream-stage suppression of flow, but its directed links prohibit reverse flow. It is not a general ponding, floodplain, or dam-break solver. The routing choice must be checked against the event and boundary conditions; bed slope alone is not sufficient.
 
 Adding backwater and flow-halting does not threaten mass conservation. The volume update from Chapter 2 is completely unchanged —
 
@@ -171,7 +156,7 @@ $$
 
 — only the *formula* for $Q_\text{out}$ differs between schemes, and both are capped by the identical flux limiter and tracked by the identical mass-balance accumulators. When $S_\text{eff} = 0$, $Q_\text{diff} = 0$: no water leaves the cell, the limiter is trivially satisfied, and the volume is simply unchanged — stopping flow does not lose water.
 
-Drag $\theta_\text{diff}$ below to separate the kinematic, blended, and full-diffusive curves on the same hydrograph:
+The historical widget below illustrates blending in a simplified model. Its fixed step, slope floor, and clipping differ from the current router; its hydrograph is not a stability or accuracy benchmark:
 
 <DiffusiveWaveWidget />
 
@@ -197,5 +182,5 @@ Drag $\theta_\text{diff}$ below to separate the kinematic, blended, and full-dif
 4. The $\theta$-blend makes $\theta=0$ exactly kinematic and $\theta=1$ fully diffusive; OPM uses $\theta=1$.
 5. The CASC2D/GSSHA conveyance depth $h_\text{higher}$ correctly handles adverse slopes and reduces to $h_i$ for normal downhill flow.
 6. The `ds_safe` trick replaces the outlet's $-1$ index with 0 and masks the result — a branch-free, GPU-friendly downstream lookup.
-7. OPM's single global $\Delta t$, sized for the steepest cell, leaves flat cells running at a tiny fraction of their own stability limit — manufacturing numerical diffusion that is indistinguishable, inside the model, from the real physical diffusivity it was built to capture.
-8. Explicit was the right architectural call for OPM's branching D8 domain — a true implicit solve would need a general sparse solver, not the cheap single-sweep Thomas algorithm a 1-D channel allows — but a per-zone or flow-adaptive $\Delta t$ remains the clean fix for the cost identified in §5.5, and is not yet implemented.
+7. Nearly level wet cells can determine the global explicit step because head conductance increases as the water-surface gradient vanishes. Positivity alone is insufficient.
+8. Implicit tree solves are feasible on acyclic D8 networks. They alleviate explicit stiffness but require nonlinear convergence checks, accuracy controls, and separate GPU validation.

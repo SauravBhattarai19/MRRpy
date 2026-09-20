@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/sauravbhattarai/Projects/pymrr/tools/routing_stability_audit.py", line 138, in <module>
+    main()
+  File "/Users/sauravbhattarai/Projects/pymrr/tools/routing_stability_audit.py", line 116, in main
+    xp = backend(args.backend)
+  File "/Users/sauravbhattarai/Projects/pymrr/tools/routing_stability_audit.py", line 31, in backend
+    raise RuntimeError("CUDA GPU unavailable: refusing CPU fallback for GPU audit")
+RuntimeError: CUDA GPU unavailable: refusing CPU fallback for GPU audit

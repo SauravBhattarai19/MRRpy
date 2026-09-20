@@ -67,14 +67,13 @@ register_scheme(RoutingScheme(
 ))
 register_scheme(RoutingScheme(
     name="muskingum",
-    label="MUSKINGUM–CUNGE (variable-parameter; physical diffusion "
-          "D=Q/(2BS₀), grid-independent)",
+    label="MUSKINGUM–CUNGE (variable-parameter; check coefficient signs and storage)",
     rate_based=True,
 ))
 register_scheme(RoutingScheme(
     name="dynamic",
-    label="DYNAMIC wave (local-inertial / LISFLOOD-FP; ∂Q/∂t + surface "
-          "slope + semi-implicit friction — shock-preserving)",
+    label="LOCAL-INERTIAL wave (∂Q/∂t + surface slope + semi-implicit friction; "
+          "omits advective momentum)",
     needs_water_surface_slope=True,   # uses WSE gradient + h-over-higher-bed geometry
     momentum_state=True,              # persists per-face Q across steps
 ))

@@ -29,6 +29,7 @@ Usage
 """
 
 import json
+import math
 import os
 
 from .gee.dem_catalog import DEM_CATALOG as _DEM_CATALOG
@@ -314,6 +315,9 @@ class Config:
     # ── Routing scheme ───────────────────────────────────────────────────────
     ROUTING_SCHEME: str = "kinematic"       # 'kinematic'|'diffusive'|'muskingum'|'dynamic'
     DIFFUSION_THETA: float = 1.0            # diffusion weight θ∈[0,1]
+    # Linearize sqrt(S) below this slope: Q=K*S/sqrt(max(S, eps)).
+    # Zero head gives zero flux. This changes low-gradient physics; check sensitivity.
+    DIFFUSION_SLOPE_EPS: float = 1e-6
     # de Almeida flux-centering weight for ROUTING_SCHEME='dynamic' (local-inertial).
     # 1.0 = original Bates (oscillation-prone); 0.7-0.9 damps the checkerboard.
     DYNAMIC_FLUX_THETA: float = 0.8
@@ -352,23 +356,20 @@ class Config:
     ADAPTIVE_TIMESTEP: bool = False
     CFL_TARGET: float = 0.85
     CFL_DT_MAX = 5.0                        # None → OUTPUT_INTERVAL_SECONDS
-    CFL_DT_MIN: float = 0.01
+    CFL_DT_MIN: float = 0.01               # warning threshold; never overrides stability
     CFL_DT_GROW: float = 1.5
 
     # ── Numerical floors ─────────────────────────────────────────────────────
     MIN_SLOPE: float = 1e-4
     MIN_DEPTH_M: float = 1e-6
     MAX_DEPTH_M: float = 10.0               # display use only
-    # Cap the friction slope used in the Manning velocity/celerity (all schemes).
-    # On near-vertical cells raw Manning gives unphysical velocities (>100 m/s) and
-    # celerities that no explicit dt can satisfy (→ flux-limiter takes over the
-    # routing).  Capping S at a physical maximum (e.g. 0.05-0.10) keeps celerity
-    # realistic and lets the explicit schemes convey steep-terrain surges.  None
-    # (default) = uncapped (byte-identical to prior behaviour).
+    # Optional rating-slope cap for kinematic/MC and free-outflow boundaries.
+    # It changes the physical rating, and is not a numerical stability remedy.
+    # Full diffusive/local-inertial interior gradients use the true bed and depth;
+    # capping them would destroy a level-water equilibrium.
     MANNING_SLOPE_CAP = None                # m/m, e.g. 0.05; None = off
-    # Volume-conservative flux limiter (Q <= V/dt) for kinematic/diffusive.  It is
-    # the scheme's stability net; disable ONLY with a CFL-safe adaptive dt (the
-    # volume ledger is signed, so mass still closes globally via the scatter).
+    # Positivity limiter (Q <= V/dt), not a substitute for a stable timestep.
+    # With it disabled, negative volume raises rather than silently creating water.
     # Muskingum-Cunge never uses it.  True (default) = on.
     FLUX_LIMITER: bool = True
 
@@ -568,6 +569,22 @@ class Config:
 
         if self.TIME_STEP_SECONDS <= 0:
             errors.append(f"TIME_STEP_SECONDS must be > 0 (got {self.TIME_STEP_SECONDS})")
+
+        for name in ("TIME_STEP_SECONDS", "CFL_DT_MIN", "DIFFUSION_SLOPE_EPS", "MIN_DEPTH_M"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                errors.append(f"{name} must be finite and positive")
+        for name in ("CFL_DT_MAX", "OUTPUT_INTERVAL_SECONDS"):
+            value = getattr(self, name)
+            if value is not None and (not math.isfinite(value) or value <= 0):
+                errors.append(f"{name} must be finite and positive, or None")
+        if not math.isfinite(self.CFL_TARGET) or not 0 < self.CFL_TARGET <= 1:
+            errors.append("CFL_TARGET must be in (0, 1]")
+        for name in ("DIFFUSION_THETA", "DYNAMIC_FLUX_THETA"):
+            if not math.isfinite(getattr(self, name)) or not 0 <= getattr(self, name) <= 1:
+                errors.append(f"{name} must be in [0, 1]")
+        if not math.isfinite(self.CFL_DT_GROW) or self.CFL_DT_GROW < 1:
+            errors.append("CFL_DT_GROW must be finite and >= 1")
 
         if self.TOTAL_SIMULATION_TIME_HOURS <= 0:
             errors.append("TOTAL_SIMULATION_TIME_HOURS must be > 0")

@@ -328,21 +328,14 @@ CELL_SIZE = None
 
 # ── Routing scheme ────────────────────────────────────────────────────────────
 # ROUTING_SCHEME:
-#   'kinematic' → Manning on the static bed slope S₀ (default; current behaviour,
-#                 bit-for-bit reproducible).
-#   'diffusive' → CASC2D/GSSHA-style diffusion wave: Manning on the *water-surface*
-#                 slope  S_w = (z_i−z_ds)/dist + θ·(h_i−h_ds)/dist, with conveyance on the
-#                 flow-depth-over-the-higher-bed.  Adds peak attenuation and adverse-
-#                 gradient slowdown along the drainage network.  Costs one extra
-#                 downstream gather per step (no Δx² penalty).
-#   'muskingum' → Muskingum–Cunge (variable-parameter, Ponce–Yevjevich).  A kinematic-
-#                 wave scheme whose *numerical* diffusion is tuned (via the weighting
-#                 factor X) to equal the *physical* hydraulic diffusivity D=Q/(2·B·S₀),
-#                 so peak attenuation is physically correct AND grid-independent — unlike
-#                 the storage-cell kinematic/diffusive schemes whose attenuation drifts
-#                 with cell size Δx.  Each D8 cell is a reach; K=Δx/c, X=½(1−q/(S₀·c·Δx))
-#                 are recomputed per cell per step from the local celerity c=5/3·V.
-#                 DIFFUSION_THETA is ignored.
+#   'kinematic' → Manning on bed slope; no backwater response.
+#   'diffusive' → Manning on water-surface slope, with regularization at level
+#                 water. Explicit stability includes a dx² diffusion restriction.
+#                 A volume limiter alone cannot prevent stage/flux oscillation.
+#   'muskingum' → variable-parameter Muskingum–Cunge; diffusion matching is
+#                 conditional on its assumptions and coefficient admissibility.
+#   'dynamic'   → local inertia; omits advective momentum, so is not a general
+#                 shock-resolving shallow-water solver for fast dam breaks.
 ROUTING_SCHEME = 'muskingum'
 
 # DIFFUSION_THETA: diffusion weight θ∈[0,1] (used only when ROUTING_SCHEME='diffusive').
@@ -378,47 +371,32 @@ TIME_STEP_SECONDS = 2
 OUTPUT_INTERVAL_SECONDS = 600
 
 # ── Adaptive CFL timestep ─────────────────────────────────────────────────────
-# ADAPTIVE_TIMESTEP: when True, dt is re-derived each step from the actual wave
-#   celerity c = (5/3)·V on the wet domain; False → static TIME_STEP_SECONDS.
-# CFL_TARGET: target Courant number; dt = CFL_TARGET·dx/c_max with the wave
-#   celerity c = (5/3)·Q/(h_flow·dx).  Pure advective CFL for BOTH schemes (a
-#   von Neumann diffusion-number term was tried and removed — D ∝ S_eff^(-1/2)
-#   pinned dt at the floor on flat-water cells; stability comes from the volume
-#   flux limiter, not from dt).
-#   TRADEOFF (first-order upwind, numerical diffusion D_num = (c·dx/2)(1−C)):
-#   higher C (→1) = less numerical diffusion = SHARPER, more physical peak, but
-#   more dispersive ripple; lower C = smoother but a damped/smeared peak.  With
-#   the interval-averaged hydrograph cleaning sub-step ripple, prefer C HIGH:
-#   0.7 is safe, try 0.85 for a sharper peak.  Watch the flux-limiter % — if it
-#   climbs you're too near C=1 (limiter engaging adds its own error).
+# ADAPTIVE_TIMESTEP: recompute the scheme-specific stable step each iteration.
+# False uses TIME_STEP_SECONDS as a ceiling; unsafe static steps are subcycled.
+# CFL_TARGET scales the hydraulic stability bound. Diffusive routing includes
+# both conveyance sensitivity and head conductance on all incident D8 edges,
+# divided by each cell's actual storage area (including narrow receivers).
 # CFL_DT_MAX: ceiling on dt [s]; None → OUTPUT_INTERVAL_SECONDS.
-#   Caps dt during dry/quiescent periods so the rising limb stays resolved.
-# CFL_DT_MIN: floor on dt [s]; flux limiter covers cells needing a smaller step.
-#   When it binds, a one-line warning + end-of-run count are printed.
-# WHY ADAPTIVE: a small static dt (≈0.9 s) over-diffuses (damps/smears the peak)
-#   and is slow; adaptive holds Courant near CFL_TARGET → a sharper, less-damped
-#   peak and far fewer steps.  The previous adaptive "saw-tooth" was NOT a routing
-#   instability — it was the hydrograph being point-sampled (instantaneous outlet
-#   rate) once per output step, which aliases sub-step dispersive ripples and the
-#   adaptive-dt jitter.  The outlet is now reported as the interval-MEAN flux
-#   (ΔV/Δt), which is mass-consistent and invariant to dt jitter → smooth.
+# CFL_DT_MIN: warning threshold only. It must never raise a smaller safe step.
+# Interval-mean hydrographs preserve discharge volume but do not cure instability.
+# See docsite/diffusive-flat-water-investigation.md for derivation and tests.
 ADAPTIVE_TIMESTEP = True
 CFL_TARGET        = 0.85
 CFL_DT_MAX        = 5   # None → OUTPUT_INTERVAL_SECONDS
 CFL_DT_MIN        = 0.01   # [s]
 # CFL_DT_GROW: max factor by which adaptive dt may increase in one step.
-# Prevents oscillatory blow-up when c_max drops suddenly (GSSHA-style ramp-up).
+# Limits growth after a decrease in hydraulic rate; does not replace stability bounds.
 # 1.5 → dt=0.01s reaches 7s in ~17 steps; set to float('inf') to disable.
 CFL_DT_GROW       = 1.5
 
-# Minimum slope (m/m) — floor in Manning's to avoid division-by-zero on flat cells.
+# Bed/free-outflow Manning slope floor; not an interior stage-gradient floor.
 MIN_SLOPE   = 1e-4
 
-# Minimum water depth (m) — wet/dry front numerical floor.
+# Minimum depth control; diffusive dry-cell conveyance remains exactly zero.
 MIN_DEPTH_M = 1e-6
 
 # MAX_DEPTH_M: display use only (animation colour scale).
-# Depth capping was removed from the router; the flux limiter handles stability.
+# Depth capping was removed; positivity and timestep stability are separate checks.
 MAX_DEPTH_M = 10.0
 
 

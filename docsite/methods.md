@@ -130,7 +130,7 @@ Four interchangeable channel-routing schemes run on the D8 drainage network:
 | `kinematic` | 0 | kinematic wave (Manning on bed slope) | steep terrain; fastest; no backwater |
 | `diffusive` | 1 | diffusive wave (water-surface slope) | mild slopes / backwater matter |
 | `muskingum` | 2 | variable-parameter Muskingum–Cunge | channel routing with matched diffusion |
-| `dynamic` | 3 | local-inertial dynamic wave (LISFLOOD-FP style) | sharp surges: GLOF / dam-break routing |
+| `dynamic` | 3 | local-inertial wave (LISFLOOD-FP style) | events where advective momentum is negligible |
 
 ### `kinematic`
 Discharge from Manning's equation on the **bed** slope. The lightest, fastest
@@ -138,8 +138,11 @@ option; it cannot represent backwater or adverse gradients.
 
 ### `diffusive`
 Diffusive-wave routing (CASC2D/GSSHA-style): the friction slope is the
-**water-surface** slope, so the scheme captures backwater and flow over mild or
-flat reaches. `DIFFUSION_THETA` blends bed and water-surface slope
+**water-surface** slope, allowing downstream stage to suppress forward flow.
+Directed D8 links prohibit reverse flow. Near-level water requires slope
+regularization and an explicit diffusion timestep bound; a volume limiter alone
+does not prevent oscillation. See the [independent investigation](diffusive-flat-water-investigation.md).
+`DIFFUSION_THETA` blends bed and water-surface slope
 (0 → kinematic, 1 → full diffusion; default 1).
 
 ### `muskingum`
@@ -149,13 +152,12 @@ hydraulic diffusivity.
 
 ### `dynamic`
 Local-inertial dynamic wave (LISFLOOD-FP / Bates et al. 2010, with de Almeida
-2012 flux-centering). It keeps the local acceleration term ∂Q/∂t, so a **sharp
-surge propagates at the true dynamic-wave celerity √(gh)+u and is preserved** —
-where the kinematic scheme diffuses it away and Muskingum–Cunge damps it out.
-Its semi-implicit friction also bounds velocity physically on steep cells (no
-artificial slope cap needed). Use it for **shock-like flood waves — glacial-lake
-outburst floods (GLOFs), dam breaks, sudden reservoir releases** — typically
-with an inflow boundary condition (`ROUTING_INFLOW_BC`) and no rainfall.
+2012 flux-centering). It keeps local acceleration ∂Q/∂t but omits advective
+momentum. It does not generally preserve dam-break shocks or reproduce the full
+shallow-water characteristic speeds. Semi-implicit friction improves robustness;
+it does not establish accuracy for steep, rapidly accelerating, supercritical
+releases. Such events need comparison with a full shallow-water solver and
+independent analytical or experimental benchmarks.
 `DYNAMIC_FLUX_THETA` (default 0.8) is the de Almeida flux-centering weight;
 lower it (0.6–0.8) to damp residual oscillation, at the cost of some sharpness.
 

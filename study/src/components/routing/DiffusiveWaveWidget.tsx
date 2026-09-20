@@ -152,7 +152,7 @@ export default function DiffusiveWaveWidget() {
           Kinematic vs. Diffusive Wave
         </h3>
         <p className="text-sky-200 text-sm mt-0.5">
-          θ_diff controls attenuation — kinematic translates, diffusive spreads
+          Historical fixed-step illustration; not a production stability benchmark
         </p>
       </div>
 

@@ -1,0 +1,7 @@
+CPU validation: 130 passed, 76 skipped (74 CUDA, 2 external datasets).
+Command: python -m pytest -q
+Environment: Python 3.9, NumPy 2.0.2, temporary venv; inherited PROJ_LIB/PROJ_DATA unset.
+CUDA execution: unavailable; explicit GPU runner refused CPU fallback.
+Production audit: 48 before and 48 after cases; four schemes, six scenarios, two precisions.
+Additional tests: temporal/spatial refinement, reservoir ablations, epsilon sensitivity, implicit flat diffusion, full-SWE HLL/Ritter.
+Generated plugin: five changed core files synchronized and archive contents verified.

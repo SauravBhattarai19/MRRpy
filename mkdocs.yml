@@ -40,6 +40,8 @@ nav:
   - Examples: examples.md
   - Nepal flood example: examples-nepal.md
   - Methods: methods.md
+  - Routing stability audit: routing-stability-audit.md
+  - Diffusive flat-water investigation: diffusive-flat-water-investigation.md
   - Configuration: configuration.md
   - CLI: cli.md
   - API reference: api.md

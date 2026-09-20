@@ -58,12 +58,12 @@ merged without double-counting, with each mechanism's contribution tracked
 separately. The registry is deliberately open: a `@register` decorator lets a
 third-party package contribute an entirely new runoff method without modifying
 `MRRpy`, so further established schemes can be added as needed. The routing
-layer is a parallel open registry providing four interchangeable numerical
+layer provides four selectable numerical
 schemes on the D8 drainage network — kinematic-wave, diffusive-wave,
 variable-parameter Muskingum–Cunge [@cunge1969; @ponce1978], and a
-local-inertial dynamic wave [@bates2010; @dealmeida2012] that preserves sharp
-surges (e.g. glacial-lake-outburst or dam-break fronts) which the diffusive
-schemes smear — with adaptive time-stepping and always-on mass-balance
+local-inertial wave [@bates2010; @dealmeida2012], which retains local acceleration
+but omits advective momentum and does not generally resolve dam-break shocks —
+with adaptive time-stepping and always-on mass-balance
 verification, so different process representations and routing numerics can be
 compared on identical terrain and forcing.
 
@@ -170,8 +170,9 @@ Its main capabilities include:
   or a raster), with optional order-based channel cross-sections.
 - **Routing:** kinematic, diffusive (with a tunable kinematic-to-diffusion
   blend), Muskingum–Cunge, or a local-inertial dynamic wave (with de Almeida
-  flux-centering, for shock-preserving GLOF/dam-break surges), on fixed or
-  adaptive-CFL time steps, with an optional volume-conservative flux limiter, an
+  flux-centering, subject to the local-inertia approximation), with fixed timestep
+  ceilings or adaptive stepping constrained by scheme-specific stability bounds,
+  an optional volume-conservative flux limiter, an
   optional Manning slope cap for steep terrain, and always-on mass-balance and
   per-mechanism runoff accounting logged one row per run for side-by-side
   comparison.

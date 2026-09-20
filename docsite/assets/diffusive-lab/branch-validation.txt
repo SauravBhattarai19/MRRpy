@@ -1,0 +1,78 @@
+.....................................................ss.s..ss..ss.s.s..s [ 30%]
+s................................................sssssssssssssssssssssss [ 60%]
+sssssssssssssssssssssssss.....ssss...........ssssssss.s...s.s.s.s....... [ 90%]
+....................ss                                                   [100%]
+=============================== warnings summary ===============================
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:64
+  /Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:64: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    prop = Group((name + Suppress("=") + comma_separated(value)) | oneOf(_CONSTANTS))
+
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+  /Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+  /Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+../../../Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_mathtext.py:45
+  /Users/sauravbhattarai/Library/Python/3.9/lib/python/site-packages/matplotlib/_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+tests/test_core_science.py: 4 warnings
+tests/test_surge_benchmark.py: 4 warnings
+tests/test_surge_diffusive_guards.py: 2 warnings
+  /private/tmp/pymrr-routing-venv/lib/python3.9/site-packages/rasterio/transform.py:178: PendingDeprecationWarning: Use `@` matmul instead of `*` mul operator for matrix multiplication
+    return Affine.translation(west, north) * Affine.scale(xsize, -ysize)
+
+tests/test_core_science.py::test_config_roundtrip_and_validate
+  /private/tmp/pymrr-hpc-audit/tests/test_core_science.py:98: PendingDeprecationWarning: Use `@` matmul instead of `*` mul operator for matrix multiplication
+    ex, ey = transform * (ocol + 0.5, orow + 0.5)
+
+tests/test_core_science.py: 5 warnings
+tests/test_surge_benchmark.py: 4 warnings
+tests/test_surge_diffusive_guards.py: 2 warnings
+  /private/tmp/pymrr-routing-venv/lib/python3.9/site-packages/rasterio/transform.py:189: PendingDeprecationWarning: Use `@` matmul instead of `*` mul operator for matrix multiplication
+    return Affine.translation(west, north) * Affine.scale(
+
+tests/test_core_science.py: 5 warnings
+tests/test_surge_benchmark.py: 4 warnings
+tests/test_surge_diffusive_guards.py: 2 warnings
+  /private/tmp/pymrr-routing-venv/lib/python3.9/site-packages/pysheds/sgrid.py:904: DeprecationWarning: `in1d` is deprecated. Use `np.isin` instead.
+    invalid_cells = ~np.in1d(fdir.ravel(), dirmap).reshape(fdir.shape)
+
+tests/test_surge_benchmark.py: 20 warnings
+tests/test_surge_diffusive_guards.py: 10 warnings
+  /private/tmp/pymrr-hpc-audit/tests/_surge_case.py:56: PendingDeprecationWarning: Use `@` matmul instead of `*` mul operator for matrix multiplication
+    x, y = transform * (col + 0.5, row + 0.5)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [2] tests/test_routing_stability.py:45: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:57: Real CUDA GPU unavailable
+SKIPPED [2] tests/test_routing_stability.py:62: Real CUDA GPU unavailable
+SKIPPED [2] tests/test_routing_stability.py:84: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:95: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:106: Real CUDA GPU unavailable
+SKIPPED [2] tests/test_routing_stability.py:121: Real CUDA GPU unavailable
+SKIPPED [48] tests/test_routing_stability.py:133: Real CUDA GPU unavailable
+SKIPPED [4] tests/test_routing_stability.py:155: Real CUDA GPU unavailable
+SKIPPED [8] tests/test_routing_stability.py:222: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:232: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:256: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:264: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:274: Real CUDA GPU unavailable
+SKIPPED [1] tests/test_routing_stability.py:287: Real CUDA GPU unavailable
+SKIPPED [1] qgis_plugin/tests/test_runner.py:60: Output rasters not present — run process_dem first
+SKIPPED [1] qgis_plugin/tests/test_runner.py:106: Output rasters or FLOOD_03 data not present
+160 passed, 78 skipped, 77 warnings in 89.49s (0:01:29)

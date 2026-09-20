@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────
-// Ground-truth physics, ported verbatim from routing_utils.py::diffusive_wave_discharge()
+// Historical wide-sheet illustration; not the current production kernel.
 //
 //   S_w      = S0 + theta * (h_i - h_ds) / dist        (water-surface slope)
 //   S_eff    = max(S_w, 0)                              (adverse grad -> no discharge)
@@ -589,12 +589,12 @@ export default function ConveyanceDepthWidget() {
         {/* ───────── Part B: annotated source code ───────── */}
         <div>
           <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-2">
-            Part B — The Real OPM Source Code
+            Part B — Historical Simplified Formula
           </h4>
           <p className="text-xs text-slate-500 mb-3">
-            <code>routing_utils.py</code> → <code>diffusive_wave_discharge()</code> — every line of
-            real production logic, unabridged. Numbered comments map one-to-one onto the callouts
-            below.
+            This older wide-sheet example omits current slope regularization, rectangular
+            channels, and zero dry conveyance. See <code>MRRpy/core/routing/hydraulics.py</code>
+            for the current kernel. Numbered comments explain this illustration only.
           </p>
 
           <pre className="bg-slate-50 font-mono text-xs p-3 rounded border border-slate-200 whitespace-pre overflow-x-auto">

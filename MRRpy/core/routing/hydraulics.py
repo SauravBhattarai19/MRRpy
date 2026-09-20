@@ -88,9 +88,9 @@ def local_inertial_update(Q_inertia, Q_fric, A_xs, R, S, n, dt, xp, g=9.81):
     One local-inertial (LISFLOOD-FP) momentum update per face, with de Almeida &
     Bates (2013) flux centering for stability.
 
-    Keeps the local acceleration term ∂Q/∂t (dropped by kinematic/diffusive) so a
-    sharp wave propagates at the true dynamic-wave celerity √(gh)+u and is preserved
-    (no numerical diffusion, no MC coefficient damping).  ``Q_inertia`` is the
+    Keeps the local acceleration term ∂Q/∂t, but omits advective momentum.
+    This is NOT the full shallow-water system and does not preserve general
+    dam-break shocks. Flux centering introduces numerical diffusion. ``Q_inertia`` is the
     *centered* previous flux q* = θ·q_i + (1−θ)/2·(q_up + q_down) — the de Almeida
     stabilisation that suppresses the checkerboard oscillation the original Bates
     (θ=1) scheme suffers.  Friction is semi-implicit on the own-face flux ``Q_fric``,
@@ -110,62 +110,33 @@ def local_inertial_update(Q_inertia, Q_fric, A_xs, R, S, n, dt, xp, g=9.81):
 
 
 def diffusive_wave_discharge(depth, dem, dist, slope_bnd, n, ds_safe, valid_ds,
-                             theta, cell_size, xp, min_depth, width, chan_mask):
-    """
-    CASC2D / GSSHA-style diffusion-wave cell discharge [m³/s].
+                             theta, cell_size, xp, min_depth, width, chan_mask,
+                             slope_regularization=1e-6):
+    """Downstream-only D8 diffusion-wave discharge with a regularized flat limit.
 
-    Replaces the pure-kinematic ``mannings_velocity``→``cell_discharge`` pair when
-    ``ROUTING_SCHEME='diffusive'``.  The friction slope becomes the *water-surface*
-    slope along the D8 flow path, which lets the wave attenuate (peak flattening) and
-    slow under an adverse gradient — physics the bed-slope kinematic wave cannot capture.
+    Interior slope is (1-theta)*S_bnd + theta*((z_i-z_j)+(h_i-h_j))/L.
+    Thus theta=1 uses the true stage gradient, including flat/adverse bed steps;
+    theta=0 recovers kinematic Manning. Boundary links retain free normal outflow.
+    Conveyance uses the blended own/higher-bed depth and rectangular hydraulic
+    radius on channel cells. Dry conveyance is zero (min_depth is retained only
+    for signature compatibility).
 
-        S_w    = slope_bnd  +  θ · (h_i − h_ds)/dist               (water-surface slope)
-        S_eff  = max(S_w, 0)                                        (adverse grad → no flow)
-        h_hb   = max(WSE_i, WSE_ds) − max(z_i, z_ds)               (depth over higher bed)
-        h_flow = max( (1−θ)·h_i + θ·h_hb , min_depth )            (kinematic↔diffusion blend)
-        Q      = (1/n) · h_flow^(5/3) · S_eff^(1/2) · cell_size
+    On interior diffusive links sqrt(S) is replaced by
+    S/sqrt(max(S, slope_regularization)), S=max(S_w, 0). This is continuous,
+    exactly zero at level water, and matches Manning above the threshold. It
+    changes the small-gradient constitutive law, so check epsilon sensitivity.
+    Backflow is still suppressed: this is a directed network, not a 2-D solver.
 
-    θ blends BOTH the slope and the conveyance depth between the two coherent endpoints:
-    θ=0 → own depth + bed slope = the kinematic scheme *exactly*; θ=1 → flow-depth-over-the-
-    higher-bed + water-surface slope = the full CASC2D/GSSHA-style diffusion wave.  The bed
-    term is the existing ``slope_bnd`` (= ``slope_1d`` = (z_i−z_ds)/dist, already floored at
-    MIN_SLOPE with watershed-boundary handling), so steep cells get the true bed slope while
-    flat cells keep draining; the depth-gradient term can still drive S_w below zero → the
-    clamp reproduces backwater slowdown.  Cells with no valid downstream neighbour
-    (``~valid_ds`` — the outlet and any cell draining off-mask) keep ``slope_bnd`` and their
-    own depth, i.e. free outflow identical to the kinematic scheme.
-
-    All arithmetic is via ``xp`` (NumPy or CuPy) so the helper runs on CPU and GPU alike.
-
-    Parameters
-    ----------
-    depth     : (n,) array  – current flow depth per cell [m]
-    dem       : (n,) array  – bed elevation per cell [m]
-    dist      : (n,) array  – flow-path length to the downstream cell [m] (dx or dx·√2)
-    slope_bnd : (n,) array  – bed slope (used only for ~valid_ds free-outflow cells)
-    n         : scalar or (n,) array – Manning's n
-    ds_safe   : (n,) int array – downstream index, clamped to 0 where invalid
-    valid_ds  : (n,) bool array – True where the cell has a real downstream neighbour
-    theta     : float – diffusion weight θ∈[0,1]
-    cell_size : float – flow width ≈ cell size [m]
-    xp        : array module (numpy or cupy)
-    min_depth : float – wet/dry conveyance-depth floor [m]
-    width     : (n,) array – flow width [m]: cell_size overland, channel width B on
-                             channel cells (CONFINED rectangular conveyance).
-    chan_mask : (n,) bool array – True where the rectangular section R=A/P applies.
-
-    Returns
-    -------
-    Q_out  : (n,) array  [m³/s]  (NOT yet flux-limited — caller applies the CFL limiter)
-    A_xs   : (n,) array  [m²]    conveyance cross-section area; celerity denominator
-                                 (c = 5/3·Q/A_xs).  Overland: h_flow·cell_size.
-    S_eff  : (n,) array  [m/m]   effective (clamped) friction slope used for Q.
+    Returns (Q [m3/s], flow area [m2], nonnegative slope). The caller must use
+    diffusive_inverse_timestep AND a conservative donor-volume limiter.
     """
     depth_ds = depth[ds_safe]
     dem_ds   = dem[ds_safe]
 
-    # Water-surface slope along the flow path: floored bed slope + θ depth-gradient term.
-    S_w = slope_bnd + theta * (depth - depth_ds) / dist
+    # Difference bed and depth separately: adding small depths to large elevations
+    # first loses the head difference especially with float32 DEMs.
+    dz = dem - dem_ds
+    S_w = (1.0 - theta) * slope_bnd + theta * (dz + depth - depth_ds) / dist
     # Free-outflow cells (no downstream) fall back to the kinematic bed slope.
     S_eff = xp.where(valid_ds, S_w, slope_bnd)
     S_eff = xp.maximum(S_eff, 0.0)                       # adverse gradient → no discharge
@@ -175,28 +146,67 @@ def diffusive_wave_discharge(depth, dem, dist, slope_bnd, n, ds_safe, valid_ds,
     # stay a coherent pair — θ=0 → own depth + bed slope = kinematic exactly; θ=1 → higher-
     # bed depth + water-surface slope = full diffusion wave.  In the normal downhill case
     # the higher-bed depth already equals the upstream cell's own depth.
-    wse      = dem + depth
-    wse_ds   = wse[ds_safe]
-    h_higher = xp.maximum(wse, wse_ds) - xp.maximum(dem, dem_ds)
+    h_higher = xp.maximum(depth, depth_ds - dz) - xp.maximum(-dz, 0.0)
     h_flow   = (1.0 - theta) * depth + theta * h_higher
     h_flow   = xp.where(valid_ds, h_flow, depth)          # free-outflow cells: own depth
-    h_flow   = xp.maximum(h_flow, min_depth)
+    h_flow   = xp.maximum(h_flow, 0.0)  # dry cells have zero conveyance
+
+    # Continuous linearization close to zero slope; unlike max(S, eps) this
+    # produces exactly zero flux at level water. Above eps Manning is unchanged.
+    # Only interior diffusive links are regularized (theta=0 stays kinematic).
+    root_s = xp.sqrt(S_eff)
+    if theta > 0 and slope_regularization > 0:
+        root_s = xp.where(valid_ds, S_eff / xp.sqrt(
+            xp.maximum(S_eff, slope_regularization)), root_s)
 
     # Conveyance discharge.  Overland (chan_mask False): wide sheet R≈h_flow,
     # width=cell_size — identical arithmetic to the original diffusive path.
     # Channel: confined rectangular section, true hydraulic radius R=A/P.
-    Q_overland = (1.0 / n) * (h_flow ** (5.0 / 3.0)) * (S_eff ** 0.5) * cell_size
+    Q_overland = (1.0 / n) * (h_flow ** (5.0 / 3.0)) * root_s * cell_size
     A_overland = h_flow * cell_size
 
     A_chan = h_flow * width
     R_chan = A_chan / (width + 2.0 * h_flow)
-    Q_chan = (1.0 / n) * (R_chan ** (2.0 / 3.0)) * (S_eff ** 0.5) * A_chan
+    Q_chan = (1.0 / n) * (R_chan ** (2.0 / 3.0)) * root_s * A_chan
 
     Q    = xp.where(chan_mask, Q_chan, Q_overland)
     A_xs = xp.where(chan_mask, A_chan, A_overland)
     # A_xs exposed so callers use the correct celerity denominator (c=5/3·Q/A_xs);
     # S_eff exposed for diagnostics.
     return Q, A_xs, S_eff
+
+
+def diffusive_inverse_timestep(Q, A, slope, n, width, chan_mask, cell_size,
+                               dist, store_area, ds_safe, valid_ds, theta,
+                               slope_regularization, xp):
+    """Conservative explicit rate bound [1/s] on the actual D8 storage graph.
+
+    Each interior edge contributes its head conductance to BOTH incident cells;
+    all tributaries are summed, including when the receiver is a narrow channel.
+    The edge rate uses twice the tangent head conductance: the Manning secant
+    above epsilon, and twice the linear conductance at/below epsilon. The latter
+    factor is essential: a positivity-only bound allows alternating modes to
+    flip sign on gently descending, nearly level water at CFL_TARGET > 0.5.
+    On a uniform chain this bounds c/dx + 4D_tangent/dx². At zero slope the
+    finite linearized conductance remains active even though Q=0.
+    This is a local sufficient safeguard, not an accuracy or global TVD proof.
+    """
+    from ...utils.gpu_utils import scatter_add
+    B = xp.where(chan_mask, width, cell_size)
+    h = A / B
+    R = xp.where(chan_mask, A / (B + 2*h), h)
+    K = A * R**(2./3.) / n
+    # 5/3 is an upper bound for rectangular Manning's logarithmic derivative.
+    adv = (5./3.) * Q / xp.maximum(h, 1e-30)
+    flat_factor = xp.where(slope <= slope_regularization, 2.0, 1.0)
+    conductance = xp.where(valid_ds, flat_factor * theta * K /
+        (dist * xp.sqrt(xp.maximum(slope, slope_regularization))), 0.)
+    incident = adv + conductance
+    incoming = xp.zeros_like(incident)
+    # The extra conveyance term covers the blended higher-bed depth when theta<1.
+    scatter_add(incoming, ds_safe[valid_ds],
+                (conductance + theta * adv)[valid_ds])
+    return (incident + incoming) / store_area
 
 
 def normal_depth(Q_ref, slope, n, width, chan_mask, xp, iters=3):
@@ -249,7 +259,19 @@ def normal_depth(Q_ref, slope, n, width, chan_mask, xp, iters=3):
     return h, A_xs
 
 
-def muskingum_cunge_step(I2, I1, O1, Q_L, c, A_xs, width, slope, dist, dt, xp):
+def mannings_celerity(Q, A, width, chan_mask, xp):
+    """dQ/dA for Manning at fixed slope (rectangular channel or wide sheet).
+
+    For a rectangle the factor multiplying Q/A decreases from 5/3 to 1 as
+    depth/width increases; 5/3 is exact only for the wide-sheet approximation.
+    """
+    h = A / width
+    exponent = xp.where(chan_mask, 1. + (2./3.) * width / (width + 2*h), 5./3.)
+    return exponent * Q / xp.maximum(A, 1e-30)
+
+
+def muskingum_cunge_step(I2, I1, O1, Q_L, c, A_xs, width, slope, dist, dt, xp,
+                         Q_ref=None):
     """
     One variable-parameter Muskingum–Cunge (Ponce–Yevjevich) update per cell.
 
@@ -258,32 +280,29 @@ def muskingum_cunge_step(I2, I1, O1, Q_L, c, A_xs, width, slope, dist, dt, xp):
 
         O₂ = C0·I₂ + C1·I₁ + C2·O₁ + C3·Q_L          (C0 + C1 + C2 = 1)
 
-    with the Cunge coefficients written in Courant / grid-Peclet form so that the
-    scheme's *numerical* diffusion equals the *physical* hydraulic diffusivity
-    D = Q/(2·B·S₀) of the diffusion-wave equation — grid-independent, physically
-    correct attenuation from a kinematic-wave scheme:
+    The Cunge coefficients match numerical diffusion to the hydraulic diffusivity
+    D = Q/(2·B·S₀) in a linearized derivation. This is not a grid-independence
+    guarantee for the nonlinear implementation:
 
-        Cr = c·dt/dist                     (Courant number, c = 5/3·V)
-        Dg = q/(S₀·c·dist) = (3/5)·(A_xs/B)/(S₀·dist)   (grid Peclet; = 1 − 2X)
+        Cr = c·dt/dist                     (Courant number, c = dQ/dA)
+        Dg = Q_ref/(B·S₀·c·dist)           (diffusion number; = 1 − 2X)
         C0 = (−1 + Cr + Dg)/denom ,  C1 = (1 + Cr − Dg)/denom
         C2 = ( 1 − Cr + Dg)/denom ,  C3 = (2·Cr)/denom ,  denom = 1 + Cr + Dg
 
-    ``Dg`` is evaluated as ``(3/5)·h_eff/(S₀·dist)`` with ``h_eff = A_xs/B`` — this
-    is identically ``q/(S₀·c·dist)`` (since ``q/c = 3/5·h_eff``) but stays finite as
-    ``Q_ref → 0`` (dry cells give ``Cr = Dg = 0`` cleanly instead of 0/0).
+    Q_ref supplied by the router uses the exact rectangular rating derivative.
+    Omitting it retains the historical wide-sheet Dg expression for API compatibility.
 
-    ``C0`` is intentionally *not* clamped to ≥0 — a negative ``C0`` is the faithful
-    MC representation of the wave and only produces a tiny, mass-conserving dip; the
-    final ``O₂`` is floored at 0 as a physical safeguard (backflow is unphysical).
-    Mass is conserved by the caller's volume ledger (every ``O₂·dt`` scattered
-    downstream), independent of this shape function, so the floor is safe.
+    Nonnegative homogeneous coefficients require |1-Dg| <= Cr <= 1+Dg.
+    Either C0 or C1 (or C2) can be negative outside this region. The O2>=0
+    floor and a closed signed volume ledger do NOT establish positive storage,
+    monotonicity, physical admissibility, or validity for dam-break shocks.
 
     Parameters
     ----------
     I2, I1 : (n,) arrays – inflow rate this / previous step [m³/s]
     O1     : (n,) array  – outflow rate previous step [m³/s]
     Q_L    : (n,) array  – lateral inflow rate (effective runoff) [m³/s]
-    c      : (n,) array  – kinematic celerity 5/3·V [m/s]
+    c      : (n,) array  – kinematic celerity dQ/dA [m/s]
     A_xs   : (n,) array  – reference flow area [m²]
     width  : (n,) array  – section width B [m]
     slope  : (n,) array  – bed slope [m/m]
@@ -299,7 +318,8 @@ def muskingum_cunge_step(I2, I1, O1, Q_L, c, A_xs, width, slope, dist, dt, xp):
     """
     Cr    = c * dt / dist
     h_eff = A_xs / xp.maximum(width, 1e-30)
-    Dg    = 0.6 * h_eff / (slope * dist)
+    Dg    = (0.6 * h_eff / (slope * dist) if Q_ref is None else
+             Q_ref / xp.maximum(width * slope * c * dist, 1e-30))
     denom = 1.0 + Cr + Dg
     C0 = (-1.0 + Cr + Dg) / denom
     C1 = ( 1.0 + Cr - Dg) / denom
@@ -314,17 +334,16 @@ def muskingum_cunge_step(I2, I1, O1, Q_L, c, A_xs, width, slope, dist, dt, xp):
 
 def flux_limiter(Q_out, volume, dt):
     """
-    Volume-conservative CFL limiter.
+    Donor-volume positivity limiter (not a stability or accuracy guarantee).
 
     Caps Q_out so that a cell can never drain more water than it currently
     stores in a single time step:
 
         Q_out_limited = min(Q_out, volume / dt)
 
-    This prevents the positive-feedback runaway that occurs in the explicit
-    kinematic-wave scheme when the Courant number C = V * dt / dx > 1.
-    The fix is mass-conservative: the downstream cell simply receives less
-    inflow, which is physically correct (there is no more water to give).
+    This preserves nonnegative storage when the same limited transfer enters
+    the receiving cell. Frequent clipping distorts propagation; it does not
+    enforce a diffusion stability bound or demonstrate physical accuracy.
 
     Parameters
     ----------
