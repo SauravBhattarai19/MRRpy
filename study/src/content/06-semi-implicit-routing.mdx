@@ -1,0 +1,218 @@
+---
+title: "Chapter 6 — Semi-Implicit Diffusive-Wave Routing"
+chapter: 6
+---
+
+# Chapter 6 — Semi-Implicit Diffusive-Wave Routing
+
+Chapter 5 ended by asking whether OPM should have used an implicit scheme, and — in its original version — talked itself out of it: a D8 watershed has confluences, confluences break the tridiagonal Thomas algorithm, so implicit would need "a general sparse solver," so explicit was the pragmatic choice. That reasoning had a hole in it, and this chapter exists because of it. This is not a hypothetical "here's how you'd do it" chapter — every number below comes from running the actual solver, the same MRRpy code you can `pip install`, against a real 768,000-cell Himalayan watershed during a real 2024 flood event. It includes the parts that went well and the parts that didn't.
+
+---
+
+## 6.1 — The Idea That Fixes Chapter 5's Mistake
+
+A D8 flow-direction grid looks like a graph with confluences, and confluences look like they defeat the "single chain" trick Chapter 4 used for the Preissmann/Thomas solve. But look closer at what D8 actually is: **every cell has exactly one downstream neighbor.** Flow direction is a *function* of the cell, not an arbitrary relation. That single fact means the graph is not general — it is a **tree** (a forest, rooted at the outlet(s)), and trees have a property general graphs don't: a **perfect elimination ordering**. Fold every leaf into its unique parent, and repeat. No fill-in, ever. A confluence — two children feeding one parent — just means that parent's fold-in step sums two contributions instead of one; the *cost class* of the algorithm never changes from O(n).
+
+<DagVsChannelDiagram />
+
+This is the entire idea of the chapter: linearize the diffusive-wave discharge into a face **conductance**, assemble a tree-structured linear system for the new water-surface elevation, and solve it exactly with a generalized Thomas algorithm — using the *exact same* topological order (`s_rows`/`s_cols` sorted by flow accumulation) Chapter 2 already builds for every OPM run.
+
+---
+
+## 6.2 — From Manning's Equation to a Linear System
+
+Start from the same diffusive discharge Chapter 5 built, $Q = \tfrac{1}{n}R^{2/3}A_{xs}\sqrt{S_f}$, with $S_f = (z_i-z_d)/\Delta x$ and $z = \text{bed}+h$ the water-surface elevation (WSE). The nonlinear part is $\sqrt{S_f}$; freeze it at the *previous* iterate (a **lagged conductance**, the standard Picard-iteration trick for nonlinear diffusion):
+
+$$
+K_{i,d} = \frac{1}{n}\,\frac{R^{2/3}A_{xs}}{\Delta x\,\sqrt{|S_f|}} \qquad\Longrightarrow\qquad Q_{i\to d} = K_{i,d}\,(z_i - z_d)
+$$
+
+$K$ still carries the $|S_f|^{-1/2}$ singularity as $S_f\to 0$, but the *flux* $K\cdot\Delta z \propto |\Delta z|^{1/2}$ stays finite — flooring $|S_f|$ at a small `IMPLICIT_SLOPE_FLOOR` (default $10^{-8}$) is enough. This is precisely Chapter 5 §5.2's flat-cell problem, solved by construction: there is no CFL step to collapse, because there is no CFL step.
+
+Backward-Euler in time (unknown = the *new* WSE $z^{n+1}$; bed is fixed, so $\Delta h=\Delta z$), with storage footprint $A_\text{store}$ and lateral source $q$:
+
+$$
+\frac{A_{\text{store},i}}{\Delta t}\bigl(z_i^{n+1}-z_i^n\bigr) \;=\; \sum_{\text{children}} K_{j,i}\bigl(z_j-z_i\bigr) \;-\; K_{i,d}\bigl(z_i-z_d\bigr) \;-\; K_{\text{bnd},i}\bigl(z_i - \text{bed}_i\bigr) \;+\; q_i
+$$
+
+Collect the implicit terms into **M z = b**:
+
+- diagonal: $M_{ii} = A_{\text{store},i}/\Delta t + \sum_\text{incident} K$
+- off-diagonal: $M_{i,d}=M_{d,i}=-K_{i,d}$ (symmetric — only face couplings)
+- RHS: $b_i = (A_{\text{store},i}/\Delta t)\,z_i^n + q_i$
+
+The $A_\text{store}/\Delta t$ term on every diagonal guarantees **strict diagonal dominance** — $M$ is SPD, always invertible, for any $\Delta t$ including enormous ones. That's the unconditional stability, made concrete instead of asserted.
+
+---
+
+## 6.3 — The Generalized Thomas Algorithm
+
+Because `ds_idx[i] > i` for every cell in the topological order (a cell's downstream neighbor always has higher flow accumulation, hence a higher sort position), that ordering is a perfect elimination order. Two O(n) sweeps solve the whole tree exactly:
+
+```python
+@njit(cache=True)
+def _sweep_solve(diag, off, parent, is_root, rhs):
+    n = diag.shape[0]
+    z = np.empty(n, dtype=diag.dtype)
+
+    # Forward elimination: fold each cell into its (single) downstream parent.
+    for i in range(n):
+        if not is_root[i]:
+            p = parent[i]
+            inv = 1.0 / diag[i]
+            diag[p] -= off[i] * off[i] * inv
+            rhs[p]  -= off[i] * rhs[i] * inv
+
+    # Back-substitution: parent (higher index) solved before its children.
+    for i in range(n - 1, -1, -1):
+        if is_root[i]:
+            z[i] = rhs[i] / diag[i]
+        else:
+            z[i] = (rhs[i] - off[i] * z[parent[i]]) / diag[i]
+    return z
+```
+
+That is the entire linear solve — no fill-in, no pivoting, no iterative Krylov method, no general sparse-matrix machinery. It is **verified against a dense `numpy.linalg.solve` reference on 150 random tree matrices** (max error $3.9\times10^{-16}$, machine precision) and against `scipy.sparse.linalg.splu` as a second, independent backend — both live in `MRRpy/core/routing/implicit.py` and run in the test suite on every commit.
+
+The nonlinearity is handled by Picard-iterating this solve 2–12 times per step (recompute $K$ from the latest $z$, re-solve, stop when $\max|\Delta z| <$ `IMPLICIT_TOL`). Boundary cells (the outlet, or cells draining off-mask) keep the same free-outflow convention as the explicit scheme — a kinematic normal-depth outflow on the bed slope.
+
+---
+
+## 6.4 — Validation Before Trusting It on a Real Basin
+
+Before pointing this at a real watershed, it has to pass the same kind of test a numerical method should always pass first: synthetic problems with a known answer.
+
+| Check | Result |
+|---|---|
+| Tree solver vs. dense `numpy.linalg.solve`, 150 random trees | max error $3.9\times10^{-16}$ |
+| Mass balance, synthetic 40×40 valley DEM | closure $8.4\times10^{-12}$ (relative) |
+| Steep terrain: steps needed, explicit vs. implicit | 2,160 vs. **203** (10.6× fewer), still conservative |
+| Kinematic limit (steady inflow → Manning normal depth) | exact match, 0.0% error |
+| Diffusion attenuation vs. non-diffusive kinematic | peak $25.0\to17.8\,\text{m}^3/\text{s}$ (−29%), lag $1.00\to2.45\,\text{h}$ |
+| Hayami analytical linear diffusion-wave benchmark | peak within 7%, time-to-peak **exact** |
+
+The Hayami check is the one worth pausing on: it is the only place in this course (Chapters 1–6) where a routing result is compared against a **closed-form analytical solution** rather than another numerical scheme or a mass-balance identity. A straight channel, a triangular inflow pulse, and the linear diffusion-wave Green's function — the nonlinear Manning solver landing within 7% of it, with an *exact* time-to-peak match, is real evidence the physics is implemented correctly, not just "numerically stable."
+
+---
+
+## 6.5 — The Real Basin: Stable, Unstable, and Everything In Between
+
+All of the above is synthetic. Here is what happened pointing the same code at the upper Gandaki basin (Nepal), 768,132 active cells at 90 m resolution, routing the 2024-09-26 flood event (96 hours, IMERG-forced, physical VSA+Green-Ampt runoff) — the same real config used to route four other schemes over the same basin, same event, same forcing.
+
+### The headline comparison
+
+| Scheme | Backend / resolution | Peak Q (m³/s) | Time to peak | Wall time | Mass balance |
+|---|---|---|---|---|---|
+| kinematic | GPU, 90m | 7,987.1 | t=54.8h | 243s | −1.4×10⁻¹⁴ |
+| diffusive (explicit) | GPU, 90m | **9,229.1** | t=51.5h | 358s | −1.3×10⁻¹⁴ |
+| muskingum | GPU, 90m | 7,106.2 | t=51.0h | 345s | +2.3×10⁻¹⁴ |
+| **diffusive (semi-implicit)** | **CPU, 250m** | **7,218.9** | **t=55.7h** | **268s** | **+9.2×10⁻¹⁰** |
+| dynamic (local-inertial) | GPU, 90m | — | — | *dropped, see §6.7* | — |
+
+At the outlet, every scheme is in the same ballpark. That is not honest evidence of anything by itself — a basin-outlet hydrograph is smoothed by everything upstream of it. The real test is at the gauges *inside* the network, closer to where numerical trouble actually starts.
+
+### Where it actually shows: the gauges
+
+Four real gauge locations (Timure, Syabrubesi, Betrawati, Malekhu — moving downstream), with a roughness metric (total variation of $Q(t)$, normalized by the mean — a smooth hydrograph has a small number; an oscillating one has a large one) and a count of local min/max flips:
+
+| Gauge | Scheme | Peak Q (m³/s) | TV / mean | sign flips |
+|---|---|---|---|---|
+| **Malekhu** | explicit diffusive | **28,414.8** | **800.80** | **327** |
+| Malekhu | kinematic | 7,912.3 | 12.29 | 18 |
+| Malekhu | muskingum | 7,223.8 | 12.19 | 38 |
+| Malekhu | **semi-implicit diffusive** | **7,144.9** | **9.87** | **23** |
+| Betrawati | explicit diffusive | 7,322.1 | 54.89 | 146 |
+| Betrawati | semi-implicit diffusive | 3,882.4 | 18.18 | 16 |
+| Syabrubesi | explicit diffusive | 2,091.4 | 32.26 | 108 |
+| Syabrubesi | semi-implicit diffusive | 1,901.1 | 22.89 | 14 |
+| Timure | explicit diffusive | 899.1 | 26.73 | 106 |
+| Timure | semi-implicit diffusive | 778.0 | 22.01 | 38 |
+
+At Malekhu, the explicit diffusive scheme reports a peak discharge **nearly 4× every other scheme**, with total variation 65–80× worse than kinematic or the semi-implicit version. This is not a rounding artifact — it is the same [WARNING] `Flux limiter clipped >2% of wet cells` diagnostic Chapter 5 §5.5 introduced, engaging heavily enough that the safety net itself becomes a source of noise rather than a cure. The semi-implicit version, run on the *same* real forcing and physics, is the smoothest trace at every single gauge in the table — on par with or better than kinematic and Muskingum–Cunge, the two schemes with no water-surface-slope term to destabilize in the first place.
+
+**This is the honest headline of the chapter:** the scheme this course spends all of Chapter 5 building — explicit diffusive-wave, OPM's production default — is measurably, substantially less reliable on real steep terrain than the semi-implicit rewrite, at the exact place (downstream, where flows are largest and gradients sharpest) that matters most for a flood forecast.
+
+---
+
+## 6.6 — A Second Honest Result: The Flux Limiter Isn't Only a Diffusive-Wave Problem
+
+Look again at the summary table: **kinematic** — the scheme with no water-surface term at all, the one Chapter 4 builds from first principles — also tripped the flux-limiter warning on this basin, peaking at roughly half of all wet cells clipped in its single worst step. Is that a concern? The peak-percentage number alone can't answer that — a single bad step and a *sustained* problem look identical if you only report the maximum. So this chapter adds a second diagnostic to the router: **when** the peak occurred, and **how many steps** exceeded a "notably high" threshold (10% of wet cells), not just the single worst one. Real output, this basin, this event:
+
+```
+Flux limiter   |  peak 48.49% of wet cells clipped in a step, at t=0.29h
+               |  5,904/74,468 steps (7.93%) had >10% of wet cells clipped
+[WARNING] ... (recurring, not just a one-off spike)
+```
+
+Two honest things follow from that, and they pull in different directions. **First:** the single worst step (48.49%) lands at $t=0.29\,\text{h}$ — 18 minutes into a 96-hour run, essentially the first few steps, exactly the dry-start transient this section expected: the whole basin is near `MIN_DEPTH_M`, the very first pulses of rain create large *relative* depth jumps in individual cells, and the previous-step-lagged $\Delta t$ hasn't caught up yet. **Second — and this is the number that matters more:** the router's own classifier (coded before this run, not tuned to it) calls the overall pattern **"recurring, not just a one-off spike"** — 7.93% of all 74,468 steps, spread across the whole event, show meaningfully high clipping, not just the opening minutes. That is a real, non-trivial fraction, and reporting only the 48.49% peak would have hidden it.
+
+What makes this *not* the same story as Malekhu's explicit-diffusive blow-up: even with the limiter engaging on ~8% of steps, kinematic's mass balance is exact to $-1.4\times10^{-14}$ and its hydrograph is the smoothest or second-smoothest at every gauge in §6.5's table. The limiter is doing its job — capping outflow at exactly what a cell holds is mass-conservative by construction, so frequent engagement shows up as *extra numerical diffusion* (Chapter 5 §5.5's $D_\text{num}$), not instability. Explicit diffusive's water-surface-slope kernel, hit with what is presumably a similar dt-lag pattern, evidently does **not** absorb it the same way — the depth-gradient term feeds a clipped cell's artificial depth jump into its neighbor's slope calculation, and that's a plausible mechanism for how a mass-conservative safety net upstream still ends up as a 28,415 m³/s spurious peak two gauges downstream. This course does not yet have the per-step field data to prove that causal chain rather than just suggest it — worth flagging as open rather than settled.
+
+**What would reduce the limiter's engagement, if it needs reducing:** `MANNING_SLOPE_CAP` bounds the friction slope used in the Manning velocity/celerity calculation everywhere in the router — on a 90m DEM, a handful of unphysically steep pixels (real terrain noise, not real cliffs) can dominate the *global* $\Delta t$ choice. Tested `MANNING_SLOPE_CAP=0.1` on this exact basin/event, and the honest result is a partial win, not a full fix:
+
+| | baseline | `MANNING_SLOPE_CAP=0.1` |
+|---|---|---|
+| Steepest-slope celerity (drives global $\Delta t$) | 322.67 m/s | **35.14 m/s** (9.2× lower) |
+| Peak single-step clip | 48.49% at t=0.29h | **37.62%** at t=0.35h |
+| Steps with >10% clipped (recurring pattern) | 5,904/74,468 = **7.93%** | 5,838/73,915 = **7.90%** |
+| Peak discharge | 7,987.1 m³/s | 7,846.6 m³/s |
+| Wall time | 251.4s | 216.7s |
+
+The cap does exactly what it claims: it stops one or two extreme pixels from setting an unnecessarily tiny *global* $\Delta t$ (celerity down 9.2×), and that measurably softens the single worst spike (48.49%→37.62%). What it does **not** fix is the recurring pattern — 7.93% of steps drops to 7.90%, indistinguishable from noise. That is the honest, slightly humbling result of actually testing the fix rather than assuming it: the ~8%-of-steps recurring engagement is evidently driven by the previous-step-$\Delta t$-lag mechanism itself (a global, uniform $\Delta t$ chasing a spatially heterogeneous, evolving flow field), not by a handful of outlier DEM pixels — and `MANNING_SLOPE_CAP` only ever addressed the latter. A real fix for the recurring pattern would need per-zone or flow-adaptive time stepping, the same open item Chapter 5 §5.5 already flagged and left unimplemented.
+
+---
+
+## 6.7 — A Third Honest Result: Not Every Scheme Finished
+
+The `dynamic` (local-inertial / LISFLOOD-FP-style) scheme was in the original five-way comparison and is not in the table above, on purpose. It ran on GPU, at 97% utilization, for **over 37 minutes** without completing the same 96-hour event the other three explicit GPU schemes each finished in under six minutes — genuinely computing the whole time, not hung, just intrinsically far more expensive on this basin's steepest, fastest-changing reaches (it resolves the gravity-wave celerity $\sqrt{gh}+u$, not just the advective celerity the other schemes use, and needed extra checkerboard-oscillation damping tuned specifically for this event). It was stopped and dropped from the comparison rather than let run indefinitely.
+
+This belongs in the chapter for the same reason the Malekhu oscillation does: a routing scheme's stability and its practicality are two different properties, and a course that only shows the schemes that finished cleanly would be quietly editing the evidence.
+
+---
+
+## 6.8 — What Semi-Implicit Actually Costs (Also Honest)
+
+The synthetic tests in §6.4 and the Malekhu comparison in §6.5 could read as "implicit is strictly better — use it everywhere." It isn't that simple, and the real basin surfaced two genuine costs.
+
+**Resolution.** The first attempt at this exact 96-hour event, at native 90m resolution (768,132 cells), was stable and mass-conservative but **decelerated sharply** once real flow arrived — the last 10% of even a *shortened* 24-hour pilot took 5× longer than the first 70% combined, and the Picard residual exceeded tolerance (0.02m against a $10^{-4}$m target) at an outlet flow of just 3.8 m³/s — nowhere near this basin's real ~8,000 m³/s peak. The fix used for the results in §6.5 was re-delineating at 250m (99,613 cells, a 7.7× reduction matching the area ratio exactly), which converged cleanly through the whole event.
+
+**Multi-core scaling.** The per-Picard-iteration assembly math (building the conductances and the $M$/RHS system, not the tree-sweep itself, which is inherently sequential) is embarrassingly parallel, so it seemed obvious to parallelize it across every available core. On this machine's 192 cores, that assumption was wrong:
+
+| Threads | ms / Picard iteration |
+|---|---|
+| 1 | 401 |
+| 8 | 143 |
+| **32** | **127** |
+| **64** | **121** |
+| 128 | 126 |
+| 192 | **257 — worse than 8 threads** |
+
+This kernel does roughly 20 floating-point operations against ~10 array reads per cell — it is **memory-bandwidth-bound**, not compute-bound. Beyond ~32–64 threads, more cores just add scheduling and cross-core memory-contention overhead without more useful work to hand them; the code now caps at `min(32, cpu_count())` by default (`IMPLICIT_NUM_THREADS` overrides it) rather than the naive "grab every core" choice. That change alone, plus tighter Picard settings, cut the 90m pilot's wall time from 626s to 277s — real, verified, but *not* enough on its own to make native 90m confidently safe through the actual flood peak; that would need either a longer validation run or the tree-sweep itself parallelized (level-scheduling — grouping cells by topological depth so cells at the same level can be eliminated concurrently — is the natural next step, not yet implemented).
+
+**Recommendation, stated plainly:** the semi-implicit scheme should replace explicit diffusive-wave as the practical choice wherever the water-surface-slope physics (backwater, ponding, attenuation) is actually needed — the Malekhu evidence is too large a stability gap to recommend otherwise. It is *not* recommended as OPM's blanket default in place of kinematic: it needs resolution- and iteration-setting awareness kinematic/explicit-diffusive don't, and its single-core tree-sweep means very large grids will still lag GPU schemes.
+
+---
+
+## 6.9 — Chapter Summary
+
+| Concept | Formula / value |
+|---|---|
+| Lagged face conductance | $K_{i,d} = \dfrac{1}{n}\dfrac{R^{2/3}A_{xs}}{\Delta x\sqrt{\lvert S_f\rvert}}$ |
+| Backward-Euler diagonal | $M_{ii} = A_{\text{store},i}/\Delta t + \sum K$ (strictly diagonally dominant — unconditionally stable) |
+| Tree solve cost | O(n), zero fill-in, generalized Thomas algorithm |
+| Steep-terrain step count, explicit vs. implicit | 2,160 vs. 203 (10.6× fewer) |
+| Hayami analytical benchmark | peak within 7%, time-to-peak exact |
+| Real-basin peak at Malekhu, explicit vs. implicit | 28,415 vs. 7,145 m³/s |
+| Real-basin oscillation (TV/mean) at Malekhu | 800.8 (explicit) vs. 9.9 (implicit) |
+| Multi-core sweet spot (this machine) | ~32–64 threads, **not** all 192 |
+| Native-resolution feasibility | not yet proven through the real flood peak — 250m is the validated choice today |
+
+**Key takeaways:**
+
+1. Chapter 5's original claim — a D8 confluence forces a general (expensive) sparse solver — was wrong. Every D8 cell has exactly one downstream neighbor, making the network a tree, which admits an exact O(n) solve regardless of confluences.
+2. Linearizing the diffusive-wave discharge into a lagged conductance turns the backward-Euler continuity equation into a symmetric, diagonally-dominant tree system — unconditionally stable by construction, not by tuning.
+3. The generalized Thomas algorithm (forward fold, back-substitute) solves that system exactly, verified to machine precision against a dense reference on 150 random trees.
+4. On a real 768K-cell Himalayan basin, the explicit diffusive-wave scheme — Chapter 5's subject, OPM's production default — produced a nearly 4× spurious peak and 65–80× worse oscillation than every other scheme at a real downstream gauge. The semi-implicit rewrite was the smoothest scheme at every gauge tested.
+5. Kinematic's flux limiter engaging on up to ~48% of wet cells in a single step turned out to be recurring (7.93% of all steps), not a one-off — the router now reports peak time *and* a sustained-engagement count so that distinction is measured, not assumed. `MANNING_SLOPE_CAP` fixed the single worst spike (driven by a few extreme DEM pixels) but barely touched the recurring pattern (driven by the global-$\Delta t$-lag mechanism itself) — tested, not assumed, and the two mechanisms turned out to be mostly independent.
+6. Not every scheme survives a real event practically: `dynamic` was numerically fine but became too slow to finish, on this exact basin, and was honestly dropped rather than hidden.
+7. Implicit is not free: it needed a coarser grid to stay fast through the real flood peak on this steep basin, and "parallelize across every core" was actively the wrong instinct for its memory-bandwidth-bound assembly step — verified by testing, not assumed.

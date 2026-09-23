@@ -13,10 +13,12 @@ deficit, SoilGrids, LULC/LCZ). The science is pure NumPy/SciPy/rasterio — no
 QGIS, no Qt in `MRRpy/core/`.
 
 The pip package is **`MRRpy`** (`import MRRpy`). The config class is
-`Config` (with `OpmConfig` as a plain alias). Note the runoff-method value
-`RUNOFF_SOURCE="vsa_opm"`, the `vsa_opm` pipeline stage, and
-`runoff_engine._mode == 'vsa_opm'` name the Pradhan & Ogden VSA-OPM *science*,
-not the package — leave them as-is.
+`Config` (with `OpmConfig` as a plain alias). Note the `vsa_opm` pipeline
+stage (`core/opm.py::run_opm`, a standalone legacy runner) names the Pradhan &
+Ogden VSA-OPM *science*, not the package — leave it as-is. The saturation-excess
+VSA-OPM mechanics themselves are reached via `RUNOFF_SOURCE="physical"` +
+`RUNOFF_MECHANISMS` containing `"saturation_excess"` — see
+[Runoff generation](#runoff-generation-corerunoff) below.
 
 ## Current focus
 
@@ -118,14 +120,29 @@ own threading/stdout. Stages:
 ### Runoff generation (`core/runoff/`)
 
 `RunoffEngine` (`engine.py`) sits between precipitation [m/s] and the routing
-time loop, dispatching on `RUNOFF_SOURCE`:
-`none | coefficient | raster | scs_cn | vsa_opm`. It follows a **forward-Euler
-contract**: call `get_effective_1d(t, rain)` (uses previous state) *then*
-`update_state(rain, dt)`. The `vsa_opm` mode lives in `vsa.py` (`VsaOpmMixin`,
-the sandbox water-balance / VSA / Green-Ampt / impervious mechanics), with
-`soil.py` resolving SD_max / phi / suction (scalar, GEE/SERVES, or raster).
-`RUNOFF_MECHANISMS` (`vsa`/`horton`/`impervious`) is an orthogonal, composable
-subset.
+time loop. It's a two-level plugin registry, not a single dispatch:
+
+- **`RunoffMode` registry** (`engine.py`, `@register`) — swaps the whole
+  generator via `RUNOFF_SOURCE`: `none | coefficient | raster | scs_cn |
+  physical`. All modes share a **forward-Euler contract**: call
+  `get_effective_1d(t, rain)` (uses previous state) *then*
+  `update_state(rain, dt)`.
+- **`RunoffMechanism` registry** (`mechanisms.py`, `@register_mechanism`) —
+  used only by `RUNOFF_SOURCE='physical'` (`physical.py::PhysicalRunoffMode`),
+  which composes whichever mechanisms are listed in `RUNOFF_MECHANISMS`
+  (`impervious` / `infiltration_excess` / `saturation_excess`) per cell
+  without double-counting:
+  `runoff = rain·[Imp + (1−Imp)·max(saturation_excess, infiltration_excess)]`.
+  `saturation_excess` is the Pradhan & Ogden (2010) VSA-OPM sandbox
+  water-balance mechanic itself ("Dr. Nawa's model"); `infiltration_excess` is
+  Green-Ampt Horton; any subset composes (e.g. `['infiltration_excess']` alone
+  is a standalone GSSHA/HEC-HMS-style model).
+
+`soil.py` resolves SD_max / phi / K_sat / suction (scalar, GEE/SERVES/
+SoilGrids, or raster) for the mechanisms above. Adding a new whole runoff
+generator (e.g. a third-party method) registers at the `RunoffMode` level in
+`engine.py`; adding a new physical process registers at the `RunoffMechanism`
+level in `mechanisms.py`.
 
 ### Routing (`core/routing/`)
 

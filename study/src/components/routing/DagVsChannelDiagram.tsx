@@ -116,7 +116,8 @@ export default function DagVsChannelDiagram() {
           One Channel vs. a Watershed Tree
         </h3>
         <p className="text-indigo-200 text-sm mt-0.5">
-          Why a tridiagonal Thomas-algorithm solve doesn&apos;t carry over to OPM&apos;s D8 network
+          A confluence breaks the tridiagonal Thomas algorithm — but not the O(n) exact solve.
+          See Chapter 6.
         </p>
       </div>
 
@@ -146,7 +147,9 @@ export default function DagVsChannelDiagram() {
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-xs text-indigo-800 mt-2">
             A straight chain of unknowns → the implicit system is a clean{' '}
             <strong>tridiagonal matrix</strong>, solved in one forward sweep + one
-            back-substitution sweep (the Thomas algorithm from Ch. 4 §4.4).
+            back-substitution sweep (the Thomas algorithm from Ch. 4 §4.4). This is
+            a <em>special case</em> of the tree on the right — a chain with no
+            confluences.
           </div>
         </div>
 
@@ -183,16 +186,26 @@ export default function DagVsChannelDiagram() {
       {/* Caption */}
       <div className="px-6 pb-6">
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700">
-          <strong>Why this breaks the tridiagonal trick:</strong> a tridiagonal solve assumes
-          every unknown has exactly one neighbor on each side — a single line of cells, as in
-          the left panel. The confluence at cell &ldquo;2&rdquo; in the right panel violates
-          that: it has <em>two</em> upstream neighbors feeding it, not one, so its row in the
-          system matrix has an extra nonzero entry off the main diagonal. Stack that across a
-          whole watershed and the matrix is no longer tridiagonal — it&apos;s a general sparse
-          matrix shaped like the river network&apos;s branching structure. That system is still
-          solvable exactly (e.g. with a general sparse linear solver), but doing so is more
-          expensive and architecturally different from the cheap, single-sweep forward
-          substitution that makes the Preissmann/Thomas approach attractive on one channel.
+          <strong>Why this breaks the tridiagonal trick — but not an exact O(n) solve:</strong>{' '}
+          a tridiagonal solve assumes every unknown has exactly one neighbor on each side — a
+          single line of cells, as in the left panel. The confluence at cell &ldquo;2&rdquo; in
+          the right panel violates that: it has <em>two</em> upstream neighbors feeding it, not
+          one, so its row in the system matrix has an extra nonzero entry off the main
+          diagonal. Stack that across a whole watershed and the matrix is no longer
+          tridiagonal.
+        </div>
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm text-emerald-900 mt-3">
+          <strong>Correction (this course originally said this needed a &ldquo;general sparse
+          solver&rdquo; — that overstated the cost):</strong> every cell in a D8 network still
+          has <em>exactly one downstream neighbor</em> — flow direction is a function, not a
+          relation. That makes the whole watershed a <strong>tree</strong> (technically a
+          forest, rooted at the outlet(s)), not a general graph. A tree still has a perfect
+          elimination ordering (fold every leaf into its unique parent, repeat), so a{' '}
+          <strong>generalized Thomas algorithm</strong> solves it exactly in O(n) with{' '}
+          <em>zero fill-in</em> — a confluence just means that parent&apos;s elimination step
+          sums more than one child&apos;s contribution, not that the algorithm changes
+          character. Chapter 6 builds exactly this solver and runs it on a real 768,000-cell
+          Himalayan watershed in under five minutes on one CPU core.
         </div>
       </div>
     </div>

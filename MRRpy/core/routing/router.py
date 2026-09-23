@@ -59,6 +59,14 @@ def initialise_grid(cfg):
     _backend = getattr(cfg, 'BACKEND', 'cpu').lower()
     _use_gpu  = (_backend == 'gpu') and gpu_utils.cupy_available()
 
+    # The semi-implicit diffusion wave solves a tree linear system on the CPU
+    # (core/linear-algebra bound, no GPU kernel); force CPU so all state arrays
+    # stay on the host for the solver.
+    if getattr(cfg, 'ROUTING_SCHEME', 'kinematic').lower() == 'diffusive_implicit' and _use_gpu:
+        print("  [WARNING] ROUTING_SCHEME='diffusive_implicit' runs on the CPU "
+              "(implicit tree solve) — ignoring BACKEND='gpu'.")
+        _use_gpu = False
+
     if _use_gpu:
         import cupy as cp
         from . import gpu as _ru
@@ -332,6 +340,24 @@ def run_time_loop(grid_data, cfg):
     _dyn_theta   = float(getattr(cfg, 'DYNAMIC_FLUX_THETA', 0.8))  # de Almeida centering weight
     _GRAV        = 9.81
 
+    # Semi-implicit (HEC-RAS-style) diffusion wave: unconditionally stable global
+    # tree solve each step (implicit.py).  dt is an ACCURACY knob, not a stability
+    # one — flat/ponded/steep cells never force a tiny dt.  Runs on the CPU (xp is
+    # forced to NumPy for this scheme in initialise_grid).
+    _implicit         = scheme_desc.implicit
+    implicit_solver   = None
+    _impl_cfl         = float(getattr(cfg, 'IMPLICIT_CFL_TARGET', 8.0))
+    _impl_tol         = float(getattr(cfg, 'IMPLICIT_TOL', 1e-4))
+    _c_max_prev       = 0.0     # previous-step max celerity [m/s] (0 → seed dt at dt_max)
+    _impl_iters_sum   = 0       # Σ Picard iterations (mean reported at the end)
+    _impl_res_max     = 0.0     # peak final Picard residual [m]
+    if _implicit:
+        from .implicit import ImplicitDiffusiveSolver
+        implicit_solver = ImplicitDiffusiveSolver(cfg, grid_data)
+        print(f"  Implicit solver: {implicit_solver.solver_name}  "
+              f"(max_iters={implicit_solver.max_iters}, tol={_impl_tol:g} m, "
+              f"θ={implicit_solver.theta:g})")
+
     hydrograph = []  # list of (time_seconds, Q_m3s) — Python floats
 
     # Baseflow offset: add the steady pre-storm discharge (VSA_Q_MAX) so the
@@ -401,9 +427,15 @@ def run_time_loop(grid_data, cfg):
     mb_rain = xp.zeros((), dtype=_dtype)   # Σ gross rainfall volume [m³] (for runoff ratio)
     mb_bc   = xp.zeros((), dtype=_dtype)   # Σ upstream inflow-BC volume entering routing [m³]
 
-    # Flux-limiter engagement diagnostic: max per-step fraction of wet cells clipped.
-    # Device 0-d scalar (xp.maximum each step), transferred to host once at the end.
-    _frac_clip_max_dev = xp.zeros((), dtype=_dtype)
+    # Flux-limiter engagement diagnostic: max per-step fraction of wet cells clipped,
+    # WHEN that peak occurred, and how many steps were "notably" clipped (>10%) —
+    # a bare peak-% conflates a single transient spike (e.g. a flood wavefront
+    # arriving in previously-dry cells one step before adaptive dt catches up)
+    # with sustained under-resolution.  Device 0-d scalars, synced once at the end.
+    _frac_clip_max_dev  = xp.zeros((), dtype=_dtype)
+    _frac_clip_peak_t   = xp.zeros((), dtype=_dtype)
+    _frac_clip_high_ct  = xp.zeros((), dtype=_dtype)   # steps with >10% wet cells clipped
+    _FRAC_CLIP_HIGH     = 0.10
 
     # ── Runoff-mechanism partition (physical mode only) ──────────────────────
     # Σ effective-runoff volume by generating mechanism [m³].  The three sum
@@ -477,7 +509,18 @@ def run_time_loop(grid_data, cfg):
         # The flux limiter already prevents numerical runaway; deeper cells
         # simply get larger Q_out and drain faster (physically correct).
 
-        if _mc:
+        if _implicit:
+            # Semi-implicit diffusion wave: the global tree solve needs the final
+            # dt (set in the dt block below), so here we only resolve the lateral
+            # source.  The runoff sandbox is advanced AFTER the solve (forward
+            # Euler: query current state, then update).
+            if runoff_engine is not None:
+                source_1d = runoff_engine.get_effective_1d(t_seconds, rain_1d)   # [m/s]
+            else:
+                source_1d = rain_1d
+            A_xs_1d  = None          # geometry is internal to the implicit solver
+            S_eff_1d = slope_1d
+        elif _mc:
             # Muskingum–Cunge: the state is per-cell OUTFLOW (not volume).  Recover the
             # inflow RATES from the volume scatter (I₂ = inflow_vol/dt_prev is exact —
             # inflow_vol = Σ upstream O·dt_prev), form the 3-point reference discharge
@@ -551,7 +594,24 @@ def run_time_loop(grid_data, cfg):
                 depth_1d, slope_1d, n, width_1d, chan_mask_1d, dx, xp)  # [m³/s], [m²]
             S_eff_1d    = slope_1d   # bed slope; makes the combined limit reduce to pure CFL
         # ── Adaptive CFL dt (state^n → dt^n, computed before volume advance) ──
-        if adaptive:
+        if _implicit:
+            # Unconditionally stable → dt is an ACCURACY knob.  Adaptive: target a
+            # Courant number IMPLICIT_CFL_TARGET (≫1 allowed) on the PREVIOUS step's
+            # max celerity; flat/steep cells give small/zero celerity and so never
+            # force a tiny dt (the explicit scheme's failure mode).  Non-adaptive:
+            # honour TIME_STEP_SECONDS directly.
+            if adaptive:
+                # Ceiling is the output cadence (dt is clamped there anyway), NOT
+                # the explicit CFL_DT_MAX — the implicit scheme has no CFL limit.
+                dt_new = (_impl_cfl * dx / _c_max_prev
+                          if _c_max_prev > _eps_div else _out_interval)
+                dt_new = min(dt_new, _out_interval, _dt_cfl_prev * cfl_dt_grow)
+                dt_new = max(dt_new, cfl_dt_min)
+                _dt_cfl_prev = dt_new
+                dt = dt_new
+            else:
+                dt = cfg.TIME_STEP_SECONDS
+        elif adaptive:
             # Wave celerity c = (5/3)·Q/A_xs, using the flow cross-section area A_xs
             # returned by the discharge function (overland: h_flow·cell_size; channel:
             # h_flow·B).  Using A_xs — not depth_1d·dx — keeps the celerity consistent
@@ -601,7 +661,34 @@ def run_time_loop(grid_data, cfg):
         dt = min(dt, next_output_t - t_seconds, T - t_seconds)
         dt = max(dt, _eps)
 
-        if _mc:
+        if _implicit:
+            # dt final → one implicit diffusion-wave solve (Picard-iterated) on the
+            # D8 tree.  Produces the new storage directly (mass-consistent) and the
+            # per-cell downstream outflow used for the hydrograph / boundary budget.
+            # No volume flux limiter: the scheme is unconditionally stable and a
+            # limiter would re-introduce the numerical diffusion it avoids.
+            volume_1d, Q_out_1d, _n_it, _res = implicit_solver.solve_step(
+                volume_1d, source_1d, bc_rate_1d, dt)
+            Q_out_vol_1d = Q_out_1d * dt
+            rain_vol     = source_1d * cell_area * dt       # [m³] effective runoff added
+            _impl_iters_sum += _n_it
+            _impl_res_max    = max(_impl_res_max, _res)
+            # Celerity proxy for the NEXT step's dt: c = 5/3·V, V = Q/(h·width).
+            depth_1d = np.maximum(volume_1d / store_area_1d, cfg.MIN_DEPTH_M)
+            A_xs_1d  = depth_1d * width_1d
+            _V_impl  = Q_out_1d / np.maximum(depth_1d * width_1d, _eps_div)
+            _c_max_prev = float((5.0 / 3.0 * _V_impl).max()) if n_cells else 0.0
+            # Picard non-convergence → halve the next step (still stable, more accurate).
+            if adaptive and _res > _impl_tol:
+                _dt_cfl_prev = max(dt * 0.5, cfl_dt_min)
+            # Advance the runoff sandbox once with the final dt (+ partition).
+            if runoff_engine is not None:
+                if _partition:
+                    mb_dunne  += runoff_engine._last_dunne_rate.sum()  * (cell_area * dt)
+                    mb_horton += runoff_engine._last_horton_rate.sum() * (cell_area * dt)
+                    mb_imperv += runoff_engine._last_imperv_rate.sum() * (cell_area * dt)
+                runoff_engine.update_state(rain_1d, dt)
+        elif _mc:
             # dt is now final → compute the real Muskingum–Cunge outflow O₂ and
             # overwrite the Q_ref proxy in Q_out_1d (source_1d / Q_L_1d were computed
             # in the discharge branch above).  The volume flux-limiter is intentionally
@@ -621,9 +708,11 @@ def run_time_loop(grid_data, cfg):
             if _flux_limiter:
                 _q_cap = xp.maximum(volume_1d, 0.0) / dt
                 _wet   = volume_1d > 0.0
-                _frac_clip_max_dev = xp.maximum(
-                    _frac_clip_max_dev,
-                    ((Q_out_1d > _q_cap) & _wet).sum() / xp.maximum(_wet.sum(), 1))
+                _frac_clip = ((Q_out_1d > _q_cap) & _wet).sum() / xp.maximum(_wet.sum(), 1)
+                _is_new_peak = _frac_clip > _frac_clip_max_dev
+                _frac_clip_peak_t  = xp.where(_is_new_peak, t_seconds, _frac_clip_peak_t)
+                _frac_clip_max_dev = xp.maximum(_frac_clip_max_dev, _frac_clip)
+                _frac_clip_high_ct = _frac_clip_high_ct + (_frac_clip > _FRAC_CLIP_HIGH)
                 Q_out_1d = xp.minimum(Q_out_1d, _q_cap)
         else:
             # Apply volume-conservative CFL limiter: a cell cannot eject more
@@ -632,23 +721,35 @@ def run_time_loop(grid_data, cfg):
             # Diagnostic: the limiter is meant to be a RARE safety net.  When the dt
             # controller keeps the scheme inside its stability envelope only a handful
             # of pathological cells should ever clip; a large clipped fraction signals
-            # dt is too aggressive (artificial diffusion / outlet ringing).
-            # On-device scalars (transferred to host once at the end, like the
-            # mass-balance accumulators) so the hot loop stays sync-free on GPU.
+            # dt is too aggressive (artificial diffusion / outlet ringing).  A high
+            # PEAK that occurs at a single early timestamp with few HIGH-clip steps
+            # overall is a transient (e.g. a flood wavefront reaching previously-dry
+            # cells one step before adaptive dt catches up, self-healing next step) —
+            # different from many high-clip steps, which means dt is systemically
+            # too aggressive for this scheme/grid.  On-device scalars (transferred to
+            # host once at the end, like the mass-balance accumulators) so the hot
+            # loop stays sync-free on GPU.
             if _flux_limiter:
                 _q_cap     = xp.maximum(volume_1d, 0.0) / dt
                 _wet       = volume_1d > 0.0
                 _n_wet     = _wet.sum()
                 _n_clipped = ((Q_out_1d > _q_cap) & _wet).sum()
                 _frac_clip = _n_clipped / xp.maximum(_n_wet, 1)
+                _is_new_peak = _frac_clip > _frac_clip_max_dev
+                _frac_clip_peak_t  = xp.where(_is_new_peak, t_seconds, _frac_clip_peak_t)
                 _frac_clip_max_dev = xp.maximum(_frac_clip_max_dev, _frac_clip)
+                _frac_clip_high_ct = _frac_clip_high_ct + (_frac_clip > _FRAC_CLIP_HIGH)
                 Q_out_1d = xp.minimum(Q_out_1d, _q_cap)
 
         # Convert outflow rate → volume for this step.  This is the value that
         # the NEXT step's scatter-add will use — decoupled from dt_next.
         Q_out_vol_1d = Q_out_1d * dt                 # [m³] outflow volume this step
 
-        if _mc:
+        if _implicit:
+            # Storage, outflow and the runoff sandbox were all advanced in the
+            # implicit finalize block above — nothing to do here.
+            pass
+        elif _mc:
             # MC: source_1d / Q_L were computed above.  Advance the runoff sandbox
             # once with the final dt and accumulate the mechanism partition, then
             # update the volume ledger.  The ledger is SIGNED (no max(·,0) clamp): a
@@ -765,7 +866,16 @@ def run_time_loop(grid_data, cfg):
     # Flux-limiter engagement: a stable dt keeps this near zero; a large peak
     # fraction means the limiter (not the wave equation) is doing the routing,
     # i.e. dt is too aggressive for the chosen scheme.
-    if _mc:
+    if _implicit:
+        _mean_it = _impl_iters_sum / step_count if step_count > 0 else 0.0
+        print(f"  Implicit solve |  mean {_mean_it:.2f} Picard iters/step  "
+              f"(max_iters={implicit_solver.max_iters})  |  peak residual "
+              f"{_impl_res_max:.2e} m")
+        if _impl_res_max > _impl_tol:
+            print(f"  [NOTE] Peak Picard residual {_impl_res_max:.2e} m > tol "
+                  f"{_impl_tol:g} m on at least one step — raise IMPLICIT_MAX_ITERS "
+                  f"or lower the time step for a tighter solve.")
+    elif _mc:
         # MC has no volume flux-limiter; its resolution diagnostic is how often the
         # raw O₂ went negative (Cr+Dg<1) and was floored at 0.  A small fraction is
         # the harmless classic MC dip; a large one means dt/dx under-resolves the wave.
@@ -775,11 +885,21 @@ def run_time_loop(grid_data, cfg):
             print("  [NOTE] >5% of cells hit the O₂≥0 floor (Cr+Dg<1, under-resolved) — "
                   "raise CFL_TARGET toward 1.0 for a sharper, less-clipped wave.")
     else:
-        _frac_clip_max = float(_frac_clip_max_dev.item())
-        print(f"  Flux limiter   |  peak {100.0*_frac_clip_max:.2f}% of wet cells clipped in a step")
+        _frac_clip_max  = float(_frac_clip_max_dev.item())
+        _frac_clip_t_h  = float(_frac_clip_peak_t.item()) / 3600.0
+        _frac_clip_high = int(_frac_clip_high_ct.item())
+        _high_pct = 100.0 * _frac_clip_high / max(step_count, 1)
+        print(f"  Flux limiter   |  peak {100.0*_frac_clip_max:.2f}% of wet cells clipped "
+              f"in a step, at t={_frac_clip_t_h:.2f}h  |  {_frac_clip_high:,}/{step_count:,} "
+              f"steps ({_high_pct:.2f}%) had >{100*_FRAC_CLIP_HIGH:.0f}% of wet cells clipped")
         if _frac_clip_max > 0.02:
-            print(f"  [WARNING] Flux limiter clipped >2% of wet cells — dt is marginal; "
-                  f"lower CFL_TARGET or (static mode) TIME_STEP_SECONDS.")
+            _nature = ("an isolated spike" if _high_pct < 1.0 else
+                      "recurring, not just a one-off spike")
+            print(f"  [WARNING] Flux limiter clipped >2% of wet cells at its peak "
+                  f"({_nature}) — if {_high_pct:.1f}% of steps are affected, dt is "
+                  f"marginal; lower CFL_TARGET or (static mode) TIME_STEP_SECONDS. "
+                  f"MANNING_SLOPE_CAP can also help if a few unphysically steep DEM "
+                  f"cells are forcing a small global dt.")
 
     # ── Mass balance ─────────────────────────────────────────────────────────
     # Budget on the routed water:  INPUT − OUTFLOW − STORAGE = ERROR.
@@ -788,7 +908,12 @@ def run_time_loop(grid_data, cfg):
     # routing lag, not yet scattered downstream).  Accounting for it makes the budget
     # close to machine precision when the scheme is conservative — so any non-trivial
     # error is a genuine red flag rather than a loop-boundary artefact.
-    inflight   = float((Q_out_vol_1d[valid_ds].sum()).item())   # already [m³]
+    # In-transit water: the explicit schemes scatter each step's interior outflow
+    # to the downstream cell on the NEXT step (one-step lag), so it is subtracted
+    # from upstream volume but not yet added downstream — count it as storage.  The
+    # implicit scheme has no lag (the global solve updates all cells at once), so
+    # its interior outflow is already reflected in volume_1d → no in-flight term.
+    inflight   = 0.0 if _implicit else float((Q_out_vol_1d[valid_ds].sum()).item())
     storage    = float(volume_1d.sum().item()) + inflight
     input_m3   = float(mb_in.item())
     bc_m3      = float(mb_bc.item())          # upstream inflow-BC volume [m³]

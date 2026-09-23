@@ -40,6 +40,7 @@ class RoutingScheme:
     rate_based: bool = False                # Muskingum–Cunge: state is outflow rate
     needs_water_surface_slope: bool = False  # diffusion wave: water-surface slope
     momentum_state: bool = False            # local-inertial: carries per-face discharge (∂Q/∂t)
+    implicit: bool = False                  # semi-implicit tree solve (unconditionally stable)
 
     def describe(self, theta=1.0):
         """The run-start log line, with the diffusion weight substituted in."""
@@ -77,6 +78,13 @@ register_scheme(RoutingScheme(
           "slope + semi-implicit friction — shock-preserving)",
     needs_water_surface_slope=True,   # uses WSE gradient + h-over-higher-bed geometry
     momentum_state=True,              # persists per-face Q across steps
+))
+register_scheme(RoutingScheme(
+    name="diffusive_implicit",
+    label="DIFFUSIVE wave, SEMI-IMPLICIT (HEC-RAS-style; unconditionally "
+          "stable O(n) D8-tree solve)",
+    needs_water_surface_slope=True,   # water-surface-slope conveyance (like diffusive)
+    implicit=True,                    # global tree solve each step (implicit.py)
 ))
 
 

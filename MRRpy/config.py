@@ -54,7 +54,7 @@ _ENUM_CHOICES = {
     "RUNOFF_SOURCE":         ["none", "coefficient", "raster", "scs_cn", "physical"],
     "RUNOFF_CN_SOURCE":      ["scalar", "gee", "raster"],
     "RUNOFF_CN_AMC":         ["i", "ii", "iii"],
-    "ROUTING_SCHEME":        ["kinematic", "diffusive", "muskingum", "dynamic"],
+    "ROUTING_SCHEME":        ["kinematic", "diffusive", "muskingum", "dynamic", "diffusive_implicit"],
     "DELINEATION_ENGINE":    ["pysheds", "pyflwdir"],
     "BACKEND":               ["cpu", "gpu"],
     "GPU_PRECISION":         ["float64", "float32"],
@@ -312,11 +312,38 @@ class Config:
     CELL_SIZE = None                        # None → auto-detect from DEM
 
     # ── Routing scheme ───────────────────────────────────────────────────────
-    ROUTING_SCHEME: str = "kinematic"       # 'kinematic'|'diffusive'|'muskingum'|'dynamic'
+    ROUTING_SCHEME: str = "kinematic"       # 'kinematic'|'diffusive'|'muskingum'|'dynamic'|'diffusive_implicit'
     DIFFUSION_THETA: float = 1.0            # diffusion weight θ∈[0,1]
     # de Almeida flux-centering weight for ROUTING_SCHEME='dynamic' (local-inertial).
     # 1.0 = original Bates (oscillation-prone); 0.7-0.9 damps the checkerboard.
     DYNAMIC_FLUX_THETA: float = 0.8
+
+    # ── Semi-implicit diffusion wave (ROUTING_SCHEME='diffusive_implicit') ────
+    # HEC-RAS-style: solves the diffusion-wave equation implicitly on the D8 tree
+    # (see core/routing/implicit.py).  Unconditionally stable, so it does NOT
+    # collapse dt on flat/ponded/steep cells the way the explicit 'diffusive'
+    # scheme does — run it with a large TIME_STEP_SECONDS (or a high
+    # IMPLICIT_CFL_TARGET) for HEC-RAS-like speed.  Ignored by the other schemes.
+    IMPLICIT_MAX_ITERS: int = 8             # Picard iterations per step (lagged conveyance)
+    IMPLICIT_TOL: float = 1e-4              # Picard convergence tol on max|Δ WSE| [m]
+    IMPLICIT_SLOPE_FLOOR: float = 1e-8      # floor on |water-surface slope| in the conductance
+    IMPLICIT_THETA: float = 1.0             # 1.0=backward Euler (robust); 0.5=Crank–Nicolson
+    IMPLICIT_RELAX: float = 0.7             # conductance under-relaxation (helps Picard converge
+                                            # at large steps); 1.0 = off. Best with ADAPTIVE_TIMESTEP.
+    # Adaptive-dt Courant target.  The scheme is unconditionally STABLE at any dt;
+    # this bounds the per-step depth change so the lagged-conveyance Picard loop
+    # CONVERGES and the solution stays physical.  ~1–3 mirrors HEC-RAS practice —
+    # already several× larger steps than an explicit CFL<1, so far fewer steps.
+    IMPLICIT_CFL_TARGET: float = 2.0
+    IMPLICIT_SOLVER: str = "auto"           # 'auto'|'numba'|'splu' (auto→numba if installed, else splu)
+    # Threads for the parallel (Numba) per-step assembly kernel.  This kernel is
+    # memory-bandwidth-, not compute-bound (~20 FLOPs against ~10 array reads
+    # per cell) -- benchmarked on a 768K-cell grid / 192-core machine, wall
+    # time improves up to ~32-64 threads then gets WORSE beyond that (NUMA /
+    # memory-controller contention: 192 threads was slower than 8).  None
+    # (default) caps at min(32, os.cpu_count()) rather than grabbing every
+    # core; set explicitly if your hardware's sweet spot differs.
+    IMPLICIT_NUM_THREADS = None
 
     # ── Channel (river) cross-section routing ────────────────────────────────
     CHANNEL_ROUTING: bool = False
@@ -683,6 +710,19 @@ class Config:
         # Note: fixed-choice options (BACKEND, DELINEATION_ENGINE, PRECIP_METHOD,
         # ROUTING_SCHEME, …) are validated at assignment via _ENUM_CHOICES, so no
         # membership check is needed here.
+
+        # The semi-implicit diffusion wave solves a tree linear system on the CPU
+        # (linear-algebra / core bound, not throughput bound); it does not have a
+        # GPU kernel.  Not an error — initialise_grid runs it on CPU with a
+        # warning — but flag the θ range here.
+        if self.ROUTING_SCHEME == "diffusive_implicit":
+            if not (0.0 < self.IMPLICIT_THETA <= 1.0):
+                errors.append(
+                    f"IMPLICIT_THETA must be in (0, 1] (got {self.IMPLICIT_THETA}); "
+                    "1.0=backward Euler, 0.5=Crank–Nicolson.")
+            if self.IMPLICIT_MAX_ITERS < 1:
+                errors.append(
+                    f"IMPLICIT_MAX_ITERS must be >= 1 (got {self.IMPLICIT_MAX_ITERS})")
 
         # Upstream inflow boundary condition(s): a list of point specs, each
         # needing an existing hydrograph CSV and a resolvable location.

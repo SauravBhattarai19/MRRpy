@@ -219,7 +219,8 @@ def test_raster_to_grid_aligns_foreign_crs_and_nodata(chain_rasters, tmp_path):
 # ─────────────────────────────────────────────────────────────────────────────
 # End-to-end pipeline (DEM -> watershed -> routed hydrograph)
 # ─────────────────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("scheme", ["kinematic", "diffusive", "muskingum"])
+@pytest.mark.parametrize("scheme", ["kinematic", "diffusive", "muskingum",
+                                    "diffusive_implicit"])
 def test_pipeline_conserves_mass(valley_dem, tmp_path, scheme):
     dem_p, pt = valley_dem
     cfg = Config(DEM_PATH=dem_p, OUTPUT_DIR=str(tmp_path / f"out_{scheme}"),

@@ -44,6 +44,7 @@ from .surface import (
     resolve_impervious_fraction,
     build_channel_geometry,
 )
+from .implicit import ImplicitDiffusiveSolver
 from .router import initialise_grid, run_time_loop, main
 from .reporting import save_hydrograph, write_partition_series, append_mass_balance_csv
 
@@ -54,6 +55,7 @@ __all__ = [
     "diffusive_wave_discharge", "normal_depth", "muskingum_cunge_step",
     "flux_limiter", "build_rainfall_array",
     "resolve_mannings_n", "resolve_lulc_field", "resolve_impervious_fraction",
-    "build_channel_geometry", "initialise_grid", "run_time_loop", "main",
+    "build_channel_geometry", "ImplicitDiffusiveSolver",
+    "initialise_grid", "run_time_loop", "main",
     "save_hydrograph", "write_partition_series", "append_mass_balance_csv",
 ]

@@ -136,8 +136,8 @@ An implicit scheme removes the CFL limit entirely — but it is not free:
 | Issue | Implicit | Explicit (what OPM uses) |
 |---|---|---|
 | Stability | any $\Delta t$ | needs $C \lesssim 1$ |
-| Cost per step (2-D grid) | sparse matrix solve | one elementwise pass |
-| Nonlinear $Q(h)$ | Newton iterations each step | direct formula |
+| Cost per step (2-D grid) | linear solve | one elementwise pass |
+| Nonlinear $Q(h)$ | Picard/Newton iterations each step | direct formula |
 | GPU parallelism | global communication | embarrassingly parallel |
 
 Chapter 4 §4.6 already showed a real implicit scheme — the Preissmann θ-method solved by the Thomas algorithm — and noted it works because a single 1-D channel is a **chain**: each interior cell has exactly one upstream and one downstream neighbor, which collapses the linear system to a lower-bidiagonal matrix solvable in one forward sweep.
@@ -146,9 +146,11 @@ OPM's domain is not a chain. It is a watershed-wide D8 flow-direction graph, ass
 
 <DagVsChannelDiagram />
 
-A confluence breaks the tridiagonal/bidiagonal structure a Thomas algorithm needs: the downstream row in the matrix now has two or more nonzero upstream entries, not one. Solving that requires a general sparse solver, not a cheap single-sweep elimination — architecturally different, and far more expensive, at the $10^4$–$10^6$-cell scale OPM targets.
+A confluence breaks the *tridiagonal* structure a plain Thomas algorithm needs: the downstream row in the matrix now has two or more nonzero upstream entries, not one.
 
-**Verdict:** explicit was the right call for OPM's actual architecture and scale — the per-step cost of a sparse implicit solve over a branching DAG would dwarf the savings, and the flux limiter already neutralizes the one thing implicit buys (robustness to large $C$). But that decision leaves the §5.5 cost sitting on the table: a watershed with both steep and flat cells pays needless numerical diffusion on every flat cell, every step. The fix that *would* address it without a full implicit rewrite is **local/block time stepping, a TVD flux, or Muskingum–Cunge matched diffusion** (Chapter 4 §4.5 lays out all four routes and the GPU trade-off) — none implemented in OPM today, and left here as clearly scoped future work rather than a flaw to patch immediately.
+> **Correction, revised after Chapter 6 was written.** This section originally stopped here and concluded that a confluence forces a "general sparse solver" — expensive, architecturally different from the single-sweep chain case — and that explicit was therefore the only practical choice at OPM's scale. That conclusion was **wrong**, or at least overstated. A D8 flow network is not a general graph: every cell has *exactly one downstream neighbor* (flow direction is a function), which makes the whole watershed a **tree**, not an arbitrary sparse system. A tree still has a perfect elimination ordering — fold every leaf into its unique parent, repeat — so a **generalized Thomas algorithm** (a tree double-sweep, the same idea 1-D river-network models have used for decades) solves it *exactly*, in O(n), with **zero fill-in**. A confluence only means the parent's elimination step sums more than one child's contribution; it does not change the algorithm's cost class. Chapter 6 builds this solver, verifies it against a dense reference, and runs it on a real 768,000-cell Himalayan watershed — a full 96-hour event routes in well under five minutes on a single CPU core.
+
+**Revised verdict:** implicit was not, in fact, architecturally out of reach for OPM's D8 domain — the earlier reasoning conflated "not tridiagonal" with "not cheap," which is only true for a *general* sparse matrix, not a tree. What implicit **does** still cost, honestly, per Chapter 6's real results: it needs its own care around resolution and iteration settings on very steep terrain (Picard convergence, not matrix cost, becomes the limiting factor), and the tree-sweep itself is inherently sequential, so it doesn't get the "one elementwise pass, embarrassingly parallel" GPU story the explicit schemes get for free — it's a CPU, multi-core-but-not-linearly-scaling algorithm (see Chapter 6 §6.5). The §5.5 numerical-diffusion cost on flat cells is real either way; Chapter 6's implicit scheme is one honest fix for it (unconditionally stable, no CFL-driven smoothing), alongside the local/block-time-stepping and TVD-flux alternatives Chapter 4 §4.5 already laid out.
 
 ---
 
@@ -198,4 +200,6 @@ Drag $\theta_\text{diff}$ below to separate the kinematic, blended, and full-dif
 5. The CASC2D/GSSHA conveyance depth $h_\text{higher}$ correctly handles adverse slopes and reduces to $h_i$ for normal downhill flow.
 6. The `ds_safe` trick replaces the outlet's $-1$ index with 0 and masks the result — a branch-free, GPU-friendly downstream lookup.
 7. OPM's single global $\Delta t$, sized for the steepest cell, leaves flat cells running at a tiny fraction of their own stability limit — manufacturing numerical diffusion that is indistinguishable, inside the model, from the real physical diffusivity it was built to capture.
-8. Explicit was the right architectural call for OPM's branching D8 domain — a true implicit solve would need a general sparse solver, not the cheap single-sweep Thomas algorithm a 1-D channel allows — but a per-zone or flow-adaptive $\Delta t$ remains the clean fix for the cost identified in §5.5, and is not yet implemented.
+8. A D8 watershed is a **tree**, not a general graph — every cell has exactly one downstream neighbor. That means a generalized (multi-branch) Thomas algorithm solves the implicit system exactly in O(n), confluences included. §5.6's original claim that this needed a "general sparse solver" was an overstatement, corrected in this revision. Chapter 6 builds the real solver and is honest about what it costs instead: Picard convergence on steep terrain, and a sequential tree-sweep that doesn't parallelize as freely as the explicit schemes.
+
+**Continue to [Chapter 6 — Semi-Implicit Diffusive-Wave Routing](/chapter/06-semi-implicit-routing)**, where this chapter's "should OPM have used implicit?" question gets an actual implementation, tested against the same real watershed, with both the stable and unstable results shown side by side.

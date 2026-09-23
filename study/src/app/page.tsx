@@ -41,6 +41,14 @@ const CHAPTERS = [
     tags: ['diffusive wave', 'backwater', 'GSSHA'],
     status: 'ready',
   },
+  {
+    num: 6,
+    slug: '06-semi-implicit-routing',
+    title: 'Semi-Implicit Diffusive-Wave Routing',
+    desc: 'Correcting Chapter 5: a D8 network is a tree, not a general graph, so an exact O(n) implicit solve exists after all — built, verified, and tested on a real Himalayan flood, stable and unstable results both shown.',
+    tags: ['implicit', 'HEC-RAS', 'tree solve', 'real watershed'],
+    status: 'ready',
+  },
 ];
 
 export default function HomePage() {
