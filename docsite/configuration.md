@@ -44,7 +44,7 @@ Discover them anytime with `MRRpy list-options` or
 | `RUNOFF_CN_SOURCE` | `0` scalar · `1` gee · `2` raster |
 | `RUNOFF_CN_AMC` | `0` i (dry) · `1` ii (normal) · `2` iii (wet) |
 | `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum · `3` dynamic |
-| `DELINEATION_ENGINE` | `0` pysheds · `1` pyflwdir |
+| `DELINEATION_ENGINE` | `0` pysheds · `1` pyflwdir (default) |
 | `BACKEND` | `0` cpu · `1` gpu |
 | `GPU_PRECISION` | `0` float64 · `1` float32 |
 | `GA_SUCTION_SOURCE` | `0` scalar · `1` texture |

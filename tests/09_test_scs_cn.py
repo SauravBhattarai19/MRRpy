@@ -27,6 +27,7 @@ Each test prints PASS or FAIL with a short reason.
 
 import os
 import sys
+import warnings
 
 import numpy as np
 
@@ -149,6 +150,28 @@ def test_mass_balance():
         return False
 
 
+def test_cn100_dry_state():
+    """CN=100 has zero retention and must not evaluate 0/0 when dry."""
+    name = "CN=100 dry state and full runoff"
+    try:
+        eng = _engine(cn=100.0)
+        rain = np.full(eng._n_cells, 10.0 / 1000.0 / 3600.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            eng.update_state(np.zeros_like(rain), 3600.0)
+            dry = np.asarray(eng._delta_Pe_m).copy()
+            eng.update_state(rain, 3600.0)
+            wet = np.asarray(eng._delta_Pe_m).copy()
+        if np.all(dry == 0.0) and np.allclose(wet, 0.01):
+            print(f"  {PASS}  {name}")
+            return True
+        print(f"  {FAIL}  {name} (dry={dry}, wet={wet})")
+        return False
+    except Exception as exc:
+        print(f"  {FAIL}  {name} (exception: {exc})")
+        return False
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 3 — AMC ordering (dry ≤ normal ≤ wet) + textbook conversion
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,6 +253,7 @@ if __name__ == "__main__":
     results = [
         test_initial_abstraction(),
         test_mass_balance(),
+        test_cn100_dry_state(),
         test_amc_ordering(),
         test_registry_pluggable(),
     ]

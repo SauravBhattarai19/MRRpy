@@ -61,10 +61,10 @@ The primary automated suite is run with `pytest` from the repository root:
 pytest
 ```
 
-This runs the config-bridge tests (`qgis_plugin/tests/test_config_bridge.py`),
+This runs the config-bridge tests (`MRRpy_plugin/tests/test_config_bridge.py`),
 the data-free scientific-core and end-to-end tests
 (`tests/test_core_science.py`), and an integration test
-(`qgis_plugin/tests/test_runner.py`, which is skipped automatically unless the
+(`MRRpy_plugin/tests/test_runner.py`, which is skipped automatically unless the
 `output/` rasters are present). The same suite runs in CI on every push and
 pull request.
 

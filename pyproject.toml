@@ -54,6 +54,8 @@ gee = ["earthengine-api"]
 # Interactive DEM_BOUNDS_WGS84 picker for Jupyter (see notebooks/pick_dem_bounds.ipynb).
 # Kept separate from [gee] so headless/script users aren't forced into ipywidgets/ipyleaflet.
 notebook = ["geemap", "ipyleaflet", "ipywidgets"]
+# Optional observed-flow retrieval for USGS gauge comparisons.
+usgs = ["dataretrieval>=1.3"]
 
 [project.scripts]
 MRRpy = "MRRpy.cli.main:main"
@@ -65,7 +67,7 @@ Issues = "https://github.com/SauravBhattarai19/MRRpy/issues"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["tests", "qgis_plugin/tests"]
+testpaths = ["tests", "MRRpy_plugin/tests"]
 python_files = ["test_*.py"]
 # tests/test_random.py is a data-prep scratch script, not a test suite.
 addopts = "-ra --ignore=tests/test_random.py"

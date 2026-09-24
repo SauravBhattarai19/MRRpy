@@ -2,8 +2,8 @@
 # =============================================================================
 # install_plugin.sh
 # =============================================================================
-# Installs (or refreshes) the VSA-OPM QGIS plugin by creating a symlink
-# from the QGIS user plugin directory to this repository's qgis_plugin/ folder.
+# Installs (or refreshes) MRRpy_plugin by creating a symlink from the QGIS
+# user plugin directory to this repository's MRRpy_plugin/ folder.
 #
 # A symlink means any edit you make to the source files is reflected
 # immediately in QGIS — no zip-and-reinstall cycle needed during development.
@@ -14,7 +14,7 @@
 #   ./install_plugin.sh
 #
 # Then in QGIS:
-#   Plugins → Manage and Install Plugins → Installed → enable "VSA-OPM …"
+#   Plugins → Manage and Install Plugins → Installed → enable "MRRpy_plugin"
 #   (If it doesn't appear, run: Plugins → Reload all plugin icons)
 #
 # To uninstall
@@ -25,8 +25,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_SRC="$SCRIPT_DIR/qgis_plugin"
-PLUGIN_NAME="vsa_opm_plugin"   # renamed: must not shadow the core "vsa_opm" package import   # must match the folder name QGIS sees
+PLUGIN_SRC="$SCRIPT_DIR/MRRpy_plugin"
+PLUGIN_NAME="MRRpy_plugin"   # must match the folder name QGIS sees
 
 # ── Detect QGIS plugin directory ─────────────────────────────────────────────
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -75,9 +75,18 @@ echo ""
 echo "Next steps:"
 echo "  1. Open QGIS."
 echo "  2. Plugins → Manage and Install Plugins → Installed tab."
-echo "  3. Find 'VSA-OPM Hydrological Model' and tick the checkbox."
+echo "  3. Find 'MRRpy_plugin' and tick the checkbox."
 echo "  4. A toolbar button and Plugins menu entry will appear."
 echo ""
+
+# Older builds of this plugin used other folder names; they would load a
+# second, outdated copy.  Point them out (never delete automatically).
+for old in vsa_opm vsa_opm_plugin; do
+    if [[ -e "$QGIS_PLUGIN_DIR/$old" || -L "$QGIS_PLUGIN_DIR/$old" ]]; then
+        echo "⚠️   Old plugin copy found: $QGIS_PLUGIN_DIR/$old"
+        echo "    Remove it so QGIS loads only MRRpy_plugin:  rm -r \"$QGIS_PLUGIN_DIR/$old\""
+    fi
+done
 echo "Dependencies check (run in QGIS Python console or your env):"
 echo "  import rasterio, pysheds, scipy, numpy, pandas"
 echo "  # Optional GPU: import cupy"

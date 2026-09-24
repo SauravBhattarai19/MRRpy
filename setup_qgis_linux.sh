@@ -2,14 +2,14 @@
 # =============================================================================
 # setup_qgis_linux.sh
 # =============================================================================
-# Full setup script for the VSA-OPM QGIS plugin on Ubuntu 22.04 LTS.
+# Full setup script for the MRRpy_plugin QGIS plugin on Ubuntu 22.04 LTS.
 # Run this yourself in your SSH terminal (needs sudo password interactively).
 #
 # What this does:
 #   Step 1 - Ensure X11 forwarding tools are present
 #   Step 2 - Install QGIS 3.x (LTS) from the official QGIS apt repository
 #   Step 3 - Make QGIS see your 'opm' conda environment's packages
-#   Step 4 - Install the VSA-OPM plugin (symlink)
+#   Step 4 - Install MRRpy_plugin (symlink)
 #   Step 5 - Verify everything works
 #
 # Usage:
@@ -21,11 +21,11 @@ set -euo pipefail
 
 OPM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPM_ENV="opm"   # your conda environment name
-PLUGIN_NAME="vsa_opm_plugin"   # renamed: must not shadow the core "vsa_opm" package import
+PLUGIN_NAME="MRRpy_plugin"   # folder name QGIS sees
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║   VSA-OPM QGIS Plugin — Ubuntu 22.04 Installer  ║"
+echo "║   MRRpy_plugin — Ubuntu 22.04 Installer          ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 
@@ -60,8 +60,8 @@ echo "  ✓ QGIS installed."
 echo "  QGIS Python: $(qgis --version 2>&1 | head -1)"
 echo ""
 
-# ── Step 3: Install OPM dependencies into QGIS's Python ──────────────────────
-echo "▶ Step 3/5: Installing OPM dependencies into QGIS system Python …"
+# ── Step 3: Install MRRpy dependencies into QGIS's Python ──────────────────────
+echo "▶ Step 3/5: Installing MRRpy dependencies into QGIS system Python …"
 
 # QGIS on Ubuntu 22.04 uses the system Python 3.10 (/usr/bin/python3).
 # We cannot link the 'opm' conda env directly because it uses Python 3.11,
@@ -70,7 +70,9 @@ echo "▶ Step 3/5: Installing OPM dependencies into QGIS system Python …"
 
 sudo apt-get install -y python3-pip
 sudo /usr/bin/python3 -m pip install --upgrade pip
-sudo /usr/bin/python3 -m pip install "numpy<2" pandas rasterio pysheds scipy matplotlib
+# Keep in step with MRRpy_plugin/bridge/dependencies.py::REQUIRED.
+sudo /usr/bin/python3 -m pip install "numpy<2" pandas scipy rasterio pyflwdir pysheds numba \
+    geopandas shapely pyproj matplotlib pyyaml
 
 echo "  ✓ Dependencies installed into QGIS Python."
 echo ""
@@ -80,7 +82,8 @@ echo "  Verifying package imports via system Python …"
 /usr/bin/python3 -c "
 ok = []
 fail = []
-for pkg in ['numpy', 'pandas', 'rasterio', 'pysheds', 'scipy']:
+for pkg in ['numpy', 'pandas', 'scipy', 'rasterio', 'pyflwdir', 'pysheds', 'numba',
+            'geopandas', 'shapely', 'pyproj', 'matplotlib', 'yaml']:
     try:
         __import__(pkg)
         ok.append(pkg)
@@ -104,7 +107,7 @@ except Exception as e:
 echo ""
 
 # ── Step 4: Install the plugin (symlink) ──────────────────────────────────────
-echo "▶ Step 4/5: Installing VSA-OPM QGIS plugin (symlink) …"
+echo "▶ Step 4/5: Installing MRRpy_plugin (symlink) …"
 
 QGIS_PLUGIN_DIR="$HOME/.local/share/QGIS/QGIS3/profiles/default/python/plugins"
 mkdir -p "$QGIS_PLUGIN_DIR"
@@ -115,8 +118,8 @@ if [[ -L "$TARGET" ]]; then
     echo "  Removed old symlink."
 fi
 
-ln -s "$OPM_ROOT/qgis_plugin" "$TARGET"
-echo "  ✓ Plugin symlinked: $TARGET → $OPM_ROOT/qgis_plugin"
+ln -s "$OPM_ROOT/MRRpy_plugin" "$TARGET"
+echo "  ✓ Plugin symlinked: $TARGET → $OPM_ROOT/MRRpy_plugin"
 echo ""
 
 # ── Step 5: Verify ────────────────────────────────────────────────────────────
@@ -132,7 +135,7 @@ fi
 # Run the config bridge tests (no QGIS needed)
 echo "  Running unit tests …"
 conda run -n "$OPM_ENV" python -m pytest \
-    "$OPM_ROOT/qgis_plugin/tests/test_config_bridge.py" -q 2>&1 | tail -3
+    "$OPM_ROOT/MRRpy_plugin/tests/test_config_bridge.py" -q 2>&1 | tail -3
 echo ""
 
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -145,7 +148,7 @@ echo "       qgis &"
 echo ""
 echo "    2. In QGIS:"
 echo "       Plugins → Manage and Install Plugins"
-echo "       → Installed tab → tick 'VSA-OPM Hydrological Model'"
+echo "       → Installed tab → tick 'MRRpy_plugin'"
 echo ""
 echo "  If QGIS appears slow over X11, consider using NoMachine or"
 echo "  TigerVNC + a VNC viewer on Windows for better performance."

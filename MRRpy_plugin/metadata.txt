@@ -1,0 +1,39 @@
+[general]
+name=MRRpy_plugin
+qgisMinimumVersion=3.16
+description=QGIS interface to MRRpy, a distributed rainfall–runoff and flood-routing model: DEM preprocessing and watershed delineation, gauge or IMERG satellite rainfall, physical (VSA saturation-excess / Green-Ampt / impervious) or SCS-CN runoff, and kinematic, diffusive, Muskingum–Cunge, dynamic or semi-implicit diffusive routing, with optional GPU (CuPy/CUDA) acceleration.
+version=3.0.0
+author=ORISE / Saurav Bhattarai
+email=sauravbhattarai@example.com
+
+about=MRRpy_plugin runs the MRRpy model directly inside QGIS. It supports:
+  - Guided watershed delineation: analyze terrain, pick the outlet on the drawn stream network, delineate (pyflwdir or pysheds)
+  - Precipitation: uniform, Thiessen, IDW, and NASA GPM IMERG V07 satellite (Thiessen/IDW) via Google Earth Engine, with an optional rain/snow elevation partition
+  - Runoff: none, runoff coefficient, pre-computed raster, SCS-CN (scalar / GCN250 / raster), and physical composable mechanisms (VSA-OPM saturation-excess, Green-Ampt infiltration-excess, urban impervious)
+  - Optional SERVES soil-moisture deficit, SoilGrids texture, HiHydroSoil Ksat and ESA WorldCover / WUDAPT LCZ land cover via Earth Engine
+  - Five routing schemes: kinematic, diffusive, Muskingum–Cunge, dynamic (local-inertial) and semi-implicit diffusive, with confined channels and adaptive time-stepping
+  - Load / save YAML, JSON or config.py files interchangeable with the MRRpy command-line tool
+  - Optional GPU acceleration via CuPy/CUDA (falls back to CPU automatically)
+  - QGIS Processing algorithms (mrrpy_plugin:process_dem, mrrpy_plugin:routing) for scripting and the Graphical Modeler
+
+tracker=https://github.com/SauravBhattarai19/MRRpy/issues
+repository=https://github.com/SauravBhattarai19/MRRpy
+
+tags=hydrology,dem,watershed,routing,flood,kinematic wave,diffusive wave,dynamic wave,runoff,precipitation,scs-cn
+
+homepage=https://github.com/SauravBhattarai19/MRRpy
+category=Raster
+icon=resources/icon.png
+experimental=False
+deprecated=False
+server=False
+hasProcessingProvider=yes
+
+changelog=3.0.0
+  - Renamed to MRRpy_plugin (plugin folder, menu, toolbar, dialog and Processing provider). Processing ids are now mrrpy_plugin:process_dem and mrrpy_plugin:routing. Remove any old vsa_opm / vsa_opm_plugin folder before installing.
+  - Works offline out of the box: Earth Engine settings appear only when an option that needs them is selected; the default runoff setup no longer requires Earth Engine
+  - Guided delineation and the Run stages are linked: after delineating, Run skips re-processing the DEM; a routing-only run is blocked with a clear message until a watershed exists
+  - Expert numerics (semi-implicit solver, CFL limits, floors) moved into collapsed groups; fixed labels that lost their "&" and icons that rendered as empty boxes; the Runoff tab scrolls as one page
+  - Tracks the MRRpy 0.2 core: dynamic (local-inertial) and semi-implicit diffusive routing, SCS-CN source/AMC selection, rain/snow partition, Manning slope cap, flux-limiter toggle
+  - Load Config (.yaml/.json/.py) and YAML/JSON Save Config; settings without a widget (gauges, inflow hydrographs, field output) are carried through a run
+  - Dependencies: geopandas, shapely, pyproj and matplotlib are checked as required; the installer opens before the dialog if they are missing

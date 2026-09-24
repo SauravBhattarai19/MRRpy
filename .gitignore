@@ -8,10 +8,11 @@ outputs collection/
 docs/
 runs/
 Extra/
+TestCases/
 
 # …but the plugin's own unit tests ARE tracked (re-include dir, then its .py).
-!qgis_plugin/tests/
-!qgis_plugin/tests/*.py
+!MRRpy_plugin/tests/
+!MRRpy_plugin/tests/*.py
 
 # Test data (large generated/downloaded files)
 test_data/
@@ -75,8 +76,8 @@ Thumbs.db
 !lcz_lookup.csv
 !MRRpy/data/lulc_lookup.csv
 !MRRpy/data/lcz_lookup.csv
-!_plugin_build/vsa_opm_plugin/_vendor/vsa_opm/data/lulc_lookup.csv
-!_plugin_build/vsa_opm_plugin/_vendor/vsa_opm/data/lcz_lookup.csv
+!_plugin_build/MRRpy_plugin/_vendor/MRRpy/data/lulc_lookup.csv
+!_plugin_build/MRRpy_plugin/_vendor/MRRpy/data/lcz_lookup.csv
 
 # Jupyter Notebooks
 .ipynb_checkpoints
@@ -93,14 +94,15 @@ Thumbs.db
 #   (.claude/, .codex, .agents) stay ignored above.
 
 # Plugin build artifacts
-#   vsa_opm/            = the pip-installable core package (tracked source)
-#   qgis_plugin/        = plugin SOURCE (tracked so it can be maintained/rebuilt)
-#   _plugin_build/      = prebuilt self-contained vsa_opm_plugin/ (tracked so users
+#   MRRpy/              = the pip-installable core package (tracked source)
+#   MRRpy_plugin/       = plugin SOURCE (tracked so it can be maintained/rebuilt)
+#   _plugin_build/      = prebuilt self-contained MRRpy_plugin/ (tracked so users
 #                         can pull and drop it straight into their QGIS plugins dir)
-#   vsa_opm_windows.zip = large zip artifact, kept out of git
+#   MRRpy_plugin.zip    = zip artifact, kept out of git
+MRRpy_plugin.zip
 vsa_opm_windows.zip
 # never ship credentials inside the vendored package
-_plugin_build/vsa_opm_plugin/_vendor/vsa_opm/gee/key.json
+_plugin_build/MRRpy_plugin/_vendor/MRRpy/gee/key.json
 
 # Server/service files
 serves.js

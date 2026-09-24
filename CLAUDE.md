@@ -56,7 +56,9 @@ same attributes) through `MRRpy.pipeline.run_pipeline`:
   `MRRpy run -c run.yaml [--stages process_dem routing] [--backend cpu|gpu]`.
   `MRRpy list-options` prints every fixed-choice option and its integer code.
   Config files may be `.yaml`, `.json`, or a legacy flat `.py` settings module.
-- **QGIS plugin** (`qgis_plugin/`): a 5-tab dialog + Processing algorithms that
+- **QGIS plugin** — **`MRRpy_plugin`** (source in `MRRpy_plugin/`; that is the
+  plugin's only name: folder, metadata, menu, Processing provider id
+  `mrrpy_plugin` with algorithms `process_dem` and `routing`): a 5-tab dialog + Processing algorithms that
   build a `Config` and call the same pipeline in a `QThread`.
 
 Batch runner: edit `config.py` (legacy scenario module) and/or
@@ -70,9 +72,13 @@ There is no single test runner. Two disjoint suites:
 - `tests/NN_*.py` — **standalone scripts**, not pytest. Run individually from
   the repo root, e.g. `python tests/03_test_vsa_opm.py`. They print PASS/FAIL
   per check and double as demos (several emit GIFs/PNGs into `tests/_demo_out/`).
-- `qgis_plugin/tests/` — **pytest**, no QGIS needed for `test_config_bridge.py`
-  (`pytest qgis_plugin/tests/test_config_bridge.py -v`); `test_runner.py` needs
-  rasters under `output/`.
+- `MRRpy_plugin/tests/` — **pytest**, no QGIS needed for `test_config_bridge.py`
+  (`pytest MRRpy_plugin/tests/test_config_bridge.py -v`); `test_runner.py` needs
+  rasters under `output/`. `test_ui.py` drives the real dialog headlessly and
+  needs QGIS's Python (skipped elsewhere): on this machine
+  `QT_QPA_PLATFORM=offscreen /usr/bin/python3 -m pytest MRRpy_plugin/tests/test_ui.py`
+  (system pytest is 6.x, so pass `-c <empty ini>` to bypass pyproject's
+  `minversion`).
 
 ## Architecture
 
@@ -87,8 +93,7 @@ kwargs, and mutable defaults (`RUNOFF_MECHANISMS`, `CHANNEL_WIDTH_BY_ORDER`,
 `FIELD_VARS`) are deep-copied per instance. After changing `OUTPUT_DIR`, call
 `update_output_paths()` to re-sync all derived paths (the pipeline does this for
 you via `prepare_output_dir`). The QGIS plugin re-exports this same class through
-`qgis_plugin/bridge/config_bridge.py` for backward compatibility — do not
-redefine it there.
+`MRRpy_plugin/bridge/config_bridge.py` — do not redefine it there.
 
 **Fixed-choice options take a string or an integer code.** Every enum-like knob
 (`PRECIP_METHOD`, `RUNOFF_SOURCE`, `ROUTING_SCHEME`, `BACKEND`,
@@ -110,9 +115,12 @@ own threading/stdout. Stages:
 - `process_dem` — `core/dem_processing.py`: reproject → fill → D8 flow
   dir/accum → delineate watershed. Writes `clipped_dem.tif`,
   `flow_direction.tif`, `clipped_flow_accumulation.tif`, `watershed.tif/.geojson`
-  to `OUTPUT_DIR`. Engine selectable via `DELINEATION_ENGINE` (`pysheds` default
-  — must stay byte-identical for existing callers — or opt-in `pyflwdir`, which
-  fixes flow collapse across large flat reservoirs).
+  to `OUTPUT_DIR`. Engine selectable via `DELINEATION_ENGINE`: `pyflwdir` (default;
+  priority-flood fill, fixes flow collapse across large flat reservoirs; crops
+  `clipped_dem.tif` to the watershed bbox while `flow_direction.tif` /
+  `watershed.tif` stay full-extent — `terrain.load_rasters` windows them) or
+  `pysheds` (the original engine — must stay byte-identical for callers that
+  select it).
 - `routing` — `core/routing/router.py`: `initialise_grid` → `run_time_loop` →
   `save_hydrograph`.
 - `vsa_opm` — `core/opm.py::run_opm`, the standalone OPM runner.
@@ -189,12 +197,17 @@ local DEM yet.
   `MRRpy/config.py::Config`. Both are loadable by the CLI.
 - `study/` is a separate Next.js MDX interactive textbook (the public course
   site); `docs/` is the LaTeX companion. They are documentation, not the model.
-- The plugin **source** (`qgis_plugin/`) imports `MRRpy`;
+- The plugin **source** (`MRRpy_plugin/`) imports `MRRpy`;
   `bridge.ensure_core()` finds it pip-installed, in `_vendor/MRRpy`, or in
-  the repo root (dev symlink). Rebuild the shipped zip with
-  `./build_windows_plugin.sh`. The already-built `_plugin_build/` zip is a
-  frozen artifact still on the old `vsa_opm` name — regenerate it to pick up the
-  rename (pending follow-up).
+  the repo root (dev symlink). `_plugin_build/MRRpy_plugin/` (tracked) is the
+  prebuilt plugin with a vendored copy of `MRRpy` — re-run
+  `./build_windows_plugin.sh` (also writes `MRRpy_plugin.zip`, installable via
+  QGIS *Install from ZIP*) after any core or plugin change so it doesn't go
+  stale. The plugin reads the routing-scheme list from `_ENUM_CHOICES`, but
+  every *other* new `Config` knob needs a widget in the matching
+  `MRRpy_plugin/ui/tab_*.py` (`apply_config` + `write_to_config`) and, if it
+  matters for scripting, a parameter in `processing/alg_router.py`. Keep
+  `bridge/dependencies.py::REQUIRED` in step with `pyproject.toml` dependencies.
 - Land-cover lookups (`lulc_lookup.csv`, `lcz_lookup.csv`) ship inside the
   package at `MRRpy/data/` and are the config defaults.
 - Packaging lives in `pyproject.toml` (`MRRpy` dist, `MRRpy` console

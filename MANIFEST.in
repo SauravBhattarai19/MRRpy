@@ -10,7 +10,7 @@ global-exclude __pycache__/*
 prune tests
 prune docs
 prune study
-prune qgis_plugin
+prune MRRpy_plugin
 prune _plugin_build
 prune tools
 prune runs

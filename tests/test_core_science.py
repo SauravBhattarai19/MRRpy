@@ -219,11 +219,19 @@ def test_raster_to_grid_aligns_foreign_crs_and_nodata(chain_rasters, tmp_path):
 # ─────────────────────────────────────────────────────────────────────────────
 # End-to-end pipeline (DEM -> watershed -> routed hydrograph)
 # ─────────────────────────────────────────────────────────────────────────────
+def test_default_delineation_engine_is_pyflwdir():
+    assert Config().DELINEATION_ENGINE == "pyflwdir"
+    assert Config(DELINEATION_ENGINE=0).DELINEATION_ENGINE == "pysheds"   # codes unchanged
+
+
+@pytest.mark.parametrize("engine", ["pyflwdir", "pysheds"])
 @pytest.mark.parametrize("scheme", ["kinematic", "diffusive", "muskingum",
-                                    "diffusive_implicit"])
-def test_pipeline_conserves_mass(valley_dem, tmp_path, scheme):
+                                    "dynamic", "diffusive_implicit"])
+def test_pipeline_conserves_mass(valley_dem, tmp_path, scheme, engine):
+    pytest.importorskip(engine)
     dem_p, pt = valley_dem
-    cfg = Config(DEM_PATH=dem_p, OUTPUT_DIR=str(tmp_path / f"out_{scheme}"),
+    cfg = Config(DEM_PATH=dem_p, OUTPUT_DIR=str(tmp_path / f"out_{scheme}_{engine}"),
+                 DELINEATION_ENGINE=engine,
                  OUTPUT_POINT=pt, PRECIP_METHOD="uniform",
                  RAIN_INTENSITY_MM_HR=20.0, RAIN_DURATION_HOURS=1.0,
                  RUNOFF_SOURCE="none", TOTAL_SIMULATION_TIME_HOURS=3.0,
@@ -242,6 +250,27 @@ def test_pipeline_conserves_mass(valley_dem, tmp_path, scheme):
 
     mb = pd.read_csv(res["mass_balance_csv"]).tail(1)
     assert abs(float(mb["rel_error"].iloc[0])) < 1e-6   # closes to ~machine precision
+
+
+def test_pipeline_pyflwdir_cropped_grid_routes(valley_dem, tmp_path):
+    """pyflwdir crops clipped_dem to the watershed bbox while flow_direction /
+    watershed stay full-extent; routing must window them onto the DEM grid."""
+    pytest.importorskip("pyflwdir")
+    dem_p, pt = valley_dem
+    cfg = Config(DEM_PATH=dem_p, OUTPUT_DIR=str(tmp_path / "out_pyflwdir"),
+                 OUTPUT_POINT=pt, DELINEATION_ENGINE="pyflwdir",
+                 TARGET_CRS_EPSG="EPSG:32615",   # the DEM's own CRS: no resampling
+                 RAIN_INTENSITY_MM_HR=20.0, RAIN_DURATION_HOURS=1.0,
+                 TOTAL_SIMULATION_TIME_HOURS=2.0, ADAPTIVE_TIMESTEP=True)
+    cfg.update_output_paths()
+    res = run_pipeline(cfg, stages=("process_dem", "routing"),
+                       on_log=lambda m: None, on_progress=lambda p: None)
+
+    with rasterio.open(cfg.ROUTING_DEM_PATH) as a, rasterio.open(cfg.ROUTING_FLOW_DIR_PATH) as b:
+        assert a.shape != b.shape            # the case this test exists for
+    assert float(res["hydrograph_df"]["Q_m3s"].max()) > 0.0
+    mb = pd.read_csv(res["mass_balance_csv"]).tail(1)
+    assert abs(float(mb["rel_error"].iloc[0])) < 1e-6
 
 
 def test_raster_runoff_mode_reprojects(valley_dem, tmp_path):
