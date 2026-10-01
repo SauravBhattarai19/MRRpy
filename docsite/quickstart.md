@@ -38,12 +38,22 @@ report.
     `PRECIP_METHOD="uniform"` and `PRECIP_METHOD=0` are identical. See
     [Configuration](configuration.md) or run `MRRpy list-options`.
 
+## Rather not type it? Answer questions
+
+```bash
+MRRpy wizard            # asks only what matters, explains each setting, saves run.yaml
+MRRpy run -c run.yaml
+```
+
+In Jupyter, `MRRpy.ConfigForm()` gives the same as a step-by-step form
+(`pip install "MRRpy[notebook]"`). See [Build a config interactively](interactive.md).
+
 ## CLI
 
 The same run, driven by a config file:
 
 ```bash
-MRRpy init-config -o my_run.yaml     # write a template with every parameter
+MRRpy init-config -o my_run.yaml     # a commented template with every parameter
 # edit DEM_PATH, OUTPUT_POINT, TARGET_CRS_EPSG, OUTPUT_DIR …
 MRRpy validate -c my_run.yaml        # pre-flight checks
 MRRpy run -c my_run.yaml             # process_dem + routing

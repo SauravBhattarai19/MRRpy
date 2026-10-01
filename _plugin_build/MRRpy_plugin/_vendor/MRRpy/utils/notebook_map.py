@@ -6,10 +6,13 @@ Jupyter-only interactive bounding-box picker, for drawing ``DEM_BOUNDS_WGS84``
 on a map instead of typing coordinates by hand. Not usable from a plain
 ``.py`` script or the CLI — it needs a live ipywidgets/ipyleaflet frontend.
 
+Drawing a box needs **no Earth Engine sign-in**: the map is plain ipyleaflet
+and the box is just four numbers.  (Earth Engine is needed later, to download
+the DEM — see ``MRRpy.connect_earth_engine``.)
+
 Requires the ``notebook`` extra: ``pip install MRRpy[notebook]``
-(geemap, ipyleaflet, ipywidgets) — kept separate from the ``gee`` extra so
-headless/script users doing scripted GEE downloads aren't forced into the
-widget stack.
+(ipyleaflet, ipywidgets).  The step-by-step ``MRRpy.ConfigForm`` has the same
+picker built in.
 
 Usage (in a Jupyter cell)::
 
@@ -24,10 +27,10 @@ Usage (in a Jupyter cell)::
 """
 
 
-def _require_geemap():
+def _require_ipyleaflet():
     try:
-        import geemap
-        return geemap
+        import ipyleaflet
+        return ipyleaflet
     except ImportError as exc:
         raise ImportError(
             "Interactive map picking needs the notebook extra: "
@@ -37,7 +40,7 @@ def _require_geemap():
 
 def pick_bounds_map(center=(27.7, 85.3), zoom=9, **kwargs):
     """
-    Create an interactive map with a rectangle draw control, for picking a
+    Create an interactive map with a rectangle draw tool, for picking a
     ``DEM_BOUNDS_WGS84`` box in a Jupyter notebook.
 
     Parameters
@@ -45,25 +48,37 @@ def pick_bounds_map(center=(27.7, 85.3), zoom=9, **kwargs):
     center : (lat, lon), initial map center.
     zoom : int, initial zoom level.
     **kwargs
-        Passed through to ``geemap.Map()``. ``ee_initialize`` defaults to
-        False here (drawing a box doesn't need Earth Engine credentials);
-        pass ``ee_initialize=True`` if you also want to overlay EE layers.
+        Passed through to ``ipyleaflet.Map()`` (``ee_initialize``, accepted by
+        older MRRpy versions that used geemap, is ignored).
 
     Returns
     -------
-    geemap.Map
+    ipyleaflet.Map
         Display it as a cell's last expression (or ``display(m)``), draw a
         rectangle using the toolbar, then call ``get_drawn_bounds(m)``.
 
     Raises
     ------
     ImportError
-        If geemap/ipyleaflet/ipywidgets aren't installed
-        (``pip install MRRpy[notebook]``).
+        If ipyleaflet/ipywidgets aren't installed (``pip install MRRpy[notebook]``).
     """
-    geemap = _require_geemap()
-    kwargs.setdefault("ee_initialize", False)
-    m = geemap.Map(center=center, zoom=zoom, **kwargs)
+    L = _require_ipyleaflet()
+    kwargs.pop("ee_initialize", None)
+    kwargs.setdefault("scroll_wheel_zoom", True)
+    m = L.Map(center=center, zoom=zoom, **kwargs)
+    draw = L.DrawControl(polyline={}, polygon={}, circlemarker={}, marker={},
+                         rectangle={"shapeOptions": {"weight": 2}})
+    m.draw_features = []          # the drawn rectangles, newest last (GeoJSON)
+
+    def _remember(target, action, geo_json):
+        if action == "created":
+            m.draw_features.append(geo_json)
+        elif action == "deleted" and m.draw_features:
+            m.draw_features.pop()
+
+    draw.on_draw(_remember)
+    m.add(draw)
+    m.draw_control = draw
     return m
 
 
@@ -74,7 +89,7 @@ def get_drawn_bounds(map_obj):
 
     Parameters
     ----------
-    map_obj : geemap.Map
+    map_obj : ipyleaflet.Map
         A map returned by :func:`pick_bounds_map`, after the user has drawn
         a rectangle using its draw toolbar.
 

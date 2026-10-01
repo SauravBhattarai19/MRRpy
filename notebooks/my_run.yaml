@@ -1,0 +1,163 @@
+# MRRpy configuration
+# Written by `MRRpy ConfigForm` on 2026-10-01.
+#
+#   Check it:              MRRpy validate -c <this file>
+#   Run it:                MRRpy run -c <this file>
+#   Explain a setting:     MRRpy explain <NAME>
+#   Change it by questions: MRRpy wizard --edit <this file>
+#
+# Settings with a fixed list of options accept the name or its number.
+# Relative paths are relative to the folder you run MRRpy from.
+
+
+# =============================================================================
+# 1. Basin, terrain and results folder
+# Where your basin is, which elevation data to use, and where results go.
+# =============================================================================
+
+# Elevation model (DEM) file — A GeoTIFF of ground elevation covering your
+# basin, in any projection. Leave it empty to download a DEM from Google Earth
+# Engine instead.
+DEM_PATH: ''
+
+# Area to download (west, south, east, north) — Only used when no DEM file is
+# given: the box to download, in longitude/latitude degrees, e.g. 85.1, 27.5,
+# 85.6, 27.9. Make it a little larger than the basin.
+#   null means: no download.
+DEM_BOUNDS_WGS84: null
+
+# DEM dataset to download — Which global elevation dataset to download. 'MRRpy
+# list-dems' compares coverage and resolution.
+#   Choices (name or number): 0=nasadem, 1=srtm, 2=merit, 3=alos,
+#   4=copernicus_glo30, 5=fabdem, 6=usgs_3dep_1m, 7=gmted2010
+DEM_SOURCE: nasadem
+
+# Basin outlet (latitude, longitude) — The river point your basin drains to.
+# MRRpy delineates everything upstream of it and reports the flow there.
+# Latitude first, e.g. 27.6322, 85.2933.
+OUTPUT_POINT: [27.632222, 85.293333]
+
+# Map projection for the model grid — A projected coordinate system in metres,
+# as an EPSG code. The UTM zone of your outlet is a safe choice, and MRRpy
+# suggests it for you.
+TARGET_CRS_EPSG: EPSG:32645
+
+# Results folder — Where every output is written. It is created if it does not
+# exist.
+OUTPUT_DIR: output/
+
+# Google Earth Engine project — Only needed for options that download data from
+# Earth Engine (DEM download, IMERG rain, global curve numbers, soil and land-
+# cover maps). Leave it empty to work offline. The GEE_PROJECT environment
+# variable works too.
+#   null means: not set (offline).
+GEE_PROJECT: null
+
+
+# =============================================================================
+# 2. Rainfall
+# How much rain falls, where and when.
+# =============================================================================
+
+# Rainfall input — Where the rain comes from.
+#   Choices (name or number): 0=uniform, 1=thiessen, 2=idw, 3=imerg_thiessen,
+#   4=imerg_idw
+PRECIP_METHOD: uniform
+
+# Rain intensity (mm/h) — Constant rain rate of the design storm. Use 0 to
+# route an inflow hydrograph only.
+RAIN_INTENSITY_MM_HR: 20.0
+
+# Storm duration (hours) — How long the design storm lasts.
+RAIN_DURATION_HOURS: 3.0
+
+
+# =============================================================================
+# 3. Runoff
+# How the ground splits rain into runoff and water that soaks in.
+# =============================================================================
+
+# Runoff method — How rain is split into runoff and water that soaks into the
+# ground.
+#   Choices (name or number): 0=none, 1=coefficient, 2=raster, 3=scs_cn,
+#   4=physical
+RUNOFF_SOURCE: none
+
+
+# =============================================================================
+# 4. Roughness and river channels
+# How rough the ground is and how river channels are shaped.
+# =============================================================================
+
+# Ground roughness from — Where Manning's n (surface roughness) of each cell
+# comes from.
+#   Choices (name or number): 0=scalar, 1=lulc, 2=lcz, 3=raster
+MANNINGS_N_SOURCE: scalar
+
+# Manning's n of the ground — Surface roughness: pavement about 0.015, grass
+# 0.03 to 0.05, forest about 0.1. Also fills gaps in maps.
+MANNINGS_N: 0.09
+
+# Manning's n in river channels — Roughness used on river-channel cells instead
+# of the ground value: one number, a value per stream order, values by
+# elevation, or a raster.
+#   Forms: Same as the ground (no channel override); One value for every river
+#   cell; A value per stream order; Values by elevation band; From a raster of
+#   n on river cells
+#   null means: same as the ground.
+MANNINGS_N_CHANNEL: 0.035
+
+# Bankfull flow (about the 2-year flood) — The flow the river carries before
+# spilling onto its floodplain. Automatic uses a global estimate at the outlet
+# (Earth Engine when available, otherwise drainage area), usually within a
+# factor of 2. Or give your 2-year flood, or a regional formula.
+#   Forms: Automatic global estimate (no data needed); My 2-year flood at the
+#   outlet or a gauge; A formula or regional preset
+#   null means: automatic global estimate.
+CHANNEL_QBF_M3S: null
+
+
+# =============================================================================
+# 5. Routing and simulation time
+# How water moves downhill through the grid, and for how long to simulate.
+# =============================================================================
+
+# Routing method — How water moves from cell to cell.
+#   Choices (name or number): 0=kinematic, 1=diffusive, 2=muskingum, 3=dynamic,
+#   4=diffusive_implicit
+ROUTING_SCHEME: kinematic
+
+# Simulation length (hours) — How long to simulate, from the start of the rain.
+TOTAL_SIMULATION_TIME_HOURS: 96.0
+
+# Save results every (seconds) — How often the hydrograph (and any maps) are
+# recorded.
+OUTPUT_INTERVAL_SECONDS: 600
+
+
+# =============================================================================
+# 6. Outputs and computer
+# Extra results to record, and whether to use the CPU or a GPU.
+# =============================================================================
+
+# Virtual gauges — Extra points where depth and flow are recorded (gauges.csv),
+# one per line as 'name, latitude, longitude'. Each snaps to the nearest river
+# cell.
+#   A list of points, each {name, lat, lon} (optional: snap_to_channel,
+#   snap_radius_cells; or row/col, easting/northing).
+#   null means: none.
+ROUTING_GAUGES: null
+
+# Save maps over time — Record depth, velocity and discharge maps at every
+# output time, for flood maps and animations.
+SAVE_FIELDS: false
+
+# Computer to run on — A GPU can be much faster for large grids. If no GPU is
+# found MRRpy falls back to the CPU and says so.
+#   Choices (name or number): 0=cpu, 1=gpu
+BACKEND: cpu
+
+
+# The other 93 settings keep their defaults. To see and edit them all:
+#   MRRpy init-config --full -o all_settings.yaml     (every setting, explained)
+#   MRRpy wizard --edit <this file> --advanced

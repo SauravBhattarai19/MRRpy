@@ -52,9 +52,11 @@ dependencies = [
 gpu = ["cupy-cuda12x[ctk]"]   # [ctk] ships the CUDA headers CuPy needs to JIT kernels
 # Google Earth Engine features (IMERG rainfall, SERVES deficit, SoilGrids, LULC/LCZ)
 gee = ["earthengine-api"]
-# Interactive DEM_BOUNDS_WGS84 picker for Jupyter (see notebooks/pick_dem_bounds.ipynb).
+# Jupyter extras: the configuration form (MRRpy.ConfigForm, needs ipywidgets 8) with
+# its map picker, and the DEM_BOUNDS_WGS84 picker (notebooks/pick_dem_bounds.ipynb).
+# Both draw with plain ipyleaflet, so no Earth Engine sign-in is needed just to draw.
 # Kept separate from [gee] so headless/script users aren't forced into ipywidgets/ipyleaflet.
-notebook = ["geemap", "ipyleaflet", "ipywidgets"]
+notebook = ["ipyleaflet", "ipywidgets>=8"]
 # Optional observed-flow retrieval for USGS gauge comparisons.
 usgs = ["dataretrieval>=1.3"]
 

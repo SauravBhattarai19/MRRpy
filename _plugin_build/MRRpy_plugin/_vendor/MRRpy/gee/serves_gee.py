@@ -334,7 +334,14 @@ def _get_ndvi_modis(geometry, target_date, search_window=16):
             ee.Date(img.get('system:time_start')).difference(target, 'day').abs()
         )).sort('date_diff').first()
     )
-    return closest.select('NDVI').multiply(0.0001).rename('NDVI').clip(geometry)
+    ndvi = closest.select('NDVI').multiply(0.0001).rename('NDVI')
+    # MOD13A2 is in the global MODIS sinusoidal grid (SR-ORG:6974).  Clipping it
+    # (here, and again when the deficit raster is downloaded) makes Earth Engine
+    # transform the grid's ±180° seam to lat/lon, which fails with "Image.clip:
+    # Unable to transform edge (43200, …) from SR-ORG:6974".  Reprojecting to
+    # EPSG:4326 at the product's own ~1 km pixel first avoids it (same values).
+    ndvi = ndvi.reproject(crs='EPSG:4326', scale=closest.projection().nominalScale())
+    return ndvi.clip(geometry)
 
 
 def _get_ndvi(geometry, target_date, satellite, search_window):

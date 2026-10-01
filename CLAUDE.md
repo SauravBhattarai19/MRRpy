@@ -52,10 +52,20 @@ Three interfaces, one core, all driven by a `Config` (or any object with the
 same attributes) through `MRRpy.pipeline.run_pipeline`:
 
 - **Python API**: `from MRRpy import Config, run_pipeline`
-- **CLI**: `MRRpy init-config -o run.yaml` → `MRRpy validate -c run.yaml` →
-  `MRRpy run -c run.yaml [--stages process_dem routing] [--backend cpu|gpu]`.
-  `MRRpy list-options` prints every fixed-choice option and its integer code.
+- **CLI**: `MRRpy init-config -o run.yaml` (commented template; `--short`) or
+  `MRRpy wizard` (question-and-answer; `--edit run.yaml`) → `MRRpy validate -c
+  run.yaml` → `MRRpy run -c run.yaml [--stages process_dem routing] [--backend cpu|gpu]`.
+  `MRRpy list-options` prints every fixed-choice option and its integer code;
+  `MRRpy explain NAME|word` explains/searches settings.
   Config files may be `.yaml`, `.json`, or a legacy flat `.py` settings module.
+- **Jupyter form**: `MRRpy.ConfigForm()` (`MRRpy/interactive/form.py`, needs
+  ipywidgets ≥ 8 — the `[notebook]` extra; lazily imported so `import MRRpy`
+  never needs it). Step-by-step tabs like the QGIS plugin (`form.STEPS`:
+  Terrain → Coordinate system → Precipitation → Runoff → Routing → Run, Next/Back);
+  each choice's dependent settings hang in an indented branch under it, built
+  from `config_schema.parent_of()` (the last `when` clause), shown only while
+  selected; `choice_groups` makes a two-level choice (PRECIP_METHOD: source,
+  then Thiessen/IDW). Example: `notebooks/configure_and_run.ipynb`.
 - **QGIS plugin** — **`MRRpy_plugin`** (source in `MRRpy_plugin/`; that is the
   plugin's only name: folder, metadata, menu, Processing provider id
   `mrrpy_plugin` with algorithms `process_dem` and `routing`): a 5-tab dialog + Processing algorithms that
@@ -67,8 +77,13 @@ by `PRECIP_METHOD` to the gauge or IMERG pipeline over every flood event.
 
 ## Tests
 
-There is no single test runner. Two disjoint suites:
+There is no single test runner. Test suites:
 
+- `tests/test_*.py` — **pytest** (`pytest tests/`). `test_config_schema.py`,
+  `test_config_render.py`, `test_config_wizard.py`, `test_config_form.py`
+  (skips without ipywidgets) and `test_notebooks.py` cover the interactive
+  config tools; `tests/conftest.py` has a `tiny_basin` DEM fixture and
+  `tests/_interactive_helpers.py` a scripted wizard user.
 - `tests/NN_*.py` — **standalone scripts**, not pytest. Run individually from
   the repo root, e.g. `python tests/03_test_vsa_opm.py`. They print PASS/FAIL
   per check and double as demos (several emit GIFs/PNGs into `tests/_demo_out/`).
@@ -106,6 +121,21 @@ appending is safe, reordering renumbers the codes). `Config.describe_options()`
 renders the table (also the `MRRpy list-options` CLI command). Because the
 value is normalised at assignment, `validate()` no longer re-checks enum
 membership — only cross-field rules.
+
+### The parameter catalogue drives every interactive front-end
+
+`MRRpy/config_schema.py` describes each `Config` knob for humans: label,
+plain-language help, unit, input kind, section (6 parts), `basic`/`advanced`
+level, and `when=`/`when_any=` conditions saying when it matters. Defaults and
+enum choices are *read* from `Config`/`_ENUM_CHOICES`, never copied. The
+terminal wizard (`interactive/wizard.py`, plain `input()` — no curses/colour,
+screen-reader friendly), the Jupyter form (`interactive/form.py`), the
+commented YAML writer and `explain` (`interactive/render.py`) all render this
+one catalogue. **When adding a `Config` parameter, also add a `P(...)` entry
+there** (or list it in `NOT_ASKED` with a reason) — `test_config_schema.py`
+fails otherwise, and the wizard/form/YAML tests then cover it automatically.
+Give it an `example=` (non-default valid value) unless it's a bool/choice.
+The QGIS plugin does not use the catalogue yet (its tabs are hand-built).
 
 ### Pipeline stages
 
@@ -184,7 +214,11 @@ automatic CPU fallback with a warning. Never assume a GPU is present.
 Optional and lazily imported. `gee/auth.py` initializes EE from
 `GOOGLE_APPLICATION_CREDENTIALS`, then a `key.json` next to the gee module / repo
 root / cwd, then `GEE_PROJECT` (config attr or env var). `key.json` is **never
-committed**. All GEE-backed options degrade gracefully — scalar/manual/gauge
+committed**. User-facing sign-in: `gee/auth.py::connect` (=
+`MRRpy.connect_earth_engine(project)`, CLI `MRRpy earth-engine-login`) reuses a
+saved sign-in or runs `ee.Authenticate` once; `auth.status()` never prompts and
+backs the form's *Connect to Earth Engine* button. The notebook map pickers are
+plain ipyleaflet (no geemap, no EE needed to draw a box). All GEE-backed options degrade gracefully — scalar/manual/gauge
 settings run fully offline, and `Config.validate()` errors early if a
 GEE-backed source is selected without a project. `gee/dem_gee.py` downloads a
 NASADEM (area-averaged, auto-tiled/mosaicked) to bootstrap a basin that has no

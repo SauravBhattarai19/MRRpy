@@ -10,9 +10,22 @@ Commands
         Run the pipeline with the given config file (YAML, JSON or a legacy
         flat python settings module).
 
-    MRRpy init-config [-o config.yaml]
-        Write a template config file with every parameter at its default,
-        ready to edit.
+    MRRpy wizard [-o run.yaml] [--edit run.yaml] [--advanced]
+        Build (or edit) a config file by answering questions — only the
+        questions that matter for your earlier answers are asked.
+
+    MRRpy init-config [-o config.yaml] [--short] [--interactive]
+        Write a commented template config file: every parameter at its
+        default with a plain-language explanation (--short: only the main
+        ones; --interactive: run the wizard instead).
+
+    MRRpy earth-engine-login [--project ID] [--check] [--force]
+        Sign in to Google Earth Engine once per computer and check that the
+        project works (needed only for Earth Engine options).
+
+    MRRpy explain NAME | WORDS… [--all]
+        Explain one setting (choices, default, when it applies), search the
+        settings by keyword, or list them all.
 
     MRRpy validate -c config.yaml
         Load the config file and run the pre-flight sanity checks without
@@ -29,6 +42,7 @@ Commands
 """
 
 import argparse
+import os
 import sys
 
 from ..config import Config
@@ -48,14 +62,52 @@ def _cmd_run(args):
 
 
 def _cmd_init_config(args):
-    cfg = Config()
-    path = cfg.save(args.output)
+    if args.interactive:
+        return _wizard(output=args.output)
+    from ..interactive.render import save_yaml
+    if os.path.splitext(args.output)[1].lower() == ".json":
+        path = Config().save(args.output)            # JSON can't hold comments
+    else:
+        path = save_yaml(Config(), args.output, full=not args.short,
+                         source="MRRpy init-config")
     print(f"Template config written to: {path}")
     print("Edit at least DEM_PATH, OUTPUT_POINT, TARGET_CRS_EPSG and OUTPUT_DIR, then:")
+    print(f"  MRRpy validate -c {path}")
     print(f"  MRRpy run -c {path}")
-    print("Tip: fixed-choice options accept a string or an integer code "
-          "(see 'MRRpy list-options').")
+    print("Prefer answering questions?  MRRpy wizard")
     return 0
+
+
+def _wizard(output=None, edit=None, ask_all=False, write_all=False, brief=False,
+            start=None):
+    from ..interactive.wizard import run_wizard
+    cfg = run_wizard(config=edit, output=output, ask_all=ask_all, write_all=write_all,
+                     starting_point=start, offer_run=True, show_help=not brief)
+    return 0 if cfg is not None else 1
+
+
+def _cmd_wizard(args):
+    return _wizard(output=args.output, edit=args.edit, ask_all=args.advanced,
+                   write_all=args.write_all, brief=args.brief, start=args.start)
+
+
+def _cmd_ee_login(args):
+    from ..gee.auth import connect
+    ok = connect(project=args.project, sign_in=not args.check, force=args.force,
+                 auth_mode=args.auth_mode)
+    return 0 if ok else 1
+
+
+def _cmd_explain(args):
+    from ..interactive.render import explain, list_settings
+    if args.all or not args.query:
+        print(list_settings())
+        print("Details on one setting:  MRRpy explain <NAME>   "
+              "Search:  MRRpy explain <word>")
+        return 0
+    text = explain(" ".join(args.query))
+    print(text)
+    return 0 if not text.startswith("No setting") else 1
 
 
 def _cmd_validate(args):
@@ -66,6 +118,9 @@ def _cmd_validate(args):
         print(exc)
         return 1
     print("Config OK.")
+    from ..interactive.render import describe_run
+    for line in describe_run(cfg):
+        print(f"  - {line}")
     return 0
 
 
@@ -104,10 +159,58 @@ def build_parser():
                        help="override the compute backend")
     p_run.set_defaults(func=_cmd_run)
 
-    p_init = sub.add_parser("init-config", help="write a template config file")
+    p_wiz = sub.add_parser(
+        "wizard", help="build or edit a config file by answering questions",
+        description="Build a config file by answering questions.  Press Enter to keep "
+                    "the value in [brackets]; type ? for help, back, done or quit.")
+    p_wiz.add_argument("-o", "--output", default=None,
+                       help="file to save (.yaml or .json; asked at the end, default run.yaml)")
+    p_wiz.add_argument("--edit", metavar="FILE", default=None,
+                       help="start from an existing config file and change it")
+    p_wiz.add_argument("--advanced", action="store_true",
+                       help="ask the advanced questions too, without asking first")
+    p_wiz.add_argument("--write-all", action="store_true",
+                       help="save every setting (a long reference file), not only "
+                            "the ones that matter for your choices")
+    p_wiz.add_argument("--brief", action="store_true",
+                       help="don't print the explanation above each question")
+    from ..config_schema import STARTING_POINT_BY_KEY
+    p_wiz.add_argument("--start", choices=list(STARTING_POINT_BY_KEY), default=None,
+                       help="skip the first question by choosing a starting point")
+    p_wiz.set_defaults(func=_cmd_wizard)
+
+    p_init = sub.add_parser("init-config", help="write a commented template config file")
     p_init.add_argument("-o", "--output", default="config.yaml",
                         help="destination file (.yaml or .json; default: config.yaml)")
+    p_init.add_argument("--short", action="store_true",
+                        help="only the main settings (the rest keep their defaults)")
+    p_init.add_argument("--full", dest="short", action="store_false",
+                        help="every setting, explained (the default)")
+    p_init.add_argument("-i", "--interactive", action="store_true",
+                        help="build the file by answering questions (same as 'MRRpy wizard')")
     p_init.set_defaults(func=_cmd_init_config)
+
+    p_ee = sub.add_parser(
+        "earth-engine-login", help="sign in to Google Earth Engine and check the connection",
+        description="Connect to Google Earth Engine: uses this computer's saved sign-in, or "
+                    "signs in once (a link to open and a code to paste back; works over SSH).")
+    p_ee.add_argument("--project", default=None,
+                      help="your Earth Engine (Google Cloud) project ID, e.g. ee-yourname "
+                           "(default: the GEE_PROJECT environment variable)")
+    p_ee.add_argument("--check", action="store_true",
+                      help="only check the connection; never start a sign-in")
+    p_ee.add_argument("--force", action="store_true",
+                      help="sign in again, e.g. with another Google account")
+    p_ee.add_argument("--auth-mode", default=None,
+                      choices=("notebook", "localhost", "gcloud", "colab"),
+                      help="how to sign in (default: Earth Engine chooses)")
+    p_ee.set_defaults(func=_cmd_ee_login)
+
+    p_exp = sub.add_parser("explain", help="explain a setting, or search the settings")
+    p_exp.add_argument("query", nargs="*",
+                       help="a setting name (e.g. ROUTING_SCHEME) or words to search for")
+    p_exp.add_argument("--all", action="store_true", help="list every setting")
+    p_exp.set_defaults(func=_cmd_explain)
 
     p_val = sub.add_parser("validate", help="check a config file without running")
     p_val.add_argument("-c", "--config", required=True,

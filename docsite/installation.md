@@ -25,6 +25,17 @@ pip install MRRpy
 
     ```bash
     pip install "MRRpy[gee]"
+    MRRpy earth-engine-login --project ee-yourname   # sign in once per computer
+    ```
+
+=== "Jupyter form"
+
+    Adds `ipywidgets` and `ipyleaflet` for the step-by-step configuration form
+    (`MRRpy.ConfigForm()`) and the map pickers (drawing needs no Earth Engine
+    sign-in). The terminal wizard (`MRRpy wizard`) needs nothing extra.
+
+    ```bash
+    pip install "MRRpy[notebook]"
     ```
 
 === "From source"

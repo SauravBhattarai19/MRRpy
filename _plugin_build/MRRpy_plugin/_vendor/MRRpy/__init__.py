@@ -29,6 +29,12 @@ Quick start
 
 ``Config`` is the canonical configuration object; ``OpmConfig`` is an alias.
 
+Rather not type a config?  ``MRRpy wizard`` (terminal) asks questions and
+writes the file; ``MRRpy.ConfigForm()`` is a form for Jupyter
+(``pip install MRRpy[notebook]``); ``MRRpy.explain("ROUTING_SCHEME")``
+explains any setting.  ``MRRpy.connect_earth_engine("your-project")`` (or
+``MRRpy earth-engine-login``) signs in to Google Earth Engine once per computer.
+
 No local DEM yet? ``print(MRRpy.describe_available_dems())`` lists the
 DEM datasets MRRpy can auto-download from Google Earth Engine (no
 ``[gee]`` install needed just to browse); set ``Config(DEM_BOUNDS_WGS84=...,
@@ -47,6 +53,7 @@ from .gee.dem_catalog import (
 )
 from .plotting import plot_hydrograph, plot_watershed, plot_raster, plot_mass_balance
 from .utils.terrain_rules import mannings_n_from_dem, apply_elevation_rule
+from .interactive import explain, run_wizard
 
 __all__ = [
     "Config",
@@ -61,5 +68,20 @@ __all__ = [
     "plot_mass_balance",
     "mannings_n_from_dem",
     "apply_elevation_rule",
+    "explain",
+    "run_wizard",
+    "ConfigForm",
+    "connect_earth_engine",
     "__version__",
 ]
+
+
+def __getattr__(name):
+    # The Jupyter form needs ipywidgets, so import it only when it is used.
+    if name == "ConfigForm":
+        from .interactive.form import ConfigForm
+        return ConfigForm
+    if name == "connect_earth_engine":
+        from .gee.auth import connect
+        return connect
+    raise AttributeError(f"module 'MRRpy' has no attribute {name!r}")
