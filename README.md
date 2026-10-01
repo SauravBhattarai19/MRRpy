@@ -4,12 +4,18 @@
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Docs](https://img.shields.io/badge/docs-mrrpy.readthedocs.io-teal.svg)](https://mrrpy.readthedocs.io)
 
-**A distributed, physics-based hydrological + hydrodynamic model.** MRRpy —
-the **M**ulti-**M**echanism **R**unoff and **R**outing model — turns a
-bare-earth DEM and a rain event into a routed flood hydrograph —
-Variable Source Area runoff, Green-Ampt infiltration and impervious shedding,
-feeding grid-based kinematic / diffusive-wave / Muskingum–Cunge channel routing,
-with optional GPU acceleration and Google Earth Engine forcing.
+**Rainfall–runoff and flood routing for any basin on Earth, from a DEM and a storm.**
+
+MRRpy, the **M**ulti-**M**echanism **R**unoff and **R**outing model, is a
+distributed, physics-based flood model in Python. It traces the drainage network
+of a DEM, works out how much rain runs off (SCS Curve Number, or Green–Ampt
+infiltration, saturated source areas (VSA-OPM) and impervious cities in any
+combination), and routes the water through every grid cell and sub-grid river
+channel with a kinematic, Muskingum–Cunge or semi-implicit diffusion wave. You
+get the outlet hydrograph, flood maps and a water-balance check. It runs offline
+with your own data, or fetches DEMs, NASA IMERG rain, soil and land cover from
+Google Earth Engine. Set it up in a Jupyter form, a terminal wizard, Python or
+QGIS; it runs on a CPU or an NVIDIA GPU.
 
 ## 📖 Documentation
 
@@ -31,9 +37,9 @@ pip install "MRRpy[gee]"     # + Google Earth Engine forcing
 from MRRpy import Config, run_pipeline
 
 cfg = Config(DEM_PATH="dem.tif", OUTPUT_DIR="results/",
-             OUTPUT_POINT=(27.632, 85.293))   # (lat, lon) of the outlet
-cfg.update_output_paths()
-run_pipeline(cfg, stages=("process_dem", "routing"))   # → results/hydrograph.csv
+             OUTPUT_POINT=(27.632, 85.293),   # (lat, lon) of the outlet
+             TARGET_CRS_EPSG="EPSG:32645")    # a projection in metres (UTM zone)
+run_pipeline(cfg)                             # → results/hydrograph.csv
 ```
 
 Or from the command line:
@@ -60,12 +66,15 @@ water depth, river flow drawn wider where it is larger, and the hydrograph.*
   outlet (`MODEL_AREA="whole_dem"`).
 - **Flood maps** — save depth/discharge maps over time, then animate the flow
   spreading (`animate_fields`) or export peak-depth GeoTIFFs (`export_peak_maps`).
-- **Runoff generation** — `none · coefficient · raster · scs_cn · vsa_opm`; VSA
-  saturation-excess + Green-Ampt + impervious as composable mechanisms.
-- **Flood routing** — kinematic, diffusive-wave, or Muskingum–Cunge, with
-  always-on mass-balance checking.
-- **Satellite forcing** — optional IMERG rainfall, SERVES soil deficit,
-  SoilGrids, LULC/LCZ via Google Earth Engine (degrades gracefully offline).
+- **Runoff generation** — `none · coefficient · raster · scs_cn · physical`; for
+  `physical`, VSA saturation-excess + Green-Ampt + impervious as composable
+  mechanisms.
+- **Flood routing** — kinematic wave, Muskingum–Cunge, or a semi-implicit
+  diffusion wave (backwater, flat valleys, large stable steps), with sub-grid
+  river channels sized from the 2-year flood and an always-on water-balance check.
+- **Satellite forcing** — optional DEM download, IMERG rainfall, GCN250 curve
+  numbers, SERVES soil deficit, SoilGrids, HiHydroSoil, LULC/LCZ via Google Earth
+  Engine (every option also works offline with your own files).
 - **CPU / GPU** — one code path (NumPy or CuPy), automatic CPU fallback.
 - **Interfaces for every taste** — Python API, a `MRRpy` CLI with a
   question-and-answer `wizard`, a Jupyter form, and a QGIS plugin, all driven

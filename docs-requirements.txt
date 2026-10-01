@@ -2,5 +2,6 @@
 #   pip install -r docs-requirements.txt
 #   mkdocs serve      # live preview at http://127.0.0.1:8000
 #   mkdocs build      # static site into ./site
+mkdocs>=1.6,<2          # MkDocs 2 drops the plugin system mkdocstrings and the hooks need
 mkdocs-material
 mkdocstrings[python]

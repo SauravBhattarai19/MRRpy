@@ -135,6 +135,12 @@ one catalogue. **When adding a `Config` parameter, also add a `P(...)` entry
 there** (or list it in `NOT_ASKED` with a reason) — `test_config_schema.py`
 fails otherwise, and the wizard/form/YAML tests then cover it automatically.
 Give it an `example=` (non-default valid value) unless it's a bool/choice.
+Then put its name in a `<!-- settings: NAME -->` table in the matching chapter
+of the user manual (`docsite/manual/*.md`, ordered like the notebook form's
+steps); `tools/mkdocs_hooks.py` renders those tables from the catalogue, and
+`tests/test_docs.py` fails for any setting not documented exactly once (it also
+checks every YAML/Python block in the docs and, with mkdocs installed, runs
+`mkdocs build --strict`).
 The QGIS plugin does not use the catalogue yet (its tabs are hand-built).
 
 ### Pipeline stages
@@ -235,6 +241,10 @@ local DEM yet.
 - `config.py` at the repo root is the **legacy research scenario module** (values
   only), used by `tools/` and `tests/`. It is distinct from
   `MRRpy/config.py::Config`. Both are loadable by the CLI.
+- `docsite/` + `mkdocs.yml` is the user documentation (Read the Docs):
+  `getting-started/`, `manual/` (one chapter per form step, every setting),
+  `examples/` (each in four tabs: notebook form, YAML+CLI, Python, QGIS),
+  `reference/`. `[[NAME]]` in a page links to a setting's table row.
 - `study/` is a separate Next.js MDX interactive textbook (the public course
   site); `docs/` is the LaTeX companion. They are documentation, not the model.
 - The plugin **source** (`MRRpy_plugin/`) imports `MRRpy`;

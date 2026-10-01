@@ -14,7 +14,7 @@ Two contrasting jobs on one basin:
 
 !!! note "Prerequisites"
     `pip install MRRpy[gee]`, an authenticated Earth Engine project (see
-    [Configuration → Earth Engine setup](configuration.md#earth-engine-setup-first-time)),
+    [Google Earth Engine](../manual/earth-engine.md)),
     and a DEM covering the basin. GPU (`pip install MRRpy[gpu]`) is optional but
     recommended for the 30–90 m grids below.
 

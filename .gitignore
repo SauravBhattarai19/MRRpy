@@ -122,3 +122,6 @@ RT_*.txt
 hydroatlas_outlet.json
 *.nbi
 *.nbc
+
+# Example data files the documentation links to
+!docsite/assets/data/*.csv
