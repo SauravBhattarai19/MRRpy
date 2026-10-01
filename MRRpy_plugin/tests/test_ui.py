@@ -212,6 +212,48 @@ def test_saved_config_reloads(dialog, tmp_path):
         assert back.IMPLICIT_CFL_TARGET == pytest.approx(4.0)
 
 
+
+def test_discharge_channel_geometry_roundtrip(dialog):
+    tab = dialog.tab_routing
+    shown = lambda w: w.isVisibleTo(tab)  # noqa: E731
+    # a number at a gauge
+    tab.apply_config(Config(CHANNEL_GEOMETRY="discharge", CHANNEL_QBF_M3S=589.0,
+                            CHANNEL_QBF_AREA_KM2=1632.0))
+    assert tab.channel_qbf_mode.currentData() == "value"
+    assert shown(tab.channel_qbf) and shown(tab.channel_qbf_area) and not shown(tab.channel_qbf_formula)
+    out = Config()
+    tab.write_to_config(out)
+    assert out.CHANNEL_GEOMETRY == "discharge"
+    assert out.CHANNEL_QBF_M3S == pytest.approx(589.0)
+    assert out.CHANNEL_QBF_AREA_KM2 == pytest.approx(1632.0)
+    # a formula / preset
+    for text in ("wecs_nepal", "1.8767*(A_below(3000)+1)^0.8783"):
+        tab.apply_config(Config(CHANNEL_QBF_M3S=text))
+        assert tab.channel_qbf_mode.currentData() == "formula"
+        assert shown(tab.channel_qbf_formula) and not shown(tab.channel_qbf)
+        out = Config()
+        tab.write_to_config(out)
+        assert out.CHANNEL_QBF_M3S == text and out.CHANNEL_QBF_AREA_KM2 is None
+    # defaults: discharge geometry, automatic Q_bf; no stale value or area leaks through
+    tab.apply_config(Config())
+    assert tab.channel_qbf_mode.currentData() == "auto"
+    assert not shown(tab.channel_qbf) and not shown(tab.channel_qbf_formula)
+    out = Config(CHANNEL_QBF_M3S=5.0, CHANNEL_QBF_AREA_KM2=3.0)
+    tab.write_to_config(out)
+    assert out.CHANNEL_GEOMETRY == "discharge" and out.CHANNEL_QBF_M3S is None
+    assert out.CHANNEL_QBF_AREA_KM2 is None
+    # the 'area' geometry shows its preset, not the Q_bf fields
+    tab.apply_config(Config(CHANNEL_GEOMETRY="area"))
+    assert shown(tab.channel_hg) and not shown(tab.channel_qbf_mode)
+
+
+def test_ksat_depth_roundtrip(dialog):
+    tab = dialog.tab_runoff
+    tab.apply_config(Config(GA_KSAT_SOURCE="gee", GA_KSAT_DEPTH_CM=100.0))
+    out = Config()
+    tab.write_to_config(out)
+    assert out.GA_KSAT_DEPTH_CM == pytest.approx(100.0)
+
 # ── Naming, labels and first-run behaviour ────────────────────────────────────
 
 def test_plugin_names(qgis_app):
@@ -285,6 +327,9 @@ def test_routing_without_watershed_is_blocked(dialog, tmp_path, monkeypatch):
     from qgis.PyQt.QtWidgets import QMessageBox
     shown = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[1]))
+    # the dependency guard is not under test here; without it a QGIS Python that
+    # lacks e.g. pyflwdir opens a modal installer prompt and the test hangs
+    monkeypatch.setattr(dialog, "_deps_ok", lambda: True)
     dem = tmp_path / "dem.tif"
     dem.write_bytes(b"")
     dialog.tab_dem.dem_widget.setFilePath(str(dem))

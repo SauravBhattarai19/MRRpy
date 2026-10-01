@@ -94,6 +94,18 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
     IMPLICIT_CFL_TARGET = "IMPLICIT_CFL_TARGET"
     MANNING_SLOPE_CAP = "MANNING_SLOPE_CAP"
     FLUX_LIMITER = "FLUX_LIMITER"
+    CHANNEL_MIN_AREA_KM2 = "CHANNEL_MIN_AREA_KM2"
+    CHANNEL_GEOMETRY = "CHANNEL_GEOMETRY"
+    CHANNEL_HG = "CHANNEL_HG"
+    CHANNEL_QBF_M3S = "CHANNEL_QBF_M3S"
+    CHANNEL_QBF_AREA_KM2 = "CHANNEL_QBF_AREA_KM2"
+    CHANNEL_QBF_FORMULA = "CHANNEL_QBF_FORMULA"
+    CHANNEL_SUBGRID = "CHANNEL_SUBGRID"
+    MANNINGS_N_FLOODPLAIN = "MANNINGS_N_FLOODPLAIN"
+    BASEFLOW_SPECIFIC_Q = "BASEFLOW_SPECIFIC_Q"
+    _GEOMETRY_OPTIONS = ["area", "order", "discharge"]
+    _HG_OPTIONS = ["bieger_usa", "bieger_lup", "bieger_apl", "bieger_ahi", "bieger_ipl",
+                   "bieger_ihi", "bieger_rms", "bieger_imp", "bieger_pms"]
     RAIN_SNOW_ELEV_LOW = "RAIN_SNOW_ELEV_LOW"
     RAIN_SNOW_ELEV_HIGH = "RAIN_SNOW_ELEV_HIGH"
 
@@ -266,7 +278,8 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         # ── Routing scheme / numerics ─────────────────────────────────────────
         self.addParameter(QgsProcessingParameterEnum(
             self.ROUTING_SCHEME, "Routing scheme",
-            options=self._SCHEME_OPTIONS, defaultValue=1  # diffusive
+            options=self._SCHEME_OPTIONS,
+            defaultValue=self._SCHEME_OPTIONS.index("diffusive_implicit")
         ))
         self.addParameter(QgsProcessingParameterBoolean(
             self.CHANNEL_ROUTING, "Confined channel cross-section routing",
@@ -274,6 +287,38 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         ))
         self.addParameter(QgsProcessingParameterBoolean(
             self.ADAPTIVE_TIMESTEP, "Adaptive CFL timestep",
+            defaultValue=True
+        ))
+        self.addParameter(QgsProcessingParameterNumber(
+            self.CHANNEL_MIN_AREA_KM2, "Channel cells: minimum drainage area, km² (0 = legacy top-1 %)",
+            type=QgsProcessingParameterNumber.Double, defaultValue=10.0, minValue=0.0
+        ))
+        self.addParameter(QgsProcessingParameterEnum(
+            self.CHANNEL_GEOMETRY, "Channel geometry",
+            options=["US curves vs drainage area (Bieger 2015)", "Strahler-order tables (legacy)",
+                     "From bankfull flow (default)"],
+            defaultValue=2
+        ))
+        self.addParameter(QgsProcessingParameterNumber(
+            self.CHANNEL_QBF_M3S, "Bankfull flow = 2-year flood at a gauge, m³/s (0 = automatic global estimate)",
+            type=QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0
+        ))
+        self.addParameter(QgsProcessingParameterNumber(
+            self.CHANNEL_QBF_AREA_KM2, "…drainage area of that gauge, km² (0 = basin outlet)",
+            type=QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0
+        ))
+        self.addParameter(QgsProcessingParameterString(
+            self.CHANNEL_QBF_FORMULA,
+            "…or a 2-year-flood formula / preset, evaluated per cell (e.g. wecs_nepal, "
+            "1.8767*(A_below(3000)+1)^0.8783); overrides the number",
+            defaultValue="", optional=True
+        ))
+        self.addParameter(QgsProcessingParameterEnum(
+            self.CHANNEL_HG, "Hydraulic geometry preset (Bieger et al. 2015)",
+            options=self._HG_OPTIONS, defaultValue=0
+        ))
+        self.addParameter(QgsProcessingParameterBoolean(
+            self.CHANNEL_SUBGRID, "Sub-grid incised channel (bed cut below the DEM)",
             defaultValue=True
         ))
 
@@ -301,6 +346,14 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         self._add_advanced(QgsProcessingParameterBoolean(
             self.FLUX_LIMITER, "Volume-conservative flux limiter (kinematic/diffusive)",
             defaultValue=True
+        ))
+        self._add_advanced(QgsProcessingParameterNumber(
+            self.MANNINGS_N_FLOODPLAIN, "Floodplain Manning's n above bankfull (0 = land-cover n)",
+            type=QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0
+        ))
+        self._add_advanced(QgsProcessingParameterNumber(
+            self.BASEFLOW_SPECIFIC_Q, "Baseflow, m³/s per km² (0 = dry start)",
+            type=QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0
         ))
         self._add_advanced(QgsProcessingParameterNumber(
             self.RAIN_SNOW_ELEV_LOW, "Rain/snow: all rain below elevation (m; blank = off)",
@@ -455,6 +508,22 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         cfg.MANNING_SLOPE_CAP = (
             self.parameterAsDouble(parameters, self.MANNING_SLOPE_CAP, context) or None)
         cfg.FLUX_LIMITER = self.parameterAsBool(parameters, self.FLUX_LIMITER, context)
+        _ma = self.parameterAsDouble(parameters, self.CHANNEL_MIN_AREA_KM2, context)
+        cfg.CHANNEL_MIN_AREA_KM2 = _ma if _ma > 0 else None
+        cfg.CHANNEL_GEOMETRY = self._GEOMETRY_OPTIONS[
+            self.parameterAsEnum(parameters, self.CHANNEL_GEOMETRY, context)]
+        cfg.CHANNEL_HG = self._HG_OPTIONS[self.parameterAsEnum(parameters, self.CHANNEL_HG, context)]
+        _formula = (self.parameterAsString(parameters, self.CHANNEL_QBF_FORMULA, context) or "").strip()
+        if _formula:
+            cfg.CHANNEL_QBF_M3S, cfg.CHANNEL_QBF_AREA_KM2 = _formula, None
+        else:
+            cfg.CHANNEL_QBF_M3S = self.parameterAsDouble(parameters, self.CHANNEL_QBF_M3S, context) or None
+            cfg.CHANNEL_QBF_AREA_KM2 = (self.parameterAsDouble(parameters, self.CHANNEL_QBF_AREA_KM2, context)
+                                        or None) if cfg.CHANNEL_QBF_M3S else None
+        cfg.CHANNEL_SUBGRID = self.parameterAsBool(parameters, self.CHANNEL_SUBGRID, context)
+        _nfp = self.parameterAsDouble(parameters, self.MANNINGS_N_FLOODPLAIN, context)
+        cfg.MANNINGS_N_FLOODPLAIN = _nfp if _nfp > 0 else None
+        cfg.BASEFLOW_SPECIFIC_Q = self.parameterAsDouble(parameters, self.BASEFLOW_SPECIFIC_Q, context)
         cfg.RAIN_SNOW_ELEV_LOW = self._optional_double(parameters, self.RAIN_SNOW_ELEV_LOW, context)
         cfg.RAIN_SNOW_ELEV_HIGH = self._optional_double(parameters, self.RAIN_SNOW_ELEV_HIGH, context)
 

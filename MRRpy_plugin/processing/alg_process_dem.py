@@ -50,6 +50,7 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
     INPUT_DEM = "INPUT_DEM"
     TARGET_CRS = "TARGET_CRS"
     ENGINE = "ENGINE"
+    CONDITIONING = "CONDITIONING"
     OUTLET_LAT = "OUTLET_LAT"
     OUTLET_LON = "OUTLET_LON"
     OUTPUT_DIR = "OUTPUT_DIR"
@@ -61,6 +62,10 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
     # silently disconnect the upstream basin with pysheds (the legacy engine,
     # kept for basins already validated against it).
     _ENGINE_OPTIONS = ["pyflwdir", "pysheds"]
+    # MRRpy.config.Config.DEM_CONDITIONING values (None = engine default).
+    _CONDITIONING_OPTIONS = [None, "carve_spread", "carve", "fill"]
+    _CONDITIONING_LABELS = ["Engine default (pyflwdir: carve_spread; pysheds: fill)",
+                            "carve_spread (recommended)", "carve", "fill (original)"]
 
     def createInstance(self):  # noqa: N802
         return ProcessDemAlgorithm()
@@ -105,6 +110,12 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterEnum(
                 self.ENGINE, "Delineation engine",
                 options=self._ENGINE_OPTIONS, defaultValue=0  # pyflwdir
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.CONDITIONING, "DEM conditioning",
+                options=self._CONDITIONING_LABELS, defaultValue=0
             )
         )
         self.addParameter(
@@ -160,6 +171,8 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
             OUTPUT_POINT=(lat, lon),
             OUTPUT_DIR=out_dir,
             DELINEATION_ENGINE=engine,
+            DEM_CONDITIONING=self._CONDITIONING_OPTIONS[
+                self.parameterAsEnum(parameters, self.CONDITIONING, context)],
         )
         cfg.update_output_paths()
 

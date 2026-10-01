@@ -290,6 +290,87 @@ def _assemble_parallel(z, z0, dem, dist, slope_bed, sqrt_Sbed, n_arr, width,
     return diag, off, rhs, K_int, K_bnd
 
 
+@njit(inline='always')
+def _compound_C(h, n_ch, n_fp, width, bank, cell_size, is_chan):
+    """Compound conveyance (see hydraulics.compound_conveyance) for one cell."""
+    if h < 0.0:
+        h = 0.0
+    if not is_chan:
+        return (1.0 / n_ch) * h ** (5.0 / 3.0) * cell_size
+    hc = h if h < bank else bank
+    hf = h - bank if h > bank else 0.0
+    Bf = cell_size - width if cell_size > width else 0.0
+    A = width * h
+    P = width + 2.0 * hc
+    R = A / P if P > 1e-12 else 0.0
+    return (1.0 / n_ch) * A * R ** (2.0 / 3.0) + (1.0 / n_fp) * Bf * hf ** (5.0 / 3.0)
+
+
+@njit(parallel=True, cache=True)
+def _assemble_subgrid(z, vol0, bed, dist, sqrt_Sbed, n_arr, n_fp, width, bank,
+                      store, chan_mask, cell_size, cell_area, dt, q, eps_h,
+                      slope_floor, relax, first_iter, ds, valid, root,
+                      child_off, child_idx, K_int_prev, K_bnd_prev):
+    """
+    One Picard iteration's assembly for the SUB-GRID implicit step (θ = 1).
+    Nonlinear storage V(z) is linearised at the iterate z_k:
+        (A_k/dt)·z − F(z) = q + (V0 − V_k + A_k·z_k)/dt
+    Returns (diag, off, rhs, K_int, K_bnd).
+    """
+    n = z.shape[0]
+    K_int = np.empty(n); K_bnd = np.empty(n)
+    diag = np.empty(n); rhs = np.empty(n); off = np.zeros(n)
+    for i in prange(n):
+        di = ds[i]
+        zi = z[i]
+        z_ds = z[di]
+        dz = zi - z_ds
+        Sf = (dz if dz >= 0.0 else -dz) / dist[i]
+        if Sf < slope_floor:
+            Sf = slope_floor
+        wse_hi = zi if zi > z_ds else z_ds
+        bed_hi = bed[i] if bed[i] > bed[di] else bed[di]
+        h_flow = wse_hi - bed_hi
+        if h_flow < eps_h:
+            h_flow = eps_h
+        C = _compound_C(h_flow, n_arr[i], n_fp[i], width[i], bank[i], cell_size, chan_mask[i])
+        k_new = C / (dist[i] * np.sqrt(Sf)) if valid[i] else 0.0
+
+        h_k = zi - bed[i]
+        h_own = h_k if h_k > eps_h else eps_h
+        C2 = _compound_C(h_own, n_arr[i], n_fp[i], width[i], bank[i], cell_size, chan_mask[i])
+        kb_new = (C2 * sqrt_Sbed[i] / h_own) if root[i] else 0.0
+
+        if first_iter:
+            ki = k_new; kb = kb_new
+        else:
+            ki = relax * k_new + (1.0 - relax) * K_int_prev[i]
+            kb = relax * kb_new + (1.0 - relax) * K_bnd_prev[i]
+        K_int[i] = ki; K_bnd[i] = kb
+
+        # storage at the iterate (slot below bank, whole cell above)
+        if chan_mask[i]:
+            if h_k > bank[i]:
+                A_k = cell_area
+                V_k = bank[i] * store[i] + (h_k - bank[i]) * cell_area
+            else:
+                A_k = store[i]
+                V_k = h_k * store[i]
+        else:
+            A_k = cell_area
+            V_k = h_k * cell_area
+        tk = ki if valid[i] else 0.0
+        off[i] = -tk
+        diag[i] = A_k / dt + tk + kb
+        rhs[i] = (vol0[i] - V_k + A_k * zi) / dt + q[i] + kb * bed[i]
+    for p in prange(n):
+        acc = 0.0
+        for k in range(child_off[p], child_off[p + 1]):
+            acc += K_int[child_idx[k]]
+        diag[p] += acc
+    return diag, off, rhs, K_int, K_bnd
+
+
 # ---------------------------------------------------------------------------
 # Solver object (built once per run; holds the static grid arrays)
 # ---------------------------------------------------------------------------
@@ -322,6 +403,10 @@ class ImplicitDiffusiveSolver:
         self.valid_ds   = ds_idx >= 0
         self.ds_safe    = np.where(self.valid_ds, ds_idx, 0)
         self.n_cells    = int(grid_data["n_cells"])
+        _bank = grid_data.get("bank_1d")
+        self.bank = None if _bank is None else _to_np(_bank).astype(np.float64)
+        _nfp = grid_data.get("n_fp_1d")
+        self.n_fp = (self.n if _nfp is None else _to_np(_nfp).astype(np.float64))
         self.sqrt_Sbed  = np.sqrt(np.maximum(self.slope_bed, 0.0))
 
         # Tunables (all defaulted in Config so existing configs are unchanged).
@@ -363,7 +448,13 @@ class ImplicitDiffusiveSolver:
             _requested = getattr(cfg, "IMPLICIT_NUM_THREADS", None)
             _ncpu = os.cpu_count() or 32
             n_threads = int(_requested) if _requested else min(32, _ncpu)
-            set_num_threads(max(1, min(n_threads, _ncpu)))
+            # never exceed numba's pool (NUMBA_NUM_THREADS) — set_num_threads raises otherwise
+            try:
+                from numba import config as _nb_config
+                _pool = int(_nb_config.NUMBA_NUM_THREADS)
+            except Exception:                          # pragma: no cover
+                _pool = _ncpu
+            set_num_threads(max(1, min(n_threads, _ncpu, _pool)))
 
         # Warm up the Numba JIT once so it doesn't tax the first time step.
         if _NUMBA_OK:
@@ -401,6 +492,8 @@ class ImplicitDiffusiveSolver:
         n_iters    : int   – Picard iterations taken
         residual   : float – final max|Δz| [m]
         """
+        if self.bank is not None:
+            return self._solve_step_subgrid(volume, source_rate, bc_rate, dt)
         dem, dist, n = self.dem, self.dist, self.n
         width, chan  = self.width, self.chan_mask
         store, csize = self.store_area, self.cell_size
@@ -513,3 +606,97 @@ class ImplicitDiffusiveSolver:
         volume_new = (z - dem) * store
         q_out_face = np.where(valid, K_int * (z - z[ds]), K_bnd * (z - dem))
         return volume_new, q_out_face, n_iters, residual
+
+
+def _solve_step_subgrid(self, volume, source_rate, bc_rate, dt):
+    """
+    Implicit diffusion-wave step with the SUB-GRID INCISED CHANNEL.
+
+    bed = DEM − D on channel cells (``self.dem`` is already the bed); stage from
+    the piecewise slot/floodplain storage; compound conveyance (channel n in
+    bank, land-cover n above bank); nonlinear storage linearised per Picard
+    iterate; volume updated in FLUX form  V¹ = V⁰ + dt·(q + F(z))  so the mass
+    budget closes exactly regardless of Picard convergence.  θ = 1 only.
+    """
+    from .hydraulics import stage_from_volume, compound_conveyance, storage_area, volume_from_stage
+    if self.theta != 1.0:
+        raise NotImplementedError(
+            "The sub-grid channel implicit step supports IMPLICIT_THETA=1 only "
+            "(set CHANNEL_SUBGRID=False to use θ<1).")
+    bed, dist, n, n_fp = self.dem, self.dist, self.n, self.n_fp
+    width, chan = self.width, self.chan_mask
+    store, csize, carea, bank = self.store_area, self.cell_size, self.cell_area, self.bank
+    parent, ds = self.parent, self.ds_safe
+    valid, root = self.valid_ds, self.is_root
+    eps_h = self.min_depth
+
+    z = bed + stage_from_volume(volume, store, bank, carea, chan, np)
+    q = source_rate * carea
+    if bc_rate is not None:
+        q = q + bc_rate
+    q = np.asarray(q, dtype=np.float64)
+
+    K_int = np.zeros(self.n_cells)
+    K_bnd = np.zeros(self.n_cells)
+    first = True
+    n_iters, residual = 0, 0.0
+    for it in range(self.max_iters):
+        n_iters = it + 1
+        if self.parallel_assembly:
+            diag, off, rhs, K_int, K_bnd = _assemble_subgrid(
+                z, volume, bed, dist, self.sqrt_Sbed, n, n_fp, width, bank, store,
+                chan, csize, carea, dt, q, eps_h, self.slope_floor, self.relax,
+                first, ds, valid, root, self.child_off, self.child_idx, K_int, K_bnd)
+        else:
+            h_k = z - bed
+            A_k = storage_area(h_k, store, bank, carea, chan, np)
+            V_k = volume_from_stage(h_k, store, bank, carea, chan, np)
+            z_ds = z[ds]
+            Sf = np.maximum(np.abs(z - z_ds) / dist, self.slope_floor)
+            h_flow = np.maximum(np.maximum(z, z_ds) - np.maximum(bed, bed[ds]), eps_h)
+            C, _ = compound_conveyance(h_flow, n, width, chan, bank, csize, np, n_fp)
+            K_new = np.where(valid, C / (dist * np.sqrt(Sf)), 0.0)
+            h_own = np.maximum(h_k, eps_h)
+            C_own, _ = compound_conveyance(h_own, n, width, chan, bank, csize, np, n_fp)
+            Kb_new = np.where(root, C_own * self.sqrt_Sbed / h_own, 0.0)
+            if first or self.relax >= 1.0:
+                K_int, K_bnd = K_new, Kb_new
+            else:
+                K_int = self.relax * K_new + (1.0 - self.relax) * K_int
+                K_bnd = self.relax * Kb_new + (1.0 - self.relax) * K_bnd
+            diag = A_k / dt
+            rhs = (volume - V_k + A_k * z) / dt + q
+            off = np.zeros(self.n_cells)
+            off[valid] = -K_int[valid]
+            diag = diag + np.where(valid, K_int, 0.0)
+            np.add.at(diag, parent[valid], K_int[valid])
+            diag = diag + K_bnd
+            rhs = rhs + K_bnd * bed
+        first = False
+        if self.solver_name == "splu":
+            z_new = _splu_solve(diag, off, parent, root, rhs)
+        else:
+            z_new = _sweep_solve(diag.copy(), off, parent, root, rhs.copy())
+        residual = float(np.max(np.abs(z_new - z))) if self.n_cells else 0.0
+        z = z_new
+        if residual < self.tol:
+            break
+
+    f_int = np.where(valid, K_int * (z - z[ds]), 0.0)
+    f_bnd = np.where(root, K_bnd * (z - bed), 0.0)
+    F = -f_int - f_bnd
+    np.add.at(F, parent[valid], f_int[valid])
+    volume_new = volume + dt * (q + F)
+    # The flux form conserves mass exactly, but an unconverged Picard iterate can
+    # over-drain a cell.  A negative volume would put the next stage below the bed
+    # and make the boundary flux (z − bed) pull water IN, so floor it at zero.  Any
+    # water this creates is not hidden: it surfaces in the mass-balance closure.
+    neg = volume_new < 0.0
+    if neg.any():
+        self.neg_volume_m3 = getattr(self, "neg_volume_m3", 0.0) - float(volume_new[neg].sum())
+        volume_new = np.where(neg, 0.0, volume_new)
+    q_out_face = np.where(valid, f_int, f_bnd)
+    return volume_new, q_out_face, n_iters, residual
+
+
+ImplicitDiffusiveSolver._solve_step_subgrid = _solve_step_subgrid

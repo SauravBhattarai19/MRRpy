@@ -76,6 +76,53 @@ _LANDSAT_OFFSET = -0.2
 _LCZ_COLLECTION = "RUB/RUBCLIM/LCZ/global_lcz_map/latest"
 
 
+# HiHydroSoil v2.0 is one ImageCollection per variable holding SIX separate
+# depth-layer images (0-5, 5-15, 15-30, 30-60, 60-100, 100-200 cm), stored as
+# int = value × 10000.  Never ``.mosaic()`` the collection: that silently keeps
+# whichever layer sorts last (the 60-100 cm one), not the surface.
+_HIHYDRO_LAYERS = [(0, 5), (5, 15), (15, 30), (30, 60), (60, 100), (100, 200)]
+# SoilGrids depth band → the HiHydroSoil layer covering the same depth
+_SOILGRIDS_TO_HIHYDRO = {"b0": (0, 5), "b10": (5, 15), "b30": (15, 30),
+                         "b60": (30, 60), "b100": (60, 100), "b200": (100, 200)}
+
+
+def _hihydro_layer(var, top_cm, bottom_cm):
+    """One HiHydroSoil v2.0 depth layer (physical units, i.e. raw × 1e-4)."""
+    col = ee.ImageCollection(f"projects/sat-io/open-datasets/HiHydroSoilv2_0/{var}")
+    img = col.filter(ee.Filter.stringContains("system:index", f"_{top_cm}-{bottom_cm}cm_")).first()
+    return ee.Image(img).select(0).multiply(0.0001)
+
+
+def _hihydro_depth_average(var, top_cm, bottom_cm, harmonic=False):
+    """
+    Thickness-weighted average of HiHydroSoil layers over [top_cm, bottom_cm].
+    harmonic=True gives the effective conductivity for flow normal to the
+    layers (vertical infiltration): Σw / Σ(w/K).
+    """
+    num, den = None, None
+    for a, b in _HIHYDRO_LAYERS:
+        w = min(b, bottom_cm) - max(a, top_cm)
+        if w <= 0:
+            continue
+        x = _hihydro_layer(var, a, b)
+        if harmonic:
+            # EE returns x/0 = 0, which would silently DROP a zero-Ksat layer from
+            # Σ(w/K) and raise the effective Ksat; floor it so it dominates instead.
+            x = x.max(1e-6)
+        term_num = ee.Image.constant(w) if harmonic else x.multiply(w)
+        term_den = ee.Image.constant(w).divide(x) if harmonic else ee.Image.constant(w)
+        num = term_num if num is None else num.add(term_num)
+        den = term_den if den is None else den.add(term_den)
+    if num is None:
+        raise ValueError(f"no HiHydroSoil layer inside {top_cm}-{bottom_cm} cm")
+    return num.divide(den)
+
+
+def _hihydro_porosity(soil_depth_band):
+    a, b = _SOILGRIDS_TO_HIHYDRO.get(str(soil_depth_band), (15, 30))
+    return _hihydro_layer("wcsat", a, b).rename("porosity")
+
+
 def _download_aligned_image(img, dem_path, geometry, output_path, n_bands=1,
                             max_pixels_per_tile_per_band=4_000_000):
     """
@@ -425,10 +472,7 @@ def download_deficit_raster(dem_path, watershed_geojson_path, output_path,
         wp = ee.Image('ISRIC/SoilGrids250m/v2_0/wv1500').select(band) \
             .rename('wp')
 
-        wcsat_col = ee.ImageCollection(
-            "projects/sat-io/open-datasets/HiHydroSoilv2_0/wcsat"
-        )
-        porosity = wcsat_col.mosaic().multiply(0.0001).rename('porosity')
+        porosity = _hihydro_porosity(band)   # same depth as SoilGrids fc/wp
 
         et_frac = ndvi.multiply(_NDVI_COEFFICIENT).add(_NDVI_INTERCEPT) \
             .clamp(0, 1)
@@ -450,7 +494,7 @@ def download_deficit_raster(dem_path, watershed_geojson_path, output_path,
 
 
 def download_ksat_raster(dem_path, watershed_geojson_path, output_path,
-                         project=None):
+                         project=None, depth_cm=60):
     """
     Download the HiHydroSoil v2.0 vertical saturated hydraulic conductivity
     (Ksat) raster, pixel-aligned to the routing DEM.  Cached to *output_path*.
@@ -462,6 +506,11 @@ def download_ksat_raster(dem_path, watershed_geojson_path, output_path,
     factor used for `wcsat`).  cm/day → mm/hr is × (10/24).  This Ksat is the
     *vertical* surface conductivity for Green-Ampt infiltration — NOT the lateral
     transmissivity VSA_K_SAT that drives the sandbox Darcy drainage.
+
+    ``depth_cm``: the soil depth over which the depth layers are combined
+    (harmonic mean — the effective conductivity for vertical flow through
+    layers).  Default 60 cm; 30 cm suits short intense bursts, 100 cm long soaking
+    storms on tight subsoils (see Config.GA_KSAT_DEPTH_CM).
 
     Returns the output path on success, or None on failure.
     """
@@ -479,11 +528,9 @@ def download_ksat_raster(dem_path, watershed_geojson_path, output_path,
     try:
         geometry = _load_watershed_geometry(watershed_geojson_path)
 
-        ksat_col = ee.ImageCollection(
-            "projects/sat-io/open-datasets/HiHydroSoilv2_0/ksat"
-        )
-        # raw × 0.0001 → cm/day ;  × (10/24) → mm/hr
-        ksat_mmhr = ksat_col.mosaic().multiply(0.0001) \
+        # Effective vertical Ksat of the top `depth_cm`: thickness-weighted
+        # harmonic mean of the depth layers (cm/day) ; × (10/24) → mm/hr
+        ksat_mmhr = _hihydro_depth_average("ksat", 0, float(depth_cm), harmonic=True) \
             .multiply(10.0 / 24.0).rename('ksat_mmhr')
 
         result = _download_aligned_image(ksat_mmhr, dem_path, geometry, output_path, n_bands=1)
@@ -616,10 +663,7 @@ def compute_opm_params(
             .rename('wp')
 
         # ── Porosity from HiHydroSoil v2.0 wcsat ────────────────────────
-        wcsat_col = ee.ImageCollection(
-            "projects/sat-io/open-datasets/HiHydroSoilv2_0/wcsat"
-        )
-        porosity = wcsat_col.mosaic().multiply(0.0001).rename('porosity')
+        porosity = _hihydro_porosity(band)   # same depth as SoilGrids fc/wp
 
         # ── SERVES θ (mirrors serves.js:452–466) ────────────────────────
         et_frac = ndvi.multiply(_NDVI_COEFFICIENT).add(_NDVI_INTERCEPT) \

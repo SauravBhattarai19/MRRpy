@@ -96,6 +96,25 @@ class TabDem(QWidget):
         self.engine_combo.currentIndexChanged.connect(self._invalidate_terrain)
         form_dem.addRow("Delineation engine:", self.engine_combo)
 
+        self.conditioning_combo = QComboBox()
+        # (display label, MRRpy.config.Config.DEM_CONDITIONING value; None = engine default)
+        self._CONDITIONING_CHOICES = [
+            ("Engine default (pyflwdir: carve + spread; pysheds: fill)", None),
+            ("Carve + spread flats + min. slope (recommended)", "carve_spread"),
+            ("Carve (least-cost breaching)", "carve"),
+            ("Fill depressions (original behaviour)", "fill"),
+        ]
+        for label, _value in self._CONDITIONING_CHOICES:
+            self.conditioning_combo.addItem(label)
+        self.conditioning_combo.setToolTip(
+            "How the DEM is made to drain before D8.\n\n"
+            "Filling turns river profiles into flat staircases and turns unresolved\n"
+            "gorges into flat lakes, which water-surface-slope routing then ponds on.\n"
+            "Carving (Lindsay 2016) plus spreading the flat treads and a minimum slope\n"
+            "(PriorityFlow-style) avoids that.  'Fill' keeps the original behaviour.")
+        self.conditioning_combo.currentIndexChanged.connect(self._invalidate_terrain)
+        form_dem.addRow("DEM conditioning:", self.conditioning_combo)
+
         self.analyze_btn = QPushButton(QgsApplication.getThemeIcon("/processingAlgorithm.svg"), "Analyze terrain")
         self.analyze_btn.setToolTip(
             "Reproject the DEM and compute flow direction / flow accumulation,\n"
@@ -277,6 +296,9 @@ class TabDem(QWidget):
     def get_delineation_engine(self) -> str:
         return self._ENGINE_CHOICES[self.engine_combo.currentIndex()][1]
 
+    def get_dem_conditioning(self):
+        return self._CONDITIONING_CHOICES[self.conditioning_combo.currentIndex()][1]
+
     def get_outlet_point(self) -> tuple:
         return (self.lat_spin.value(), self.lon_spin.value())
 
@@ -300,6 +322,11 @@ class TabDem(QWidget):
             if value == engine:
                 self.engine_combo.setCurrentIndex(i)
                 break
+        cond = getattr(cfg, "DEM_CONDITIONING", None)
+        for i, (_label, value) in enumerate(self._CONDITIONING_CHOICES):
+            if value == cond:
+                self.conditioning_combo.setCurrentIndex(i)
+                break
 
     def write_to_config(self, cfg):
         """Write widget values into an Config object."""
@@ -308,4 +335,5 @@ class TabDem(QWidget):
         cfg.OUTPUT_POINT = self.get_outlet_point()
         cfg.OUTPUT_DIR = self.get_output_dir()
         cfg.DELINEATION_ENGINE = self.get_delineation_engine()
+        cfg.DEM_CONDITIONING = self.get_dem_conditioning()
         cfg.update_output_paths()

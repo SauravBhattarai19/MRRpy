@@ -112,7 +112,9 @@ def resolve_sd_params(cfg, cell_size):
         or os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'), 'deficit_serves.tif')
     if target_date:
         _base, _ext = os.path.splitext(out_path)
-        out_path = f"{_base}_{target_date}{_ext}"
+        # the soil depth band is in the name so a raster built for another
+        # depth (or by the pre-fix mosaic of HiHydroSoil layers) is never reused
+        out_path = f"{_base}_{target_date}_{band}{_ext}"
     deficit_raster = None
     try:
         deficit_raster = download_deficit_raster(

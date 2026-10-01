@@ -154,7 +154,7 @@ BASELINE_SRC = REPO_ROOT / "outputs collection/combinations_100m/_shared"
 SEED_FILES = [
     "clipped_dem.tif", "flow_direction.tif", "clipped_flow_accumulation.tif",
     "watershed.tif", "watershed.geojson",
-    "ksat_hihydro.tif", "lulc_mannings_lcz.tif", "texture_sandclay.tif",
+    "ksat_hihydro_0-60cm.tif", "lulc_mannings_lcz.tif", "texture_sandclay.tif",
 ]
 
 

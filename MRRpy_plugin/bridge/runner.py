@@ -218,6 +218,9 @@ class DemStepWorker(QThread):
                     self._params["target_crs_epsg"],
                     self._params["output_dir"],
                     engine=engine,
+                    conditioning=self._params.get("conditioning"),
+                    min_slope=self._params.get("min_slope", 1e-4),
+                    lake_mask_path=self._params.get("lake_mask_path"),
                 )
             elif self._task == "delineate":
                 out = dp.delineate_from_outlet(

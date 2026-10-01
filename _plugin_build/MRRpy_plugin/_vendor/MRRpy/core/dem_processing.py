@@ -168,6 +168,165 @@ def _import_pyflwdir():
                 f"Retry error: {type(exc2).__name__}: {exc2}"
             ) from exc2
 
+# ---------------------------------------------------------------------------
+# DEM hydro-conditioning (carve + tread spreading + minimum slope)
+# ---------------------------------------------------------------------------
+# Depression FILLING turns a noisy river profile into a staircase (flat treads
+# ending in a step) and turns DEM "dams" (unresolved gorges) into flat lakes.
+# Schemes that route on the water-surface slope (diffusive_implicit) pool water
+# on every tread.  Established practice: breach/carve rather than fill
+# (Lindsay 2016, Hydrol. Process.), give flats a drainage gradient (Barnes et
+# al. 2014) and enforce a minimum slope along flow paths (PriorityFlow, Condon &
+# Maxwell 2019; Zhang et al. 2021 ESSD use 1e-4).
+#
+#   'fill'         – no conditioning here (the engine's own fill; the original
+#                    behaviour, byte-identical).
+#   'carve'        – Yamazaki et al. (2012) least-cost carving (pyflwdir
+#                    FlwdirRaster.dem_adjust): every cell drains downstream with
+#                    the smallest elevation change; no cell is filled into a lake.
+#   'carve_spread' – carve, then relief-preserving TREAD SPREADING (the drop at
+#                    the end of each flat tread is spread linearly along it),
+#                    then a minimum-slope pass (z_i ≥ z_ds + ε·dist).
+
+DEM_CONDITIONING_CHOICES = ("fill", "carve", "carve_spread")
+
+
+def _numba_or_python():
+    try:
+        from numba import njit
+        return njit(cache=True)
+    except Exception:                    # pragma: no cover - numba optional
+        return lambda f: f
+
+
+_jit = _numba_or_python()
+
+
+@_jit
+def _tread_spread(z0, ds, seq, dist, frozen):
+    """Relief-preserving tread spreading along D8 paths (see module notes).
+    ``seq`` is ordered downstream → upstream; ``frozen`` cells (lakes) are kept."""
+    n = z0.size
+    anchor = np.arange(n)
+    Ld = np.zeros(n)
+    for k in range(seq.size):                       # outlets first
+        i = seq[k]
+        d = ds[i]
+        if d == i:
+            continue
+        if z0[d] < z0[i]:
+            anchor[i] = d
+            Ld[i] = dist[i]
+        else:
+            anchor[i] = anchor[d]
+            Ld[i] = dist[i] + Ld[d]
+    Lu = np.zeros(n)
+    for k in range(seq.size - 1, -1, -1):           # headwaters first
+        i = seq[k]
+        d = ds[i]
+        if d != i and z0[d] == z0[i]:
+            v = Lu[i] + dist[i]
+            if v > Lu[d]:
+                Lu[d] = v
+    z = z0.copy()
+    for i in range(n):
+        if frozen[i]:
+            continue
+        on_tread = (Lu[i] > 0.0) or (ds[i] != i and z0[ds[i]] == z0[i])
+        if not on_tread or Ld[i] <= 0.0:
+            continue
+        zc = z0[anchor[i]]
+        if zc >= z0[i]:                             # tread runs to an outlet
+            zc = z0[i] - 1e-5 * Ld[i]
+        z[i] = zc + (z0[i] - zc) * Ld[i] / (Ld[i] + Lu[i])
+    return z
+
+
+@_jit
+def _min_slope_pass(z, ds, seq, dist, eps, frozen):
+    """Outlet → upstream: z_i ≥ z_ds + ε·dist (raises cells by ≤ ε per metre)."""
+    for k in range(seq.size):
+        i = seq[k]
+        d = ds[i]
+        if d == i or frozen[i]:
+            continue
+        zmin = z[d] + eps * dist[i]
+        if z[i] < zmin:
+            z[i] = zmin
+    return z
+
+
+def condition_dem(dem_path, out_path, method="carve_spread", min_slope=1e-4,
+                  lake_mask_path=None):
+    """
+    Hydro-condition *dem_path* (projected CRS) and write *out_path*.  Returns
+    *out_path*, or *dem_path* unchanged when ``method == 'fill'``.
+
+    ``lake_mask_path`` (optional raster, any CRS): cells flagged > 0 are real
+    water bodies — they are carved like any cell (so outlets drain) but NOT
+    tread-spread or slope-raised, so lake surfaces stay flat and keep their
+    storage.
+    """
+    method = str(method).lower()
+    if method not in DEM_CONDITIONING_CHOICES:
+        raise ValueError(f"DEM_CONDITIONING must be one of {DEM_CONDITIONING_CHOICES}, got {method!r}")
+    if method == "fill":
+        return dem_path
+    pyflwdir = _import_pyflwdir()
+    with rasterio.open(dem_path) as src:
+        dem = src.read(1).astype(np.float64)
+        prof = src.profile.copy()
+        nodata = src.nodata
+        cell = float(abs(src.transform.a))
+    valid = np.isfinite(dem)
+    if nodata is not None:
+        valid &= dem != nodata
+    dem = np.where(valid, dem, -9999.0)
+
+    print(f"DEM conditioning: {method} (min slope {min_slope:g}) ...")
+    flw = pyflwdir.from_dem(dem, nodata=-9999.0, outlets="edge")
+    z = flw.dem_adjust(dem).astype(np.float64)
+    z = np.where(valid, z, -9999.0)
+
+    frozen = np.zeros(dem.size, dtype=np.bool_)
+    if lake_mask_path:
+        from .io_utils import align_raster_to_dem
+        lake = align_raster_to_dem(lake_mask_path, dem_path, resampling="nearest")
+        frozen = (np.nan_to_num(np.asarray(lake, dtype=np.float64)) > 0).ravel() & valid.ravel()
+        print(f"  lake mask: {int(frozen.sum()):,} water-body cells kept flat")
+
+    if method == "carve_spread":
+        ds = np.asarray(flw.idxs_ds, dtype=np.int64)
+        seq = np.asarray(flw.idxs_seq, dtype=np.int64)
+        nc = dem.shape[1]
+        ii = np.arange(ds.size)
+        diag = ((ii // nc) != (ds // nc)) & ((ii % nc) != (ds % nc))
+        dist = np.where(ds == ii, 0.0, cell * np.where(diag, np.sqrt(2.0), 1.0))
+        zf = z.ravel().copy()
+        before = np.mean((zf[ds] == zf)[valid.ravel() & (ds != ii)])
+        zf = _tread_spread(zf, ds, seq, dist, frozen)
+        if min_slope and min_slope > 0:
+            zf = _min_slope_pass(zf, ds, seq, dist, float(min_slope), frozen)
+        after = np.mean((zf[ds] >= zf)[valid.ravel() & (ds != ii) & ~frozen])
+        z = np.where(valid, zf.reshape(dem.shape), -9999.0)
+        print(f"  zero-slope cells along flow paths: {100*before:.1f}% → {100*after:.2f}%")
+    change = np.where(valid, z - dem, 0.0)
+    print(f"  cells lowered >0.5 m: {int((change < -0.5).sum()):,}  max lowering "
+          f"{max(0.0, -change.min()):.2f} m  max raise {max(0.0, change.max()):.3f} m")
+
+    prof.update(dtype="float32", nodata=-9999.0)
+    with rasterio.open(out_path, "w", **prof) as dst:
+        dst.write(z.astype(np.float32), 1)
+    return out_path
+
+
+def _resolve_conditioning(cfg_value, engine):
+    """None → engine default: pyflwdir 'carve_spread', pysheds 'fill' (byte-identical)."""
+    if cfg_value is None:
+        return "carve_spread" if engine == "pyflwdir" else "fill"
+    return str(cfg_value).lower()
+
+
 def reproject_dem(input_dem_path, output_dem_path, target_crs_epsg):
     """
     Reprojects a DEM to a target CRS.
@@ -674,7 +833,8 @@ def perform_hydrological_analysis(dem_path, output_point_latlon, target_crs_epsg
     return filled_dem, watershed, flow_accumulation, profile
 
 
-def analyze_terrain(dem_path, target_crs_epsg, output_dir, engine='pyflwdir'):
+def analyze_terrain(dem_path, target_crs_epsg, output_dir, engine='pyflwdir',
+                    conditioning=None, min_slope=1e-4, lake_mask_path=None):
     """
     Phase 1 of the DEM stage for interactive use: reproject the DEM and run the
     outlet-independent terrain analysis, then vectorise the stream network so a
@@ -701,16 +861,20 @@ def analyze_terrain(dem_path, target_crs_epsg, output_dir, engine='pyflwdir'):
     # Reproject DEM (same first step as main())
     reprojected_dem_path = os.path.join(output_dir, "reprojected_dem.tif")
     reproject_dem(dem_path, reprojected_dem_path, target_crs_epsg)
+    terrain_dem_path = condition_dem(
+        reprojected_dem_path, os.path.join(output_dir, "conditioned_dem.tif"),
+        _resolve_conditioning(conditioning, engine), min_slope=min_slope,
+        lake_mask_path=lake_mask_path)
 
-    with rasterio.open(reprojected_dem_path) as src:
+    with rasterio.open(terrain_dem_path) as src:
         profile = src.profile.copy()
 
     if engine == 'pyflwdir':
         _conditioned, _fdir, flow_accumulation, _flw = _terrain_pyflwdir(
-            reprojected_dem_path, profile, output_dir)
+            terrain_dem_path, profile, output_dir)
     elif engine == 'pysheds':
-        grid = _get_pysheds_grid().from_raster(reprojected_dem_path)
-        dem = grid.read_raster(reprojected_dem_path).astype(np.float64)
+        grid = _get_pysheds_grid().from_raster(terrain_dem_path)
+        dem = grid.read_raster(terrain_dem_path).astype(np.float64)
         _filled, _inflated, _fdir, flow_accumulation = _terrain(grid, dem, profile, output_dir)
     else:
         raise ValueError(f"Unknown DELINEATION_ENGINE '{engine}' (expected 'pysheds' or 'pyflwdir')")
@@ -889,6 +1053,13 @@ def main(cfg):
     # Reproject DEM
     reprojected_dem_path = os.path.join(output_dir, "reprojected_dem.tif")
     reprojected_dem_path = reproject_dem(dem_path, reprojected_dem_path, target_crs_epsg)
+
+    # Hydro-condition (carve / tread spreading / minimum slope) before D8
+    method = _resolve_conditioning(getattr(cfg, 'DEM_CONDITIONING', None), engine)
+    reprojected_dem_path = condition_dem(
+        reprojected_dem_path, os.path.join(output_dir, "conditioned_dem.tif"), method,
+        min_slope=float(getattr(cfg, 'MIN_SLOPE', 1e-4)),
+        lake_mask_path=getattr(cfg, 'DEM_LAKE_MASK', None))
 
     # Perform hydrological analysis
     filled_dem, watershed, flow_accumulation, dem_profile = perform_hydrological_analysis(

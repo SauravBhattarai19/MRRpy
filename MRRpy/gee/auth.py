@@ -23,8 +23,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def authenticate(project=None):
-    """Initialize GEE with the best available credentials."""
+def authenticate(project=None, interactive=True):
+    """Initialize GEE with the best available credentials.
+
+    ``interactive=False`` never opens the browser sign-in flow (for optional,
+    best-effort lookups that must not block a headless run)."""
     proj = project or os.environ.get('GEE_PROJECT')
     init_kw = {'project': proj} if proj else {}
 
@@ -67,6 +70,9 @@ def authenticate(project=None):
         logger.info("GEE authenticated via default credentials")
         return True
     except Exception:
+        if not interactive:
+            logger.warning("GEE default credentials unavailable (non-interactive)")
+            return False
         try:
             ee.Authenticate()
             ee.Initialize(**init_kw)

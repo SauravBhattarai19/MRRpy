@@ -26,6 +26,7 @@ from qgis.PyQt.QtWidgets import (
     QSpinBox, QRadioButton, QButtonGroup, QHBoxLayout, QLabel,
     QComboBox, QCheckBox, QLineEdit, QScrollArea, QFrame,
 )
+from qgis.PyQt.QtCore import Qt
 from qgis.gui import QgsCollapsibleGroupBox, QgsFileWidget
 
 
@@ -52,12 +53,23 @@ def _cupy_available() -> bool:
 # the core registry (MRRpy.config._ENUM_CHOICES["ROUTING_SCHEME"]).
 _SCHEME_LABELS = {
     "kinematic": "kinematic — Manning on static bed slope (fast, reproducible)",
-    "diffusive": "diffusive — CASC2D/GSSHA water-surface-slope diffusion wave",
+    "diffusive": "diffusive — explicit diffusion wave (DEPRECATED: use diffusive_implicit)",
     "muskingum": "muskingum — Muskingum–Cunge (physical diffusion, grid-independent)",
     "dynamic": "dynamic — local-inertial dynamic wave (LISFLOOD-FP; backwater, surges)",
     "diffusive_implicit": "diffusive_implicit — semi-implicit diffusion wave "
                           "(HEC-RAS-style, unconditionally stable, CPU only)",
 }
+def qbf_presets():
+    """{name: (formula, description)} bankfull-flow presets from the core package."""
+    try:
+        from ..bridge import ensure_core
+        ensure_core()
+        from MRRpy.core.routing.qbf import QBF_PRESETS
+        return dict(QBF_PRESETS)
+    except Exception:
+        return {}
+
+
 def routing_schemes():
     """Ordered routing-scheme names, as the installed core package defines them."""
     from ..bridge import core_choices
@@ -172,7 +184,7 @@ class TabRouting(QWidget):
         self.scheme_combo = QComboBox()
         self._SCHEMES = routing_schemes()
         self.scheme_combo.addItems([_SCHEME_LABELS.get(s, s) for s in self._SCHEMES])
-        self.scheme_combo.setCurrentIndex(self._scheme_index("diffusive"))
+        self.scheme_combo.setCurrentIndex(self._scheme_index("diffusive_implicit"))
         form.addRow("Scheme:", self.scheme_combo)
 
         self.diffusion_theta = QDoubleSpinBox()
@@ -267,6 +279,120 @@ class TabRouting(QWidget):
             "Orders above the last value reuse the last value."
         )
         form.addRow("Channel widths by order (m):", self.channel_widths)
+
+        # Channel network + geometry (resolution-independent defaults)
+        self.channel_min_area = QDoubleSpinBox()
+        self.channel_min_area.setRange(0.0, 1e6)
+        self.channel_min_area.setDecimals(2)
+        self.channel_min_area.setValue(10.0)
+        self.channel_min_area.setSuffix(" km²")
+        self.channel_min_area.setToolTip(
+            "Cells draining more than this area are channels (capped at 10 % of the\n"
+            "basin for small catchments).  0 = legacy rule (top 1 % of cells).")
+        form.addRow("Channel min. drainage area:", self.channel_min_area)
+
+        self.channel_geometry = QComboBox()
+        self.channel_geometry.addItem("From bankfull flow (default)", "discharge")
+        self.channel_geometry.addItem("US curves vs drainage area (Bieger 2015)", "area")
+        self.channel_geometry.addItem("Strahler-order tables (legacy)", "order")
+        self.channel_geometry.setToolTip(
+            "'discharge': each channel cell carries its bankfull flow Q_bf (≈ 2-year\n"
+            "flood) before spilling — width 7.2·Q^0.5 (Andreadis et al. 2013), depth so\n"
+            "the channel runs exactly full at Q_bf with the local slope.\n"
+            "'area': bankfull width/depth vs drainage area from US data (Bieger 2015).\n"
+            "'order': the width/depth tables by Strahler order.")
+        form.addRow("Channel geometry:", self.channel_geometry)
+
+        self.channel_qbf_mode = QComboBox()
+        self.channel_qbf_mode.addItem("Automatic — global estimate (HydroATLAS)", "auto")
+        self.channel_qbf_mode.addItem("My 2-year flood at a gauge (number)", "value")
+        self.channel_qbf_mode.addItem("Formula or regional preset", "formula")
+        self.channel_qbf_mode.setToolTip(
+            "Bankfull flow ≈ the 2-year flood (median of yearly peak flows).\n"
+            "Automatic: one Earth Engine request (drainage area alone when offline);\n"
+            "typically within ×2 — the estimate and its range are printed in the log.\n"
+            "Number: your value at the outlet, or at the gauge area below; spread\n"
+            "upstream as Q ∝ A^0.75.  Formula: evaluated at every channel cell.")
+        form.addRow("Bankfull flow (Q_bf):", self.channel_qbf_mode)
+
+        self.channel_qbf = QDoubleSpinBox()
+        self.channel_qbf.setRange(0.0, 1e6)
+        self.channel_qbf.setDecimals(1)
+        self.channel_qbf.setSuffix(" m³/s")
+        self.channel_qbf.setToolTip(
+            "Median of ≥10 yearly peak flows at a gauge, or the 2-year flood from a\n"
+            "flood-frequency report.  Not the bank-top flow of a gorge/bridge rating\n"
+            "(confined sections hold much bigger floods before spilling).")
+        form.addRow("2-year flood:", self.channel_qbf)
+
+        self.channel_qbf_area = QDoubleSpinBox()
+        self.channel_qbf_area.setRange(0.0, 1e7)
+        self.channel_qbf_area.setDecimals(1)
+        self.channel_qbf_area.setSuffix(" km²")
+        self.channel_qbf_area.setSpecialValueText("basin outlet")
+        self.channel_qbf_area.setToolTip(
+            "Drainage area of the gauge the 2-year flood belongs to.  0 = the basin outlet.")
+        form.addRow("…at drainage area:", self.channel_qbf_area)
+
+        self.channel_qbf_formula = QComboBox()
+        self.channel_qbf_formula.setEditable(True)
+        for key, (_f, desc) in qbf_presets().items():
+            self.channel_qbf_formula.addItem(key)
+            self.channel_qbf_formula.setItemData(self.channel_qbf_formula.count() - 1, desc,
+                                                 Qt.ToolTipRole)
+        self.channel_qbf_formula.setToolTip(
+            "A preset name or your own formula for the 2-year flood [m³/s], e.g.\n"
+            "  1.8767*(A_below(3000)+1)^0.8783      (WECS/DHM 1990, Nepal = 'wecs_nepal')\n"
+            "Variables: A drainage area [km²], A_below(z) / A_above(z) area below /\n"
+            "above elevation z [km²], H mean elevation [m], P mean annual rain [mm,\n"
+            "HydroATLAS, needs Earth Engine].  + - * / ^ ( ) exp log log10 sqrt min max.\n"
+            "Evaluated at every channel cell.  'Q2 =' in front is ignored.")
+        form.addRow("Formula:", self.channel_qbf_formula)
+
+        self.channel_hg = QComboBox()
+        for key, label in (("bieger_usa", "Bieger 2015 — US national (default)"),
+                           ("bieger_lup", "Bieger 2015 — Laurentian Upland"),
+                           ("bieger_apl", "Bieger 2015 — Atlantic Plain"),
+                           ("bieger_ahi", "Bieger 2015 — Appalachian Highlands"),
+                           ("bieger_ipl", "Bieger 2015 — Interior Plains"),
+                           ("bieger_ihi", "Bieger 2015 — Interior Highlands"),
+                           ("bieger_rms", "Bieger 2015 — Rocky Mountain System"),
+                           ("bieger_imp", "Bieger 2015 — Intermontane Plateaus"),
+                           ("bieger_pms", "Bieger 2015 — Pacific Mountain System")):
+            self.channel_hg.addItem(label, key)
+        self.channel_hg.setToolTip(
+            "Bankfull hydraulic-geometry preset (Bieger et al. 2015, JAWRA).  For local\n"
+            "survey coefficients set CHANNEL_HG to a dict in a config file.")
+        form.addRow("Hydraulic geometry:", self.channel_hg)
+
+        self.channel_depths = QLineEdit("0.5,0.8,1.2,1.6,2.2,3,4,5")
+        self.channel_depths.setToolTip(
+            "Bankfull depth D [m] per Strahler order ('order' geometry), from order 1.")
+        form.addRow("Bankfull depths by order (m):", self.channel_depths)
+
+        self.channel_subgrid = QCheckBox(
+            "Sub-grid incised channel (bed cut D below the DEM; floodplain above bankfull)")
+        self.channel_subgrid.setChecked(True)
+        form.addRow(self.channel_subgrid)
+
+        self.floodplain_n = QDoubleSpinBox()
+        self.floodplain_n.setRange(0.0, 1.0)
+        self.floodplain_n.setDecimals(3)
+        self.floodplain_n.setSingleStep(0.005)
+        self.floodplain_n.setValue(0.0)
+        self.floodplain_n.setSpecialValueText("land-cover n")
+        self.floodplain_n.setToolTip("Manning's n for above-bank flow; 0 = use the cell's land-cover n.")
+        form.addRow("Floodplain n:", self.floodplain_n)
+
+        self.baseflow_q = QDoubleSpinBox()
+        self.baseflow_q.setRange(0.0, 10.0)
+        self.baseflow_q.setDecimals(4)
+        self.baseflow_q.setSingleStep(0.001)
+        self.baseflow_q.setSuffix(" m³/s/km²")
+        self.baseflow_q.setToolTip(
+            "Constant baseflow per km² of drainage area along the channels; channels\n"
+            "then start at the corresponding normal depth.  0 = dry start.")
+        form.addRow("Baseflow:", self.baseflow_q)
 
         root.addWidget(grp)
 
@@ -403,7 +529,7 @@ class TabRouting(QWidget):
         form.addRow(self.mass_balance)
 
         self.min_slope = QDoubleSpinBox()
-        self.min_slope.setRange(1e-8, 1.0); self.min_slope.setDecimals(6)
+        self.min_slope.setRange(1e-6, 1.0); self.min_slope.setDecimals(6)
         self.min_slope.setValue(1e-4)
         self.min_slope.setToolTip("Minimum slope floor in Manning's equation [m/m].")
         form.addRow("MIN_SLOPE:", self.min_slope)
@@ -443,6 +569,8 @@ class TabRouting(QWidget):
         self.channel_n_override.toggled.connect(self._apply_disclosure)
         self.scheme_combo.currentIndexChanged.connect(self._apply_disclosure)
         self.channel_routing.toggled.connect(self._apply_disclosure)
+        self.channel_geometry.currentIndexChanged.connect(self._apply_disclosure)
+        self.channel_qbf_mode.currentIndexChanged.connect(self._apply_disclosure)
         self.adaptive.toggled.connect(self._apply_disclosure)
         self._rb_gpu.toggled.connect(self._apply_disclosure)
 
@@ -473,7 +601,18 @@ class TabRouting(QWidget):
         _set_row_visible(self._scheme_form, self.dynamic_flux_theta, scheme == "dynamic")
         self._grp_implicit.setVisible(implicit)
 
-        _set_row_visible(self._channel_form, self.channel_widths, self.channel_routing.isChecked())
+        on = self.channel_routing.isChecked()
+        geom = self.channel_geometry.currentData()
+        qmode = self.channel_qbf_mode.currentData()
+        _set_row_visible(self._channel_form, self.channel_widths, on and geom == "order")
+        _set_row_visible(self._channel_form, self.channel_depths, on and geom == "order")
+        _set_row_visible(self._channel_form, self.channel_hg, on and geom == "area")
+        _set_row_visible(self._channel_form, self.channel_qbf_mode, on and geom == "discharge")
+        _set_row_visible(self._channel_form, self.channel_qbf, on and geom == "discharge" and qmode == "value")
+        _set_row_visible(self._channel_form, self.channel_qbf_area,
+                         on and geom == "discharge" and qmode == "value")
+        _set_row_visible(self._channel_form, self.channel_qbf_formula,
+                         on and geom == "discharge" and qmode == "formula")
 
         adaptive = self.adaptive.isChecked()
         # The implicit scheme is unconditionally stable: it uses its own (≫1)
@@ -554,12 +693,39 @@ class TabRouting(QWidget):
         self.implicit_slope_floor.setValue(float(getattr(cfg, "IMPLICIT_SLOPE_FLOOR", 1e-8)))
         self.implicit_cfl_target.setValue(float(getattr(cfg, "IMPLICIT_CFL_TARGET", 2.0)))
 
-        self.channel_routing.setChecked(bool(getattr(cfg, "CHANNEL_ROUTING", False)))
+        self.channel_routing.setChecked(bool(getattr(cfg, "CHANNEL_ROUTING", True)))
         widths = getattr(cfg, "CHANNEL_WIDTH_BY_ORDER", None)
         if isinstance(widths, dict) and widths:
             self.channel_widths.setText(",".join(str(widths[k]) for k in sorted(widths)))
+        depths = getattr(cfg, "CHANNEL_DEPTH_BY_ORDER", None)
+        if isinstance(depths, dict) and depths:
+            self.channel_depths.setText(",".join(str(depths[k]) for k in sorted(depths)))
+        ma = getattr(cfg, "CHANNEL_MIN_AREA_KM2", 10.0)
+        self.channel_min_area.setValue(0.0 if ma is None else float(ma))
+        idx = self.channel_geometry.findData(str(getattr(cfg, "CHANNEL_GEOMETRY", "discharge")))
+        self.channel_geometry.setCurrentIndex(max(idx, 0))
+        qbf = getattr(cfg, "CHANNEL_QBF_M3S", None)
+        try:
+            mode, val = "value", float(qbf)
+        except (TypeError, ValueError):
+            text = "" if qbf is None else str(qbf).strip()
+            mode = "auto" if text.lower() in ("", "auto") else "formula"
+            if mode == "formula":
+                self.channel_qbf_formula.setEditText(text)
+        else:
+            self.channel_qbf.setValue(val)
+        self.channel_qbf_mode.setCurrentIndex(max(self.channel_qbf_mode.findData(mode), 0))
+        self.channel_qbf_area.setValue(float(getattr(cfg, "CHANNEL_QBF_AREA_KM2", None) or 0.0))
+        hg = getattr(cfg, "CHANNEL_HG", "bieger_usa")
+        idx = self.channel_hg.findData(hg if isinstance(hg, str) else "bieger_usa")
+        self.channel_hg.setCurrentIndex(max(idx, 0))
+        self._custom_hg = hg if isinstance(hg, dict) else None
+        self.channel_subgrid.setChecked(bool(getattr(cfg, "CHANNEL_SUBGRID", True)))
+        nfp = getattr(cfg, "MANNINGS_N_FLOODPLAIN", None)
+        self.floodplain_n.setValue(0.0 if nfp is None else float(nfp))
+        self.baseflow_q.setValue(float(getattr(cfg, "BASEFLOW_SPECIFIC_Q", 0.0) or 0.0))
 
-        self.adaptive.setChecked(bool(getattr(cfg, "ADAPTIVE_TIMESTEP", False)))
+        self.adaptive.setChecked(bool(getattr(cfg, "ADAPTIVE_TIMESTEP", True)))
         self.dt_spin.setValue(float(cfg.TIME_STEP_SECONDS))
         self.cfl_target.setValue(float(getattr(cfg, "CFL_TARGET", 0.85)))
         self.cfl_dt_max.setValue(float(getattr(cfg, "CFL_DT_MAX", 0.0) or 0.0))
@@ -610,6 +776,29 @@ class TabRouting(QWidget):
         widths = self._parse_widths(self.channel_widths.text())
         if widths:
             cfg.CHANNEL_WIDTH_BY_ORDER = widths
+        depths = self._parse_widths(self.channel_depths.text())
+        if depths:
+            cfg.CHANNEL_DEPTH_BY_ORDER = depths
+        ma = self.channel_min_area.value()
+        cfg.CHANNEL_MIN_AREA_KM2 = None if ma <= 0 else ma
+        cfg.CHANNEL_GEOMETRY = self.channel_geometry.currentData()
+        mode = self.channel_qbf_mode.currentData()
+        cfg.CHANNEL_QBF_M3S = None
+        cfg.CHANNEL_QBF_AREA_KM2 = None
+        if mode == "value" and self.channel_qbf.value() > 0:
+            cfg.CHANNEL_QBF_M3S = self.channel_qbf.value()
+            cfg.CHANNEL_QBF_AREA_KM2 = self.channel_qbf_area.value() or None
+        elif mode == "formula" and self.channel_qbf_formula.currentText().strip():
+            cfg.CHANNEL_QBF_M3S = self.channel_qbf_formula.currentText().strip()
+        # a dict CHANNEL_HG loaded from a config file is kept unless the user
+        # picks a preset different from the default placeholder
+        custom = getattr(self, "_custom_hg", None)
+        preset = self.channel_hg.currentData()
+        cfg.CHANNEL_HG = custom if (custom and preset == "bieger_usa") else preset
+        cfg.CHANNEL_SUBGRID = self.channel_subgrid.isChecked()
+        nfp = self.floodplain_n.value()
+        cfg.MANNINGS_N_FLOODPLAIN = None if nfp <= 0 else nfp
+        cfg.BASEFLOW_SPECIFIC_Q = self.baseflow_q.value()
 
         cfg.ADAPTIVE_TIMESTEP = self.adaptive.isChecked()
         cfg.TIME_STEP_SECONDS = self.dt_spin.value()

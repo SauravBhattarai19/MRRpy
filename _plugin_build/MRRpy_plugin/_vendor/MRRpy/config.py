@@ -67,7 +67,12 @@ _ENUM_CHOICES = {
     "SOILGRIDS_DEPTH":       ["b0", "b10", "b30", "b60", "b100", "b200"],
     "MANNINGS_N_SOURCE":     ["scalar", "lulc", "lcz", "raster"],
     "DEM_SOURCE":            list(_DEM_CATALOG),
+    "DEM_CONDITIONING":      ["fill", "carve", "carve_spread"],
+    "CHANNEL_GEOMETRY":      ["order", "area", "discharge"],
 }
+
+# Fixed-choice options that may also be None (None = "use the default rule").
+_ENUM_NULLABLE = {"DEM_CONDITIONING"}
 
 # Options whose value is a *list* of choices (each element normalised the same
 # way as a scalar enum), rather than a single choice.  RUNOFF_MECHANISMS names
@@ -161,6 +166,18 @@ class Config:
     # byte-identical for basins already validated against it.  (The integer
     # codes are unchanged: 0=pysheds, 1=pyflwdir.)
     DELINEATION_ENGINE: str = "pyflwdir"   # 'pyflwdir' | 'pysheds'
+
+    # DEM hydro-conditioning before D8 (see core/dem_processing.condition_dem):
+    #   'fill'         – engine's own depression filling only (original behaviour)
+    #   'carve'        – least-cost carving (Yamazaki et al. 2012) instead of filling
+    #   'carve_spread' – carve + relief-preserving spreading of flat treads +
+    #                    minimum slope MIN_SLOPE along flow paths (PriorityFlow-style)
+    # None → engine default: 'carve_spread' for pyflwdir, 'fill' for pysheds
+    # (pysheds stays byte-identical unless this is set explicitly).
+    DEM_CONDITIONING = None
+    # Optional water-body raster (>0 = lake/reservoir, any CRS): kept flat by the
+    # conditioning so real lake storage is not carved/tilted away.
+    DEM_LAKE_MASK = None
 
     # EVENT_START_UTC: "YYYY-MM-DD HH:MM" UTC — single source of truth for the
     # event date (SERVES antecedent query + IMERG download window).
@@ -256,8 +273,16 @@ class Config:
     GA_SUCTION_M: float = 0.15          # wetting-front suction head ψ [m]
     GA_KSAT_SOURCE: str = "scalar"      # 'scalar' | 'gee' | 'raster'
     GA_KSAT_MMHR: float = 12.0          # vertical surface Ksat [mm/hr]
-    GA_KSAT_RASTER = None               # None → auto {OUTPUT_DIR}/ksat_hihydro.tif
+    GA_KSAT_RASTER = None               # None → auto {OUTPUT_DIR}/ksat_hihydro_0-<depth>cm.tif
     GA_KSAT_SCALE: float = 1.0
+    # 'gee' Ksat = HiHydroSoil v2.0 averaged over the top GA_KSAT_DEPTH_CM of soil
+    # (thickness-weighted harmonic mean of its depth layers — the effective
+    # vertical conductivity).  Pick by storm type — how deep a storm soaks in:
+    #   30 cm  short, intense bursts (monsoon cloudbursts, convective flash floods)
+    #   60 cm  default — best single compromise over 19 gauge/flood tests
+    #          (Kathmandu, Blue River OK, Illinois River OK/AR)
+    #  100 cm  long frontal / winter rain on soils with a tight clay subsoil
+    GA_KSAT_DEPTH_CM: float = 60.0
 
     # ── impervious: urban shedding ───────────────────────────────────────────
     IMPERVIOUS_SOURCE: str = "none"         # 'none'|'lcz'|'lulc'|'raster'
@@ -305,7 +330,9 @@ class Config:
     #   callable(elev_array)->n_array -> custom rule over channel-cell elevations
     #   str (file path)               -> channel-only Manning's-n raster (resampled)
     MANNINGS_N_CHANNEL = 0.035
-    CHANNEL_FACCUM_THRESHOLD = None         # None → auto (top 1% of cells)
+    # Channel cells by flow accumulation [cells]; overrides CHANNEL_MIN_AREA_KM2.
+    # None → CHANNEL_MIN_AREA_KM2 (or the top 1 % of cells when that is None too).
+    CHANNEL_FACCUM_THRESHOLD = None
 
     # ═════════════════════════════════════════════════════════════════════════
     # 8.  GRID & NUMERICAL LIMITS
@@ -347,9 +374,59 @@ class Config:
     IMPLICIT_NUM_THREADS = None
 
     # ── Channel (river) cross-section routing ────────────────────────────────
-    CHANNEL_ROUTING: bool = False
+    # Channel cells get a confined section narrower than the DEM cell.
+    CHANNEL_ROUTING: bool = True
+    # Channel cells = drainage area above this [km²] (capped at 10 % of the
+    # basin area for small catchments).  Resolution- and basin-size-independent.
+    # An explicit CHANNEL_FACCUM_THRESHOLD overrides it; None → top 1 % of cells.
+    CHANNEL_MIN_AREA_KM2 = 10.0
+    # How the channel's width and bankfull depth are set:
+    #   'discharge' (default) — from the bankfull flow Q_bf below: width
+    #       7.2·Q_bf^0.5 (Andreadis et al. 2013), depth so the channel carries
+    #       Q_bf exactly full at every cell (Manning, ~1 km reach slope);
+    #   'area'  — US bankfull curves vs drainage area (CHANNEL_HG, Bieger 2015);
+    #   'order' — the Strahler-order tables below (legacy).
+    CHANNEL_GEOMETRY: str = "discharge"
+    # Bankfull flow Q_bf ≈ the 2-year flood (median of yearly peak flows) [m³/s].
+    #   None / "auto" → global estimate at the outlet (HydroATLAS, one Earth
+    #       Engine request; drainage area alone when Earth Engine is unavailable),
+    #       printed with its range — typically within ×2.
+    #   a number      → your 2-year flood at the outlet (or at CHANNEL_QBF_AREA_KM2).
+    #   a formula     → a regional relation evaluated at every cell, e.g. the preset
+    #       "wecs_nepal", or "1.8767*(A_below(3000)+1)^0.8783".  Variables: A [km²],
+    #       A_below(z)/A_above(z) [km²], H mean elevation [m], P basin rain [mm].
+    #       MRRpy.core.routing.qbf.describe_presets() lists the presets.
+    # Use the median of ≥10 yearly peaks at a gauge (qbf_from_annual_peaks), not
+    # the bank-top of a gorge/bridge rating (confined sections hold far more).
+    CHANNEL_QBF_M3S = None
+    # Drainage area [km²] of the gauge your number refers to; None → the outlet.
+    CHANNEL_QBF_AREA_KM2 = None
+    # Advanced: a number or the automatic estimate is spread as Q_bf ∝ A^θ
+    # (θ median 0.69 in 1,025 nested gauge pairs; 0.75 puts 84 % within ×2).
+    CHANNEL_QBF_AREA_EXP: float = 0.75
+    CHANNEL_SLOPE_REACH_M: float = 1000.0   # advanced: reach length for the depth slope [m]
+    CHANNEL_MIN_DEPTH_M: float = 0.1        # advanced: floor on bankfull depth [m]
+    # Hydraulic geometry W = w_a·A^w_b, D = d_a·A^d_b (A km², W/D m).  A preset
+    # from Bieger et al. (2015, JAWRA) Table 3 — 'bieger_usa' (US national,
+    # 1,279 sites) or a physiographic division 'bieger_lup'|'bieger_apl'|
+    # 'bieger_ahi'|'bieger_ipl'|'bieger_ihi'|'bieger_rms'|'bieger_imp'|'bieger_pms'
+    # — or a dict {'w_a','w_b','d_a','d_b'} (e.g. from local surveys).
+    CHANNEL_HG = "bieger_usa"
+    # Sub-grid incised channel (LISFLOOD-FP style, Neal et al. 2012): the channel
+    # bed is cut D below the DEM surface; above bankfull, water spreads over the
+    # whole cell.  False → legacy slot sitting on the DEM surface.
+    CHANNEL_SUBGRID: bool = True
+    # Manning's n for above-bank (floodplain) flow on channel cells.  None → the
+    # cell's land-cover n (MANNINGS_N_SOURCE) before the channel override.
+    MANNINGS_N_FLOODPLAIN = None
     CHANNEL_WIDTH_BY_ORDER = {1: 3.0, 2: 5.0, 3: 8.0, 4: 12.0,
-                              5: 18.0, 6: 28.0, 7: 45.0, 8: 70.0}   # m
+                              5: 18.0, 6: 28.0, 7: 45.0, 8: 70.0}   # m ('order' mode)
+    CHANNEL_DEPTH_BY_ORDER = {1: 0.5, 2: 0.8, 3: 1.2, 4: 1.6,
+                              5: 2.2, 6: 3.0, 7: 4.0, 8: 5.0}       # m ('order' mode)
+    # Constant baseflow [m³/s per km² of drainage area] injected along the
+    # channel network; channels then START at the corresponding normal depth.
+    # 0 → dry start (event-flow only).
+    BASEFLOW_SPECIFIC_Q: float = 0.0
 
     # ── Upstream inflow boundary condition(s) ────────────────────────────────
     # Inject an external discharge hydrograph Q(t) [m³/s] at one or more cells so
@@ -377,7 +454,7 @@ class Config:
     OUTPUT_INTERVAL_SECONDS: int = 600
 
     # ── Adaptive CFL timestep ────────────────────────────────────────────────
-    ADAPTIVE_TIMESTEP: bool = False
+    ADAPTIVE_TIMESTEP: bool = True
     CFL_TARGET: float = 0.85
     CFL_DT_MAX = 5.0                        # None → OUTPUT_INTERVAL_SECONDS
     CFL_DT_MIN: float = 0.01
@@ -432,7 +509,7 @@ class Config:
         every entry path (keyword args, attribute assignment, from_dict,
         from_file).  All other attributes pass through unchanged.
         """
-        if key in _ENUM_CHOICES:
+        if key in _ENUM_CHOICES and not (value is None and key in _ENUM_NULLABLE):
             value = _normalize_enum(key, value, _ENUM_CHOICES[key])
         elif key in _ENUM_LIST:
             choices = _ENUM_LIST[key]
@@ -454,6 +531,9 @@ class Config:
         # into other configs.
         self.RUNOFF_MECHANISMS = list(self.RUNOFF_MECHANISMS)
         self.CHANNEL_WIDTH_BY_ORDER = dict(self.CHANNEL_WIDTH_BY_ORDER)
+        self.CHANNEL_DEPTH_BY_ORDER = dict(self.CHANNEL_DEPTH_BY_ORDER)
+        if isinstance(self.CHANNEL_HG, dict):
+            self.CHANNEL_HG = dict(self.CHANNEL_HG)
         self.FIELD_VARS = list(self.FIELD_VARS)
         for key, value in kwargs.items():
             if not hasattr(self, key):
@@ -594,6 +674,38 @@ class Config:
         elif not os.path.exists(self.DEM_PATH):
             errors.append(f"DEM_PATH not found: '{self.DEM_PATH}'")
 
+        try:
+            from .core.routing.surface import hydraulic_geometry_coeffs
+            hydraulic_geometry_coeffs(self)
+        except ValueError as exc:
+            errors.append(str(exc))
+        if self.CHANNEL_MIN_AREA_KM2 is not None and float(self.CHANNEL_MIN_AREA_KM2) <= 0:
+            errors.append(f"CHANNEL_MIN_AREA_KM2 must be > 0 or None (got {self.CHANNEL_MIN_AREA_KM2})")
+        if str(self.CHANNEL_GEOMETRY) == "discharge" and self.CHANNEL_ROUTING:
+            from .core.routing.qbf import classify_qbf
+            try:
+                kind, f = classify_qbf(self.CHANNEL_QBF_M3S)
+            except ValueError as exc:
+                errors.append(str(exc))
+                kind, f = None, None
+            if self.CHANNEL_QBF_AREA_KM2 is not None:
+                if float(self.CHANNEL_QBF_AREA_KM2) <= 0:
+                    errors.append(f"CHANNEL_QBF_AREA_KM2 must be > 0 or None (got {self.CHANNEL_QBF_AREA_KM2})")
+                elif kind in ("auto", "formula"):
+                    errors.append("CHANNEL_QBF_AREA_KM2 only applies when CHANNEL_QBF_M3S is a number "
+                                  "(the automatic estimate is at the outlet; a formula is per cell)")
+            if kind == "formula" and "P" in f.uses and not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
+                errors.append(f"Q_bf formula {f.text!r} uses P (mean annual rain from HydroATLAS), which "
+                              "needs GEE_PROJECT (or the GEE_PROJECT env var); or write P as a number")
+            if not float(self.CHANNEL_QBF_AREA_EXP) >= 0:
+                errors.append(f"CHANNEL_QBF_AREA_EXP must be >= 0 (got {self.CHANNEL_QBF_AREA_EXP})")
+        if float(self.MIN_SLOPE) <= 0:
+            errors.append(f"MIN_SLOPE must be > 0 (got {self.MIN_SLOPE}); a zero slope stalls "
+                          "kinematic flow and makes bankfull continuity depths infinite")
+        if not (0.0 < float(self.GA_KSAT_DEPTH_CM) <= 200.0):
+            errors.append(f"GA_KSAT_DEPTH_CM must be in (0, 200] cm (got {self.GA_KSAT_DEPTH_CM})")
+        if float(self.BASEFLOW_SPECIFIC_Q or 0.0) < 0:
+            errors.append(f"BASEFLOW_SPECIFIC_Q must be ≥ 0 (got {self.BASEFLOW_SPECIFIC_Q})")
         if self.TIME_STEP_SECONDS <= 0:
             errors.append(f"TIME_STEP_SECONDS must be > 0 (got {self.TIME_STEP_SECONDS})")
 
