@@ -77,5 +77,5 @@ prebuilt wheels for the geospatial libraries — no system GDAL required.
 !!! tip "Earth Engine authentication"
     GEE features (including DEM auto-download) need both an authenticated
     session and a Google Cloud project ID — see
-    [Configuration → Earth Engine setup](configuration.md#earth-engine-setup-first-time)
+    [Google Earth Engine](../manual/earth-engine.md)
     for the one-time signup/authenticate/`GEE_PROJECT` walkthrough.

@@ -20,7 +20,7 @@ Asks only the questions that matter for your earlier answers, explains each
 one, shows the current value in `[brackets]` (Enter keeps it), checks the result
 and saves it. Type `?` for help, `back`, `done` or `quit` at any question.
 Options: `-o FILE`, `--advanced` (ask advanced questions too), `--start KEY`,
-`--write-all`, `--brief`. See [Build a config interactively](interactive.md).
+`--write-all`, `--brief`. See [Ways to set up a run](../getting-started/interfaces.md).
 
 ### `init-config` — write a commented template
 
@@ -100,7 +100,7 @@ MRRpy list-dems
 Prints every DEM dataset MRRpy can auto-download from Google Earth
 Engine (dataset id, native resolution, coverage) — set `DEM_SOURCE` to one
 of these keys and `DEM_BOUNDS_WGS84` to skip needing a local `DEM_PATH`. See
-[Configuration → No local DEM?](configuration.md#no-local-dem-auto-download-from-earth-engine).
+[1.1 Elevation data](../manual/terrain.md#11-elevation-data-dem).
 
 ## Typical session
 

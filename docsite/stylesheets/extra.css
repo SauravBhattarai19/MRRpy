@@ -1,0 +1,9 @@
+/* A little more room for the wide setting tables of the user manual. */
+.md-grid {
+  max-width: 1440px;
+}
+
+/* Keep setting names (`RAIN_INTENSITY_MM_HR`) on one line in table cells. */
+.md-typeset table:not([class]) td:first-child code {
+  white-space: nowrap;
+}

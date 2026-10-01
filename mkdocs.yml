@@ -27,6 +27,7 @@ theme:
     - navigation.tracking
     - navigation.sections
     - navigation.top
+    - navigation.indexes
     - content.code.copy
     - content.code.annotate
     - toc.follow
@@ -35,15 +36,42 @@ theme:
 
 nav:
   - Home: index.md
-  - Installation: installation.md
-  - Quickstart: quickstart.md
-  - Build a config interactively: interactive.md
-  - Examples: examples.md
-  - Nepal flood example: examples-nepal.md
-  - Methods: methods.md
-  - Configuration: configuration.md
-  - CLI: cli.md
-  - API reference: api.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+      - "Ways to set up a run": getting-started/interfaces.md
+  - User manual:
+      - manual/index.md
+      - "1 Terrain": manual/terrain.md
+      - "2 Coordinate system": manual/coordinate-system.md
+      - "3 Precipitation": manual/precipitation.md
+      - "4 Runoff": manual/runoff.md
+      - "5 Routing":
+          - "5.1–5.3 Method and time": manual/routing.md
+          - "5.4 Ground roughness": manual/roughness.md
+          - "5.5 River channels": manual/channels.md
+          - "5.6 Water entering from upstream": manual/inflows.md
+      - "6 Outputs and run": manual/outputs.md
+      - Google Earth Engine: manual/earth-engine.md
+      - All settings A–Z: manual/all-settings.md
+  - Examples:
+      - examples/index.md
+      - "1 Your first run": examples/first-run.md
+      - "2 Download a DEM": examples/download-dem.md
+      - "3 Compare routing methods": examples/routing-schemes.md
+      - "4 Runoff methods": examples/runoff-methods.md
+      - "5 Physical runoff processes": examples/physical-runoff.md
+      - "6 Rain gauges": examples/rain-gauges.md
+      - "7 A real storm from satellite": examples/satellite-storm.md
+      - "8 Route an inflow hydrograph": examples/inflow-hydrograph.md
+      - "9 Roughness and river channels": examples/roughness-channels.md
+      - "10 The whole DEM and flood maps": examples/whole-dem.md
+      - "11 Many runs from Python": examples/batch-runs.md
+      - "Case study: Nepal (Trishuli)": examples/nepal-case-study.md
+  - Reference:
+      - Command line: reference/cli.md
+      - Python API: reference/api.md
+      - For developers: reference/developers.md
 
 markdown_extensions:
   - admonition
@@ -58,9 +86,28 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
+  - pymdownx.arithmatex:
+      generic: true
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+# Settings tables and [[NAME]] links come from MRRpy/config_schema.py.
+hooks:
+  - tools/mkdocs_hooks.py
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
 
 plugins:
   - search
