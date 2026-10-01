@@ -226,9 +226,13 @@ def describe_run(cfg):
                    f"{_fmt(w)} to {_fmt(e)}, latitude {_fmt(s)} to {_fmt(n)}.")
     else:
         out.append("Terrain: not set yet — give a DEM file or an area to download.")
-    lat, lon = v["OUTPUT_POINT"]
-    out.append(f"Outlet: latitude {_fmt(lat)}, longitude {_fmt(lon)}; the grid uses "
-               f"{v['TARGET_CRS_EPSG']}.")
+    if v["MODEL_AREA"] == "whole_dem":
+        out.append(f"Area: the whole DEM, no outlet — water leaves where it flows off "
+                   f"the DEM edge; the grid uses {v['TARGET_CRS_EPSG']}.")
+    else:
+        lat, lon = v["OUTPUT_POINT"]
+        out.append(f"Outlet: latitude {_fmt(lat)}, longitude {_fmt(lon)}; the grid uses "
+                   f"{v['TARGET_CRS_EPSG']}.")
 
     # Rain
     m = v["PRECIP_METHOD"]

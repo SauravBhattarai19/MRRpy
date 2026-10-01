@@ -122,11 +122,15 @@ def stage_routing(cfg, log=print, progress=None, is_cancelled=None):
     _emit(base + span - 5)
     df = kwr.save_hydrograph(hydrograph, cfg)
 
-    return {
+    out = {
         "hydrograph_csv": cfg.HYDROGRAPH_CSV,
         "hydrograph_df": df,
         "mass_balance_csv": cfg.MASS_BALANCE_CSV,
     }
+    if getattr(cfg, "SAVE_FIELDS", False):
+        out["fields_dir"] = (getattr(cfg, "FIELD_OUTPUT_DIR", None)
+                             or os.path.join(cfg.OUTPUT_DIR, "fields"))
+    return out
 
 
 def stage_vsa_opm(cfg):

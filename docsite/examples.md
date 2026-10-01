@@ -348,3 +348,86 @@ to machine precision in every case.
 
     # then: Config(RUNOFF_SOURCE="my_method", ...)
     ```
+
+## 7. Model the whole DEM and watch the flow spread
+
+You don't always want one watershed. To see how water moves over a whole
+area — a city, or a valley with several rivers — set `MODEL_AREA="whole_dem"`.
+MRRpy then skips the outlet and the delineation and routes **every cell of the
+DEM**. Water leaves wherever it flows off the edge of the DEM (or into a
+no-data hole), so make the DEM cover the uphill land that drains into your area.
+
+Turn on `SAVE_FIELDS` to record depth, velocity and discharge maps at every
+output interval, then draw them:
+
+```python
+from MRRpy import Config, run_pipeline, plot_field, animate_fields, export_peak_maps
+
+cfg = Config(
+    DEM_PATH="dem_90m.tif",
+    OUTPUT_DIR="whole/",
+    TARGET_CRS_EPSG="EPSG:32645",
+    MODEL_AREA="whole_dem",            # or 1 — no OUTPUT_POINT needed
+    RAIN_INTENSITY_MM_HR=30.0,
+    RAIN_DURATION_HOURS=2.0,
+    TOTAL_SIMULATION_TIME_HOURS=8.0,
+    OUTPUT_INTERVAL_SECONDS=600,       # one saved map every 10 minutes
+    SAVE_FIELDS=True,
+)
+out = run_pipeline(cfg)
+
+plot_field(out, "depth")                      # peak depth each cell reached
+plot_field(out, "discharge", time=2.5)        # discharge 2.5 h into the storm
+animate_fields(out, ["depth", "discharge"])   # whole/depth_discharge_animation.gif
+export_peak_maps(out)                         # whole/max_depth.tif, ... for QGIS
+```
+
+![Whole-DEM run: water depth and discharge over the Kathmandu valley, with the hydrograph](assets/img/whole_dem_flow.gif)
+
+*A 30 mm/h, 2-hour storm over the whole 90 m Kathmandu-valley DEM
+(`diffusive_implicit`), made with `animate_fields(out, ["depth", "discharge"])`.
+Left: water depth — the valley floor ponds. Middle: discharge as river lines
+that widen with the flow, draining off several edges of the DEM, the main river
+to the south-west. Right: flow at the main exit and all water leaving the DEM.*
+
+![Peak discharge as river lines](assets/img/whole_dem_peak_discharge.png){ width="560" }
+
+*`plot_field(out, "discharge")` — the highest flow each river reached.*
+
+What changes in a whole-DEM run:
+
+- **`hydrograph.csv`** — `Q_m3s` is the flow at the *main exit*, the cell where
+  the largest river leaves the DEM (the log prints where it is), and an extra
+  column `Q_total_outflow_m3s` is all water leaving the DEM. For flow at other
+  places, add `ROUTING_GAUGES`.
+- **`watershed.tif` / `watershed.geojson`** keep their names but hold the
+  modelled area (every valid DEM cell), so Earth Engine downloads and the QGIS
+  layers work as usual.
+- **Automatic channel size** (`CHANNEL_QBF_M3S` unset) is looked up at the main
+  exit instead of `OUTPUT_POINT`.
+
+`animate_fields` takes one quantity or a list: `["depth", "discharge"]` puts
+where the water is and how much is flowing side by side in each frame. Discharge
+is drawn as river lines along the flow network: the more water, the **wider and
+brighter** the line, so you can watch rivers swell as the flood passes (pass
+`lines=False` for plain cells). Flows below 0.1 % of the run's peak are left
+out so the network stands out from the thin flow on every hillslope (set
+`min_value` to change that).
+
+`export_peak_maps` writes, for each saved quantity, `max_<var>.tif` (the highest
+value each cell reached) and `time_of_max_<var>_hours.tif` (when; empty for
+cells that never got wet). `animate_fields` keeps one colour scale for every
+frame (0 to the run's peak), writes the time in each frame's title, and shows
+the hydrograph beside the map; pass `out_path="flow.mp4"` for video (needs
+ffmpeg) or `every=3` for a shorter GIF.
+
+!!! note "Memory"
+    The saved maps stay in memory until the run ends: about
+    *saved times × cells × quantities × 4 bytes*. The log prints this estimate
+    and warns above 2 GB. For a large DEM, raise `OUTPUT_INTERVAL_SECONDS` or
+    `FIELD_STRIDE`, or save only `FIELD_VARS=["depth"]`.
+
+In the QGIS plugin: on tab 1 choose **The whole DEM (no outlet)** under
+*Area to model*, then **Use whole DEM**; tick **Save maps over time** on the
+Routing tab; after the run, the Results tab has **Load Peak Maps** and
+**Save Flow Animation…**.

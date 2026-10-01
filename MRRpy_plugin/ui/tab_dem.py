@@ -9,9 +9,10 @@ Step 1 — Digital Elevation Model
     outlet-independent terrain analysis (fill → flow direction → flow
     accumulation) and draws the stream network on the map canvas.
 
-Step 2 — Watershed Outlet
-    With the streams visible, pick the outlet on the map (or type lat/lon),
-    then [Delineate watershed].
+Step 2 — Area to model
+    Either the watershed above an outlet — with the streams visible, pick the
+    outlet on the map (or type lat/lon), then [Delineate watershed] — or the
+    whole DEM with no outlet ([Use whole DEM], MODEL_AREA='whole_dem').
 
 The tab itself does no threading or Earth Engine work — it only emits
 ``request_analyze_terrain`` / ``request_delineate``; the main dialog runs the
@@ -24,7 +25,7 @@ import os
 
 from qgis.PyQt.QtWidgets import (
     QWidget, QFormLayout, QGroupBox, QVBoxLayout, QHBoxLayout,
-    QPushButton, QDoubleSpinBox, QLabel, QComboBox,
+    QPushButton, QDoubleSpinBox, QLabel, QComboBox, QRadioButton, QButtonGroup,
 )
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.gui import QgsFileWidget, QgsProjectionSelectionWidget, QgsMapToolEmitPoint
@@ -129,9 +130,29 @@ class TabDem(QWidget):
 
         root.addWidget(grp_dem)
 
-        # ── Step 2 · Outlet Point ────────────────────────────────────────────
-        grp_outlet = QGroupBox("2 · Watershed Outlet")
+        # ── Step 2 · Area to model (watershed above an outlet, or whole DEM) ─
+        grp_outlet = QGroupBox("2 · Area to model")
         v_outlet = QVBoxLayout(grp_outlet)
+
+        self.area_watershed = QRadioButton("Watershed above an outlet point")
+        self.area_watershed.setToolTip(
+            "Delineate everything that drains to one outlet and model only that.")
+        self.area_whole = QRadioButton("The whole DEM (no outlet)")
+        self.area_whole.setToolTip(
+            "Model every cell of the DEM — e.g. a city or a valley with several\n"
+            "rivers. Water leaves wherever it flows off the edge of the DEM, so the\n"
+            "DEM should cover the uphill land that drains into your area.")
+        self.area_watershed.setChecked(True)
+        self._area_group = QButtonGroup(self)
+        self._area_group.addButton(self.area_watershed)
+        self._area_group.addButton(self.area_whole)
+        area_row = QHBoxLayout()
+        area_row.addWidget(self.area_watershed)
+        area_row.addSpacing(16)
+        area_row.addWidget(self.area_whole)
+        area_row.addStretch()
+        v_outlet.addLayout(area_row)
+        self.area_whole.toggled.connect(self._on_area_changed)
 
         self._outlet_hint = QLabel(
             "Run “Analyze terrain” first — then pick your outlet on a stream."
@@ -140,7 +161,9 @@ class TabDem(QWidget):
         self._outlet_hint.setStyleSheet("color: #666;")
         v_outlet.addWidget(self._outlet_hint)
 
-        coord_row = QHBoxLayout()
+        self._coord_box = QWidget()
+        coord_row = QHBoxLayout(self._coord_box)
+        coord_row.setContentsMargins(0, 0, 0, 0)
 
         self.lat_spin = QDoubleSpinBox()
         self.lat_spin.setRange(-90.0, 90.0)
@@ -174,7 +197,7 @@ class TabDem(QWidget):
         coord_row.addSpacing(10)
         coord_row.addWidget(self.pick_btn)
         coord_row.addStretch()
-        v_outlet.addLayout(coord_row)
+        v_outlet.addWidget(self._coord_box)
 
         self.delineate_btn = QPushButton(QgsApplication.getThemeIcon("/processingAlgorithm.svg"), "Delineate watershed")
         self.delineate_btn.setToolTip(
@@ -214,17 +237,38 @@ class TabDem(QWidget):
         self._terrain_ready = bool(ready)
         self.delineate_btn.setEnabled(self._terrain_ready)
         self.pick_btn.setEnabled(self._terrain_ready)
-        if ready:
+        self._refresh_area_text()
+
+    def _on_area_changed(self, *args):
+        """Watershed ↔ whole DEM: show the outlet only when it is used."""
+        self._coord_box.setVisible(not self.is_whole_dem())
+        self._refresh_area_text()
+        self.watershed_stale.emit()
+
+    def _refresh_area_text(self):
+        whole = self.is_whole_dem()
+        self.delineate_btn.setText("Use whole DEM" if whole else "Delineate watershed")
+        self.delineate_btn.setToolTip(
+            "Model every valid DEM cell: no outlet, no delineation." if whole else
+            "Snap the outlet to the stream network and delineate the\n"
+            "contributing watershed, then clip the DEM to it.")
+        if not self._terrain_ready:
             self._outlet_hint.setText(
-                "Streams are on the map — pick your outlet on a stream, "
-                "then “Delineate watershed”."
-            )
-            self._outlet_hint.setStyleSheet("color: #1B6CA8;")
+                "Run “Analyze terrain” first — then choose “Use whole DEM”." if whole else
+                "Run “Analyze terrain” first — then pick your outlet on a stream.")
+            self._outlet_hint.setStyleSheet("color: #666;")
         else:
             self._outlet_hint.setText(
-                "Run “Analyze terrain” first — then pick your outlet on a stream."
-            )
-            self._outlet_hint.setStyleSheet("color: #666;")
+                "Terrain is ready — choose “Use whole DEM”." if whole else
+                "Streams are on the map — pick your outlet on a stream, "
+                "then “Delineate watershed”.")
+            self._outlet_hint.setStyleSheet("color: #1B6CA8;")
+
+    def is_whole_dem(self) -> bool:
+        return self.area_whole.isChecked()
+
+    def get_model_area(self) -> str:
+        return "whole_dem" if self.is_whole_dem() else "watershed"
 
     def set_busy(self, busy: bool):
         """Disable the step buttons while a background DEM step is running."""
@@ -236,6 +280,8 @@ class TabDem(QWidget):
 
     def activate_pick(self):
         """Programmatically switch the map into outlet-pick mode."""
+        if self.is_whole_dem():
+            return
         if not self.pick_btn.isChecked():
             self.pick_btn.setChecked(True)
             self._toggle_map_pick(True)
@@ -315,6 +361,8 @@ class TabDem(QWidget):
         lat, lon = cfg.OUTPUT_POINT
         self.lat_spin.setValue(lat)
         self.lon_spin.setValue(lon)
+        whole = getattr(cfg, "MODEL_AREA", "watershed") == "whole_dem"
+        (self.area_whole if whole else self.area_watershed).setChecked(True)
         if cfg.OUTPUT_DIR:
             self.output_dir_widget.setFilePath(cfg.OUTPUT_DIR)
         engine = getattr(cfg, "DELINEATION_ENGINE", "pyflwdir")
@@ -333,6 +381,7 @@ class TabDem(QWidget):
         cfg.DEM_PATH = self.get_dem_path()
         cfg.TARGET_CRS_EPSG = self.get_target_crs()
         cfg.OUTPUT_POINT = self.get_outlet_point()
+        cfg.MODEL_AREA = self.get_model_area()
         cfg.OUTPUT_DIR = self.get_output_dir()
         cfg.DELINEATION_ENGINE = self.get_delineation_engine()
         cfg.DEM_CONDITIONING = self.get_dem_conditioning()

@@ -150,7 +150,11 @@ own threading/stdout. Stages:
   `clipped_dem.tif` to the watershed bbox while `flow_direction.tif` /
   `watershed.tif` stay full-extent — `terrain.load_rasters` windows them) or
   `pysheds` (the original engine — must stay byte-identical for callers that
-  select it).
+  select it). `MODEL_AREA="whole_dem"` skips the outlet/delineation:
+  `analyze_terrain` then `use_whole_dem` writes the same filenames with
+  `watershed.tif` = every valid DEM cell; the router then has many exit cells
+  (`ds_idx<0`), reports the largest at `Q_m3s` and adds `Q_total_outflow_m3s`.
+  Watershed mode must stay byte-identical.
 - `routing` — `core/routing/router.py`: `initialise_grid` → `run_time_loop` →
   `save_hydrograph`.
 - `vsa_opm` — `core/opm.py::run_opm`, the standalone OPM runner.
@@ -200,7 +204,9 @@ Optional routing add-ons (all off by default, config-gated):
 - `gauges.py` (`ROUTING_GAUGES`) — virtual gauges written to `gauges.csv`
   (depth/Q/velocity at named points every `OUTPUT_INTERVAL`).
 - `fields.py` (`SAVE_FIELDS`) — compact per-cell depth/velocity/discharge archive
-  (`fields.npz` + `fields_meta.json`) for post-hoc plots/animations.
+  (`fields.npz` + `fields_meta.json`); `MRRpy/plotting.py` turns it into maps
+  (`plot_field`), a GIF/MP4 (`animate_fields`) and peak GeoTIFFs
+  (`export_peak_maps`).
 
 ### CPU/GPU backend selection
 

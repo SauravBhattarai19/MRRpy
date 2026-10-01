@@ -69,6 +69,7 @@ _ENUM_CHOICES = {
     "DEM_SOURCE":            list(_DEM_CATALOG),
     "DEM_CONDITIONING":      ["fill", "carve", "carve_spread"],
     "CHANNEL_GEOMETRY":      ["order", "area", "discharge"],
+    "MODEL_AREA":            ["watershed", "whole_dem"],
 }
 
 # Fixed-choice options that may also be None (None = "use the default rule").
@@ -156,7 +157,15 @@ class Config:
     DEM_SCALE_M = None
 
     TARGET_CRS_EPSG: str = "EPSG:32645"
-    OUTPUT_POINT: tuple = (27.632222, 85.293333)   # (lat, lon)
+
+    # Which cells are modelled:
+    #   'watershed' – everything upstream of OUTPUT_POINT (delineated basin)
+    #   'whole_dem' – every valid DEM cell, no outlet and no delineation; water
+    #                 leaves wherever it flows off the DEM edge or into nodata.
+    #                 Inflow from land outside the DEM is not modelled, so the
+    #                 DEM should cover the uphill area that matters.
+    MODEL_AREA: str = "watershed"
+    OUTPUT_POINT: tuple = (27.632222, 85.293333)   # (lat, lon); unused for 'whole_dem'
     OUTPUT_DIR: str = "output/"
 
     # DEM delineation engine.  'pyflwdir' (default) uses priority-flood filling,

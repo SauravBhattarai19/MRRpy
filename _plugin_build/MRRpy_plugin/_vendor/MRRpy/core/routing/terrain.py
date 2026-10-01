@@ -121,6 +121,18 @@ def load_rasters(cfg):
     return dem, fdir, faccum, ws_mask, transform, nodata_dem, cell_size
 
 
+def cell_latlon(rc, transform, crs):
+    """(lat, lon) of the centre of grid cell *rc* = (row, col), or (None, None)
+    if the CRS cannot be transformed."""
+    try:
+        from pyproj import Transformer
+        x, y = transform * (rc[1] + 0.5, rc[0] + 0.5)
+        lon, lat = Transformer.from_crs(crs, "EPSG:4326", always_xy=True).transform(x, y)
+        return float(lat), float(lon)
+    except Exception:            # missing/odd CRS — callers just skip the lat/lon
+        return None, None
+
+
 # ---------------------------------------------------------------------------
 # 2.  Slope calculation
 # ---------------------------------------------------------------------------

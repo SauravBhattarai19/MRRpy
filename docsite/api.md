@@ -49,6 +49,23 @@ DataFrame, a `run_pipeline()` result dict, or a `Config`, and returns
     options:
       heading_level: 3
 
+### Maps over time (`SAVE_FIELDS=True`)
+
+These read the per-cell maps a run saves with `SAVE_FIELDS=True` — see
+[Examples §7](examples.md#7-model-the-whole-dem-and-watch-the-flow-spread).
+
+::: MRRpy.plot_field
+    options:
+      heading_level: 3
+
+::: MRRpy.animate_fields
+    options:
+      heading_level: 3
+
+::: MRRpy.export_peak_maps
+    options:
+      heading_level: 3
+
 ## `mannings_n_from_dem`
 
 Generate a spatially-varying Manning's-n raster from a DEM using an elevation

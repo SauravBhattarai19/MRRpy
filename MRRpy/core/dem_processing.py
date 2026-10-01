@@ -7,6 +7,7 @@ from pyproj import CRS, Transformer
 import numpy as np
 import geopandas as gpd
 from shapely.geometry import shape
+from shapely.ops import unary_union
 
 # Monkey-patch np.in1d for pysheds compatibility with numpy 2.0+
 if not hasattr(np, 'in1d'):
@@ -882,7 +883,8 @@ def analyze_terrain(dem_path, target_crs_epsg, output_dir, engine='pyflwdir',
     streams_path = _write_streams_geojson(flow_accumulation, profile, target_crs_epsg, output_dir)
 
     print("\n--- Terrain analysis complete ---")
-    print("Pick an outlet on the stream network, then delineate the watershed.")
+    print("Next: pick an outlet on the stream network and delineate the watershed, "
+          "or model the whole DEM.")
     return {
         "reprojected_dem":   reprojected_dem_path,
         "filled_dem":        os.path.join(output_dir, "filled_dem.tif"),
@@ -978,6 +980,113 @@ def delineate_from_outlet(output_dir, output_point_latlon, target_crs_epsg, engi
         "clipped_flow_accumulation": clipped_fa_path,
     }
 
+def use_whole_dem(output_dir, target_crs_epsg):
+    """
+    Outlet-free alternative to ``delineate_from_outlet``: model every valid DEM
+    cell instead of one watershed.  Reads the terrain products already written
+    by ``analyze_terrain`` (either engine) and writes the files routing reads,
+    under their usual names so every consumer works unchanged:
+
+    * watershed.tif       – 1 on every valid DEM cell (the modelled area)
+    * watershed.geojson   – outline of that area (½-cell buffer, simplified at
+                            one cell so Earth Engine requests stay small)
+    * clipped_dem.tif     – the conditioned DEM (float32, nodata −9999)
+    * clipped_flow_accumulation.tif – accumulation on valid cells, −1 elsewhere
+
+    Water leaves the model wherever it flows off the DEM edge or into nodata
+    (the router already treats every such cell as a free outflow).  Returns a
+    dict of output paths, like ``delineate_from_outlet``.
+    """
+    inflated_dem_path = os.path.join(output_dir, "inflated_dem.tif")
+    fdir_path = os.path.join(output_dir, "flow_direction.tif")
+    facc_path = os.path.join(output_dir, "flow_accumulation.tif")
+    for p in (inflated_dem_path, fdir_path, facc_path):
+        if not os.path.exists(p):
+            raise FileNotFoundError(
+                f"Missing terrain product {p}. Run analyze_terrain first.")
+
+    with rasterio.open(inflated_dem_path) as src:
+        dem = src.read(1).astype(np.float32)
+        profile = src.profile.copy()
+        nodata = src.nodata
+    with rasterio.open(fdir_path) as src:
+        fdir = src.read(1)
+    with rasterio.open(facc_path) as src:
+        facc = src.read(1).astype(np.float32)
+
+    valid = np.isfinite(dem) & (dem != -9999.0)
+    if nodata is not None and np.isfinite(nodata):
+        valid &= dem != np.float32(nodata)
+    n_valid = int(valid.sum())
+    if n_valid == 0:
+        raise RuntimeError(f"{inflated_dem_path} has no valid cells — cannot model the whole DEM.")
+    transform = profile['transform']
+    cell = float(abs(transform.a))
+    print(f"Modelling the whole DEM: {n_valid:,} cells "
+          f"({n_valid * cell * cell / 1e6:,.1f} km²), no outlet / delineation.")
+
+    # Watershed mask = the modelled area.
+    ws_uint8 = valid.astype('uint8')
+    ws_profile = profile.copy()
+    ws_profile.update(dtype='uint8', nodata=0)
+    ws_path = os.path.join(output_dir, "watershed.tif")
+    with rasterio.open(ws_path, 'w', **ws_profile) as dst:
+        dst.write(ws_uint8, 1)
+    print(f"Modelled-area mask saved to: {ws_path}")
+
+    geojson_path = os.path.join(output_dir, "watershed.geojson")
+    polygons = [shape(geom) for geom, val in
+                rasterio.features.shapes(ws_uint8, mask=valid, transform=transform)
+                if val == 1]
+    if polygons:
+        outline = unary_union(polygons).buffer(cell / 2.0).simplify(cell)
+        gpd.GeoDataFrame({'geometry': [outline]}, crs=target_crs_epsg).to_file(
+            geojson_path, driver='GeoJSON')
+        print(f"Modelled-area outline saved to: {geojson_path}")
+
+    clipped_dem_path = os.path.join(output_dir, "clipped_dem.tif")
+    dem_profile = profile.copy()
+    dem_profile.update(dtype='float32', nodata=-9999.0)
+    with rasterio.open(clipped_dem_path, 'w', **dem_profile) as dst:
+        dst.write(np.where(valid, dem, -9999.0).astype('float32'), 1)
+    print(f"DEM for routing saved to: {clipped_dem_path}")
+
+    clipped_fa_path = os.path.join(output_dir, "clipped_flow_accumulation.tif")
+    fa_profile = profile.copy()
+    fa_profile.update(dtype='float32', nodata=-1.0)
+    with rasterio.open(clipped_fa_path, 'w', **fa_profile) as dst:
+        dst.write(np.where(valid, facc, -1.0).astype('float32'), 1)
+    print(f"Flow accumulation for routing saved to: {clipped_fa_path}")
+
+    # Exits: valid cells whose D8 neighbour is off the grid, nodata, or undefined.
+    nrows, ncols = valid.shape
+    rows, cols = np.nonzero(valid)
+    d = fdir[rows, cols]
+    dr = np.zeros(d.shape, dtype=np.int64)
+    dc = np.zeros(d.shape, dtype=np.int64)
+    known = np.zeros(d.shape, dtype=bool)
+    for code, (r_, c_) in zip(_PYSHEDS_DIRMAP,
+                              ((-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1))):
+        m = d == code
+        dr[m], dc[m], known[m] = r_, c_, True
+    rn, cn = rows + dr, cols + dc
+    inside = known & (rn >= 0) & (rn < nrows) & (cn >= 0) & (cn < ncols)
+    exits = ~inside
+    exits[inside] = ~valid[rn[inside], cn[inside]]
+    big = float(facc[rows[exits], cols[exits]].max()) if exits.any() else 0.0
+    print(f"  Water leaves at {int(exits.sum()):,} edge/nodata cells; the largest "
+          f"exit drains {big * cell * cell / 1e6:,.1f} km² (its flow is hydrograph.csv's "
+          f"Q_m3s; Q_total_outflow_m3s is all water leaving the DEM).")
+
+    print("\n--- Whole-DEM set-up complete ---")
+    return {
+        "watershed_tif":     ws_path,
+        "watershed_geojson": geojson_path,
+        "clipped_dem":       clipped_dem_path,
+        "clipped_flow_accumulation": clipped_fa_path,
+    }
+
+
 def clip_dem_by_watershed(original_dem_path, watershed_raster, output_clipped_dem_path,
                           dem_profile, nodata_fill=None):
     """
@@ -1038,12 +1147,25 @@ def main(cfg):
         OUTPUT_DIR attributes (vsa_opm.config.OpmConfig or equivalent).
         Optionally exposes DELINEATION_ENGINE ('pyflwdir' default, or
         'pysheds'); a missing attribute means 'pyflwdir', matching Config.
+        MODEL_AREA='whole_dem' skips delineation (OUTPUT_POINT unused) and
+        models every valid DEM cell — see ``use_whole_dem``.
     """
     dem_path            = cfg.DEM_PATH
     target_crs_epsg     = cfg.TARGET_CRS_EPSG
     output_point_latlon = cfg.OUTPUT_POINT
     output_dir          = cfg.OUTPUT_DIR
     engine              = getattr(cfg, 'DELINEATION_ENGINE', 'pyflwdir')
+
+    if str(getattr(cfg, 'MODEL_AREA', 'watershed')) == 'whole_dem':
+        # Same reprojection, conditioning and terrain as below, then every
+        # valid cell is modelled instead of delineating from OUTPUT_POINT.
+        analyze_terrain(dem_path, target_crs_epsg, output_dir, engine=engine,
+                        conditioning=getattr(cfg, 'DEM_CONDITIONING', None),
+                        min_slope=float(getattr(cfg, 'MIN_SLOPE', 1e-4)),
+                        lake_mask_path=getattr(cfg, 'DEM_LAKE_MASK', None))
+        use_whole_dem(output_dir, target_crs_epsg)
+        print(f"All output files are saved in the '{output_dir}' directory.")
+        return
 
     os.makedirs(output_dir, exist_ok=True)
     if not os.path.exists(dem_path):

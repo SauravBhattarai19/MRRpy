@@ -24,18 +24,21 @@ DEM_PATH: ''
 # given: the box to download, in longitude/latitude degrees, e.g. 85.1, 27.5,
 # 85.6, 27.9. Make it a little larger than the basin.
 #   null means: no download.
-DEM_BOUNDS_WGS84: [85.1919, 27.5369, 85.5272, 27.8194]
+DEM_BOUNDS_WGS84: null
 
 # DEM dataset to download — Which global elevation dataset to download. 'MRRpy
 # list-dems' compares coverage and resolution.
 #   Choices (name or number): 0=nasadem, 1=srtm, 2=merit, 3=alos,
 #   4=copernicus_glo30, 5=fabdem, 6=usgs_3dep_1m, 7=gmted2010
-DEM_SOURCE: alos
+DEM_SOURCE: nasadem
 
-# Download resolution (m) — Average the downloaded DEM to this pixel size (e.g.
-# 90 for faster runs). Empty keeps the dataset's native resolution.
-#   null means: native resolution.
-DEM_SCALE_M: 90.0
+# Area to model — Either the watershed that drains to one outlet point, or
+# every cell of the DEM with no outlet. Use the whole DEM to see how water
+# moves over a whole area, such as a city or a valley with several rivers.
+# Water then leaves wherever it flows off the edge of the DEM, so the DEM
+# should cover the uphill land that drains into your area.
+#   Choices (name or number): 0=watershed, 1=whole_dem
+MODEL_AREA: watershed
 
 # Basin outlet (latitude, longitude) — The river point your basin drains to.
 # MRRpy delineates everything upstream of it and reports the flow there.
@@ -56,7 +59,7 @@ OUTPUT_DIR: output/
 # cover maps). Leave it empty to work offline. The GEE_PROJECT environment
 # variable works too.
 #   null means: not set (offline).
-GEE_PROJECT: ee-074bce151saurav
+GEE_PROJECT: null
 
 
 # =============================================================================
@@ -67,16 +70,14 @@ GEE_PROJECT: ee-074bce151saurav
 # Rainfall input — Where the rain comes from.
 #   Choices (name or number): 0=uniform, 1=thiessen, 2=idw, 3=imerg_thiessen,
 #   4=imerg_idw
-PRECIP_METHOD: imerg_thiessen
+PRECIP_METHOD: uniform
 
-# Storm start (UTC) — When the event starts, as 'YYYY-MM-DD HH:MM' in UTC. Sets
-# the satellite rain window and the date of the satellite soil-moisture map.
-#   null means: not set.
-EVENT_START_UTC: 2024-09-26 00:00
+# Rain intensity (mm/h) — Constant rain rate of the design storm. Use 0 to
+# route an inflow hydrograph only.
+RAIN_INTENSITY_MM_HR: 20.0
 
-# Download IMERG again — Ignore IMERG files cached in the results folder and
-# download them again.
-PRECIP_IMERG_FORCE_DOWNLOAD: true
+# Storm duration (hours) — How long the design storm lasts.
+RAIN_DURATION_HOURS: 3.0
 
 
 # =============================================================================
@@ -88,56 +89,7 @@ PRECIP_IMERG_FORCE_DOWNLOAD: true
 # ground.
 #   Choices (name or number): 0=none, 1=coefficient, 2=raster, 3=scs_cn,
 #   4=physical
-RUNOFF_SOURCE: physical
-
-# Processes to include — Pick any combination; they are combined per cell
-# without counting water twice.
-#   Choices (name or number): 0=impervious, 1=infiltration_excess,
-#   2=saturation_excess  — a list
-RUNOFF_MECHANISMS: [impervious, infiltration_excess]
-
-# Impervious areas from — Where the paved / built-up fraction of each cell
-# comes from.
-#   Choices (name or number): 0=none, 1=lcz, 2=lulc, 3=raster
-IMPERVIOUS_SOURCE: lcz
-
-# Soil suction from — Green-Ampt wetting-front suction: one value or from soil
-# texture.
-#   Choices (name or number): 0=scalar, 1=texture
-GA_SUCTION_SOURCE: texture
-
-# Soil suction head (m) — Green-Ampt wetting-front suction (loam about 0.1 to
-# 0.2 m). Also fills gaps in the texture map.
-GA_SUCTION_M: 0.15
-
-# Infiltration rate from — Where the soil's vertical infiltration rate (Ksat)
-# comes from.
-#   Choices (name or number): 0=scalar, 1=gee, 2=raster
-GA_KSAT_SOURCE: gee
-
-# Soil infiltration rate (vertical Ksat) (mm/h) — How fast saturated soil soaks
-# up water: sand about 50, loam about 10, clay about 1 mm/h. Also fills gaps in
-# a map.
-GA_KSAT_MMHR: 12.0
-
-# Soil storage from — Where the soil's water-storage capacity and starting
-# dryness come from.
-#   Choices (name or number): 0=manual, 1=gee
-VSA_SD_SOURCE: gee
-
-# Root-zone depth (soil storage) (m) — Depth of soil that can hold water before
-# it saturates. Replaced by satellite estimates when soil storage comes from
-# SERVES.
-VSA_SD_MAX_INITIAL: 0.1
-
-# Satellite for soil moisture (SERVES) — Which satellite's land-surface data
-# SERVES uses.
-#   Choices (name or number): 0=landsat, 1=sentinel2, 2=modis
-SERVES_SATELLITE: modis
-
-# SoilGrids depth — Which soil layer to read from SoilGrids.
-#   Choices (name or number): 0=b0, 1=b10, 2=b30, 3=b60, 4=b100, 5=b200
-SOILGRIDS_DEPTH: b0
+RUNOFF_SOURCE: none
 
 
 # =============================================================================
@@ -148,7 +100,7 @@ SOILGRIDS_DEPTH: b0
 # Ground roughness from — Where Manning's n (surface roughness) of each cell
 # comes from.
 #   Choices (name or number): 0=scalar, 1=lulc, 2=lcz, 3=raster
-MANNINGS_N_SOURCE: lulc
+MANNINGS_N_SOURCE: scalar
 
 # Manning's n of the ground — Surface roughness: pavement about 0.015, grass
 # 0.03 to 0.05, forest about 0.1. Also fills gaps in maps.
@@ -170,12 +122,7 @@ MANNINGS_N_CHANNEL: 0.035
 #   Forms: Automatic global estimate (no data needed); My 2-year flood at the
 #   outlet or a gauge; A formula or regional preset
 #   null means: automatic global estimate.
-CHANNEL_QBF_M3S: 500.0
-
-# …measured at a gauge draining (km²) — Drainage area of the gauge your 2-year
-# flood comes from. Empty means the basin outlet.
-#   null means: the basin outlet.
-CHANNEL_QBF_AREA_KM2: null
+CHANNEL_QBF_M3S: null
 
 
 # =============================================================================
@@ -186,7 +133,7 @@ CHANNEL_QBF_AREA_KM2: null
 # Routing method — How water moves from cell to cell.
 #   Choices (name or number): 0=kinematic, 1=diffusive, 2=muskingum, 3=dynamic,
 #   4=diffusive_implicit
-ROUTING_SCHEME: diffusive_implicit
+ROUTING_SCHEME: kinematic
 
 # Simulation length (hours) — How long to simulate, from the start of the rain.
 TOTAL_SIMULATION_TIME_HOURS: 96.0
@@ -219,6 +166,6 @@ SAVE_FIELDS: false
 BACKEND: cpu
 
 
-# The other 81 settings keep their defaults. To see and edit them all:
+# The other 93 settings keep their defaults. To see and edit them all:
 #   MRRpy init-config --full -o all_settings.yaml     (every setting, explained)
 #   MRRpy wizard --edit <this file> --advanced

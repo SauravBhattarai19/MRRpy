@@ -280,13 +280,20 @@ class MainDialog(QDialog):
         self._start_dem_step("analyze_terrain", params)
 
     def _on_delineate(self):
-        """Snap the picked outlet to the stream network and delineate the watershed."""
+        """Snap the picked outlet to the stream network and delineate the
+        watershed — or, in whole-DEM mode, set up every DEM cell instead."""
         if not self._deps_ok():
             return
         out = self.tab_dem.get_output_dir()
         if not out or not os.path.exists(os.path.join(out, "flow_direction.tif")):
             QMessageBox.warning(self, "Analyze terrain first",
-                                "Run “Analyze terrain” before delineating the watershed.")
+                                "Run “Analyze terrain” before choosing the area to model.")
+            return
+        if self.tab_dem.is_whole_dem():
+            self._start_dem_step("whole_dem", {
+                "output_dir": out,
+                "target_crs_epsg": self.tab_dem.get_target_crs(),
+            })
             return
         lat, lon = self.tab_dem.get_outlet_point()
         params = {
@@ -325,19 +332,26 @@ class MainDialog(QDialog):
             streams = add_vector(result.get("streams"), "Streams")
             zoom_to_layer(self._iface, streams or dem)
             self.tab_dem.set_terrain_ready(True)
-            self.tab_dem.activate_pick()
-            self._append_log("\n[OK] Terrain ready — pick your outlet on a stream.")
-            self._iface.messageBar().pushInfo("MRRpy_plugin", "Streams drawn — pick your outlet on a stream, then Delineate.")
-        elif task == "delineate":
-            ws = add_vector(result.get("watershed_geojson"), "Watershed boundary")
+            if self.tab_dem.is_whole_dem():
+                self._append_log("\n[OK] Terrain ready — choose “Use whole DEM”.")
+                self._iface.messageBar().pushInfo("MRRpy_plugin", "Terrain ready — choose “Use whole DEM”.")
+            else:
+                self.tab_dem.activate_pick()
+                self._append_log("\n[OK] Terrain ready — pick your outlet on a stream.")
+                self._iface.messageBar().pushInfo("MRRpy_plugin", "Streams drawn — pick your outlet on a stream, then Delineate.")
+        elif task in ("delineate", "whole_dem"):
+            whole = task == "whole_dem"
+            ws = add_vector(result.get("watershed_geojson"),
+                            "Modelled area (whole DEM)" if whole else "Watershed boundary")
             zoom_to_layer(self._iface, ws)
-            self._append_log("\n[OK] Watershed delineated.")
+            self._append_log("\n[OK] Whole DEM set up for routing." if whole
+                             else "\n[OK] Watershed delineated.")
             # The DEM stage would only redo this — skip it on Run.
             self.chk_dem.setChecked(False)
             self._dem_stage_skipped = True
             self._append_log("[INFO] “DEM Pre-processing” unticked — Run will use this "
-                             "watershed. Tick it to recompute from the DEM.")
-            self._iface.messageBar().pushSuccess("MRRpy_plugin", "Watershed delineated — you can now run Routing.")
+                             "area. Tick it to recompute from the DEM.")
+            self._iface.messageBar().pushSuccess("MRRpy_plugin", ("Whole DEM set up" if whole else "Watershed delineated") + " — you can now run Routing.")
 
     def _on_dem_step_error(self, message: str):
         self._end_dem_step()
@@ -578,7 +592,7 @@ def _write_config_py(cfg: Config, path: str):
     sections = [
         ("1. EVENT & SCENARIO", [
             "DEM_PATH", "DEM_BOUNDS_WGS84", "DEM_SOURCE", "DEM_SCALE_M",
-            "TARGET_CRS_EPSG", "OUTPUT_POINT", "OUTPUT_DIR",
+            "TARGET_CRS_EPSG", "MODEL_AREA", "OUTPUT_POINT", "OUTPUT_DIR",
             "DELINEATION_ENGINE", "EVENT_START_UTC", "TOTAL_SIMULATION_TIME_HOURS",
             "IMERG_UTC_OFFSET_HOURS", "LULC_LOOKUP_CSV", "LCZ_LOOKUP_CSV",
             "GEE_PROJECT",

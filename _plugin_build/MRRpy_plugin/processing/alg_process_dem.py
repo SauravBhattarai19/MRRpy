@@ -11,6 +11,7 @@ Inputs
 ------
   INPUT_DEM       : raster layer or file path
   TARGET_CRS      : target coordinate reference system
+  MODEL_AREA      : watershed above the outlet, or the whole DEM (no outlet)
   OUTLET_LAT      : outlet latitude  (WGS-84 decimal degrees)
   OUTLET_LON      : outlet longitude (WGS-84 decimal degrees)
   OUTPUT_DIR      : folder for output rasters
@@ -51,6 +52,7 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
     TARGET_CRS = "TARGET_CRS"
     ENGINE = "ENGINE"
     CONDITIONING = "CONDITIONING"
+    MODEL_AREA = "MODEL_AREA"
     OUTLET_LAT = "OUTLET_LAT"
     OUTLET_LON = "OUTLET_LON"
     OUTPUT_DIR = "OUTPUT_DIR"
@@ -66,6 +68,10 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
     _CONDITIONING_OPTIONS = [None, "carve_spread", "carve", "fill"]
     _CONDITIONING_LABELS = ["Engine default (pyflwdir: carve_spread; pysheds: fill)",
                             "carve_spread (recommended)", "carve", "fill (original)"]
+    # MRRpy.config.Config.MODEL_AREA values, in dropdown order.
+    _AREA_OPTIONS = ["watershed", "whole_dem"]
+    _AREA_LABELS = ["Watershed above the outlet point",
+                    "Whole DEM (no outlet; outlet latitude/longitude ignored)"]
 
     def createInstance(self):  # noqa: N802
         return ProcessDemAlgorithm()
@@ -88,6 +94,9 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
             "Reprojects the DEM to the target CRS, fills sinks, computes D8 "
             "flow direction and accumulation, snaps the outlet point to the "
             "nearest stream cell, and delineates the watershed.\n\n"
+            "Area to model: 'Whole DEM' skips the outlet and delineation and "
+            "models every DEM cell; water leaves wherever it flows off the DEM "
+            "edge.\n\n"
             "Delineation engine: pyflwdir (default, priority-flood fill — "
             "correctly routes flow across large flat reservoirs/lakes) or "
             "pysheds (legacy engine).\n\n"
@@ -116,6 +125,12 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterEnum(
                 self.CONDITIONING, "DEM conditioning",
                 options=self._CONDITIONING_LABELS, defaultValue=0
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.MODEL_AREA, "Area to model",
+                options=self._AREA_LABELS, defaultValue=0
             )
         )
         self.addParameter(
@@ -169,6 +184,8 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
             DEM_PATH=dem_path,
             TARGET_CRS_EPSG=crs.authid(),
             OUTPUT_POINT=(lat, lon),
+            MODEL_AREA=self._AREA_OPTIONS[
+                self.parameterAsEnum(parameters, self.MODEL_AREA, context)],
             OUTPUT_DIR=out_dir,
             DELINEATION_ENGINE=engine,
             DEM_CONDITIONING=self._CONDITIONING_OPTIONS[
