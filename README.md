@@ -39,9 +39,14 @@ run_pipeline(cfg, stages=("process_dem", "routing"))   # → results/hydrograph.
 Or from the command line:
 
 ```bash
-MRRpy init-config -o run.yaml   # template config
+MRRpy wizard                    # answer a few questions → run.yaml
 MRRpy run -c run.yaml           # process_dem + routing
 ```
+
+Prefer a form? In Jupyter, `MRRpy.ConfigForm()` is a step-by-step form like the QGIS
+plugin (`pip install "MRRpy[notebook]"`).
+Prefer a file? `MRRpy init-config -o run.yaml` writes a commented template, and
+`MRRpy explain <SETTING>` explains any setting.
 
 ## What it offers
 
@@ -54,8 +59,9 @@ MRRpy run -c run.yaml           # process_dem + routing
 - **Satellite forcing** — optional IMERG rainfall, SERVES soil deficit,
   SoilGrids, LULC/LCZ via Google Earth Engine (degrades gracefully offline).
 - **CPU / GPU** — one code path (NumPy or CuPy), automatic CPU fallback.
-- **Three interfaces** — Python API, a `MRRpy` CLI, and a QGIS plugin, all
-  driven by one `Config` object.
+- **Interfaces for every taste** — Python API, a `MRRpy` CLI with a
+  question-and-answer `wizard`, a Jupyter form, and a QGIS plugin, all driven
+  by one `Config` object.
 
 ## Links
 

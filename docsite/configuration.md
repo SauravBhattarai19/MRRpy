@@ -35,7 +35,8 @@ Config(PRECIP_METHOD=1,          ROUTING_SCHEME=2)             # codes — ident
 ```
 
 Discover them anytime with `MRRpy list-options` or
-`Config.describe_options()`:
+`Config.describe_options()`, and get the meaning of any setting with
+`MRRpy explain <NAME>` (see also [Build a config interactively](interactive.md)):
 
 | Option | Codes |
 |---|---|
@@ -43,7 +44,7 @@ Discover them anytime with `MRRpy list-options` or
 | `RUNOFF_SOURCE` | `0` none · `1` coefficient · `2` raster · `3` scs_cn · `4` physical |
 | `RUNOFF_CN_SOURCE` | `0` scalar · `1` gee · `2` raster |
 | `RUNOFF_CN_AMC` | `0` i (dry) · `1` ii (normal) · `2` iii (wet) |
-| `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum · `3` dynamic |
+| `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum · `3` dynamic · `4` diffusive_implicit |
 | `DELINEATION_ENGINE` | `0` pysheds · `1` pyflwdir (default) |
 | `BACKEND` | `0` cpu · `1` gpu |
 | `GPU_PRECISION` | `0` float64 · `1` float32 |
@@ -55,7 +56,7 @@ Discover them anytime with `MRRpy list-options` or
 | `SERVES_SATELLITE` | `0` landsat · `1` sentinel2 · `2` modis |
 | `SOILGRIDS_DEPTH` | `0` b0 · `1` b10 · `2` b30 · `3` b60 · `4` b100 · `5` b200 |
 | `MANNINGS_N_SOURCE` | `0` scalar · `1` lulc · `2` lcz · `3` raster |
-| `DEM_SOURCE` | `0` nasadem · `1` srtm · `2` merit · `3` alos · `4` copernicus_glo30 · `5` usgs_3dep_1m · `6` gmted2010 |
+| `DEM_SOURCE` | `0` nasadem · `1` srtm · `2` merit · `3` alos · `4` copernicus_glo30 · `5` fabdem · `6` usgs_3dep_1m · `7` gmted2010 |
 | `RUNOFF_MECHANISMS` (list) | `0` impervious · `1` infiltration_excess · `2` saturation_excess |
 
 !!! tip "What do these mean?"

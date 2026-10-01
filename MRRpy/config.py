@@ -613,6 +613,12 @@ class Config:
         if ext == ".json":
             with open(path) as f:
                 data = json.load(f)
+            # JSON object keys are always strings: restore the integer keys of
+            # per-Strahler-order tables ({"1": 3.0} → {1: 3.0}).
+            for key, value in data.items():
+                if (isinstance(value, dict) and value
+                        and all(isinstance(k, str) and k.strip().isdigit() for k in value)):
+                    data[key] = {int(k): v for k, v in value.items()}
             return cls.from_dict(data)
 
         if ext == ".py":
