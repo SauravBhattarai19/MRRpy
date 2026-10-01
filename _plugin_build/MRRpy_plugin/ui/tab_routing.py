@@ -457,6 +457,14 @@ class TabRouting(QWidget):
         self.out_interval.setToolTip("How often to record a hydrograph row (600 s = 10-minute output).")
         form.addRow("Output interval:", self.out_interval)
 
+        self.save_fields = QCheckBox(
+            "Save maps over time (depth, velocity, discharge at every output interval)")
+        self.save_fields.setToolTip(
+            "Needed for the peak-depth maps and the flow animation on the Results tab.\n"
+            "Uses memory: cells × saved times × 3 maps × 4 bytes (the log shows the\n"
+            "estimate). For a large area, raise the output interval.")
+        form.addRow(self.save_fields)
+
         root.addWidget(grp)
 
     # ── Backend ────────────────────────────────────────────────────────────────
@@ -741,6 +749,7 @@ class TabRouting(QWidget):
         self.precision_combo.setCurrentIndex(0 if cfg.GPU_PRECISION == "float64" else 1)
 
         self.mass_balance.setChecked(bool(getattr(cfg, "MASS_BALANCE_REPORT", True)))
+        self.save_fields.setChecked(bool(getattr(cfg, "SAVE_FIELDS", False)))
         self.min_slope.setValue(float(cfg.MIN_SLOPE))
         self.min_depth.setValue(float(cfg.MIN_DEPTH_M))
         self.slope_cap.setValue(float(getattr(cfg, "MANNING_SLOPE_CAP", None) or 0.0))
@@ -813,6 +822,7 @@ class TabRouting(QWidget):
         cfg.GPU_PRECISION = self.get_precision()
 
         cfg.MASS_BALANCE_REPORT = self.mass_balance.isChecked()
+        cfg.SAVE_FIELDS = self.save_fields.isChecked()
         cfg.MIN_SLOPE = self.min_slope.value()
         cfg.MIN_DEPTH_M = self.min_depth.value()
         cfg.MANNING_SLOPE_CAP = self.slope_cap.value() or None

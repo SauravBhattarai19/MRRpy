@@ -128,6 +128,16 @@ def initialise_grid(cfg):
 
     # --- Index of outlet in the sorted list ---
     outlet_pos = n_cells - 1  # last element (highest accumulation = downstream-most)
+    whole_dem = str(getattr(cfg, 'MODEL_AREA', 'watershed')) == 'whole_dem'
+    if whole_dem:
+        _n_exit = int((ds_idx < 0).sum())
+        _a_main = float(faccum[outlet_rc]) * cell_size ** 2 / 1e6
+        _lat, _lon = terrain.cell_latlon(outlet_rc, transform, cfg.TARGET_CRS_EPSG)
+        print(f"  Whole DEM      |  {_n_exit:,} exit cells; main exit (largest drainage, "
+              f"{_a_main:,.1f} km²) at row={outlet_rc[0]} col={outlet_rc[1]}"
+              + (f" ≈ lat {_lat:.5f}, lon {_lon:.5f}" if _lat is not None else "")
+              + "\n                 |  hydrograph Q_m3s = main exit; Q_total_outflow_m3s = all "
+              "water leaving the DEM.  Add ROUTING_GAUGES for other points.")
 
     print("  Initialisation complete.\n")
 
@@ -150,6 +160,7 @@ def initialise_grid(cfg):
         "outlet_pos" : outlet_pos,
         "outlet_rc"  : outlet_rc,
         "transform"  : transform,
+        "whole_dem"  : whole_dem,     # MODEL_AREA='whole_dem' (many exits, no outlet point)
     }
 
     # ── Resolve spatially variable Manning's n ──────────────────────────────
@@ -291,7 +302,8 @@ def run_time_loop(grid_data, cfg):
 
     Returns
     -------
-    hydrograph : list of (time_s, Q_out_m3s) tuples
+    hydrograph : list of (time_s, Q_out_m3s) tuples — with a third value, the
+                 outflow over every exit cell, when MODEL_AREA='whole_dem'
     """
     n         = grid_data.get("n_1d", cfg.MANNINGS_N)
     cell_area = grid_data["cell_area"]
@@ -544,6 +556,9 @@ def run_time_loop(grid_data, cfg):
     # the aliasing of sub-step dispersive ripples / adaptive-dt jitter that makes a
     # point-sampled instantaneous Q_out look like a saw-tooth at the output cadence.
     _out_vol_dev = xp.zeros((), dtype=_dtype)   # Σ outlet outflow volume this interval [m³]
+    # Whole-DEM runs also report all water leaving the DEM (every exit cell).
+    _whole_dem   = bool(grid_data.get("whole_dem", False))
+    _tot_vol_dev = xp.zeros((), dtype=_dtype)   # Σ outflow volume at all exits this interval [m³]
     _last_out_t  = 0.0                          # interval start time [s]
     t_wall_start = time.time()
 
@@ -956,7 +971,10 @@ def run_time_loop(grid_data, cfg):
 
         # ── Mass-balance accumulation (device reductions; transferred once at end) ──
         mb_in   += rain_vol.sum()                              # effective runoff entering routing
-        mb_out  += (Q_out_vol_1d * boundary_f).sum()          # volume leaving the domain [m³]
+        _step_out = (Q_out_vol_1d * boundary_f).sum()
+        mb_out  += _step_out                                  # volume leaving the domain [m³]
+        if _whole_dem:
+            _tot_vol_dev += _step_out
         mb_rain += rain_1d.sum() * (cell_area * dt)           # gross rainfall (for runoff ratio)
         if bc_rate_1d is not None:
             mb_bc += bc_rate_1d.sum() * dt                    # upstream BC inflow [m³]
@@ -979,13 +997,17 @@ def run_time_loop(grid_data, cfg):
             _interval = t_seconds - _last_out_t
             Q_outlet  = float(_out_vol_dev.item()) / max(_interval, _eps) + q_base
             _out_vol_dev.fill(0)            # reset accumulator for the next interval
+            if _whole_dem:
+                Q_total = float(_tot_vol_dev.item()) / max(_interval, _eps) + q_base
+                _tot_vol_dev.fill(0)
             _last_out_t = t_seconds
         elif _at_progress:
             # Console-only: instantaneous rate is fine for the progress line.
             Q_outlet = float(Q_out_1d[outlet_pos].item()) + q_base
 
         if _at_output:
-            hydrograph.append((t_seconds, Q_outlet))
+            hydrograph.append((t_seconds, Q_outlet, Q_total) if _whole_dem
+                              else (t_seconds, Q_outlet))
             if recorder is not None:
                 # depth_1d / Q_out_1d / A_xs_1d are this step's (start-of-step
                 # depth → resulting discharge); volume_1d is end-of-step.

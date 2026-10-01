@@ -10,6 +10,8 @@ Features
 - "Load output layers into QGIS" button
 - Export: PNG, CSV buttons
 - Peak discharge & timing summary label
+- Flood maps from the saved fields (SAVE_FIELDS): peak-depth/discharge
+  GeoTIFFs loaded as layers, and an animation of the flow spreading
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -98,6 +100,35 @@ class TabResults(QWidget):
         h_actions.addStretch()
 
         root.addWidget(grp_actions)
+
+        # ── Flood maps from the saved fields (needs "Save maps over time") ────
+        grp_maps = QGroupBox("Flood maps")
+        v_maps = QVBoxLayout(grp_maps)
+        self.maps_hint = QLabel(
+            "Turn on “save maps over time” before running to get peak-depth maps "
+            "and an animation of the flow.")
+        self.maps_hint.setWordWrap(True)
+        v_maps.addWidget(self.maps_hint)
+        h_maps = QHBoxLayout()
+        self.peak_maps_btn = QPushButton(QgsApplication.getThemeIcon("/mActionAddRasterLayer.svg"),
+                                         "Load Peak Maps")
+        self.peak_maps_btn.setToolTip(
+            "Write max_depth.tif, max_discharge.tif and the time each cell peaked,\n"
+            "and add them to the QGIS project.")
+        self.peak_maps_btn.setEnabled(False)
+        self.peak_maps_btn.clicked.connect(self._load_peak_maps)
+        self.animate_btn = QPushButton(QgsApplication.getThemeIcon("/mActionSaveMapAsImage.svg"),
+                                       "Save Flow Animation…")
+        self.animate_btn.setToolTip(
+            "Save a GIF of the water depth and the discharge spreading over the\n"
+            "map, side by side, with the hydrograph. Large areas can take a minute.")
+        self.animate_btn.setEnabled(False)
+        self.animate_btn.clicked.connect(self._save_animation)
+        h_maps.addWidget(self.peak_maps_btn)
+        h_maps.addWidget(self.animate_btn)
+        h_maps.addStretch()
+        v_maps.addLayout(h_maps)
+        root.addWidget(grp_maps)
         root.addStretch()
 
     # ── Plot helpers ──────────────────────────────────────────────────────────
@@ -172,6 +203,14 @@ class TabResults(QWidget):
         self.load_layers_btn.setEnabled(True)
         self.export_csv_btn.setEnabled(self._df is not None)
         self.export_png_btn.setEnabled(_MPL_AVAILABLE and self._df is not None)
+        has_maps = self._fields_dir() is not None
+        self.peak_maps_btn.setEnabled(has_maps)
+        self.animate_btn.setEnabled(_MPL_AVAILABLE and has_maps)
+        self.maps_hint.setText(
+            "Maps over time were saved — load the peak maps or save an animation."
+            if has_maps else
+            "Turn on “save maps over time” before running to get peak-depth maps "
+            "and an animation of the flow.")
 
     # ── Button slots ──────────────────────────────────────────────────────────
 
@@ -200,6 +239,64 @@ class TabResults(QWidget):
         else:
             self._iface.messageBar().pushWarning("MRRpy_plugin", "No valid output layers found. Run the model first."
             )
+
+    def _fields_dir(self):
+        """The run's saved-maps folder, or None when SAVE_FIELDS was off."""
+        import os
+        d = self._result.get("fields_dir")
+        return d if d and os.path.isfile(os.path.join(d, "fields.npz")) else None
+
+    def _saved_vars(self):
+        """Quantities recorded in the saved maps (from fields_meta.json)."""
+        import json
+        import os
+        try:
+            with open(os.path.join(self._fields_dir(), "fields_meta.json")) as fh:
+                return json.load(fh).get("vars", [])
+        except (OSError, ValueError, TypeError):
+            return []
+
+    def _load_peak_maps(self):
+        """Write the peak GeoTIFFs from the saved maps and add them as layers."""
+        from qgis.PyQt.QtWidgets import QApplication
+        from .layer_utils import add_raster
+        from MRRpy.plotting import export_peak_maps
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            written = export_peak_maps(self._fields_dir())
+        except Exception as exc:  # noqa: BLE001
+            self._iface.messageBar().pushCritical("MRRpy_plugin", f"Peak maps failed: {exc}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        names = {"max_depth": "Peak water depth (m)",
+                 "max_discharge": "Peak discharge (m³/s)",
+                 "max_velocity": "Peak velocity (m/s)",
+                 "time_of_max_depth_hours": "Time of peak depth (h)"}
+        loaded = [n for k, n in names.items() if k in written and add_raster(written[k], n)]
+        self._iface.messageBar().pushSuccess(
+            "MRRpy_plugin", f"Loaded {len(loaded)} map(s): {', '.join(loaded)}")
+
+    def _save_animation(self):
+        """Ask for a .gif path and render the flow animation there."""
+        import os
+        from qgis.PyQt.QtWidgets import QApplication, QFileDialog
+        from MRRpy.plotting import animate_fields
+        start = os.path.join(os.path.dirname(self._fields_dir()), "depth_discharge_animation.gif")
+        path, _ = QFileDialog.getSaveFileName(self, "Save Flow Animation", start,
+                                              "GIF animation (*.gif)")
+        if not path:
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            have = [v for v in ("depth", "discharge") if v in self._saved_vars()]
+            animate_fields(self._fields_dir(), have or "depth", path)
+        except Exception as exc:  # noqa: BLE001
+            self._iface.messageBar().pushCritical("MRRpy_plugin", f"Animation failed: {exc}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._iface.messageBar().pushSuccess("MRRpy_plugin", f"Animation saved → {path}")
 
     def _export_csv(self):
         """Save / copy the hydrograph CSV to a user-chosen location."""

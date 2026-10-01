@@ -14,7 +14,9 @@ Inputs (key ones — all config.py parameters are exposed)
   DEM_TIF         : clipped DEM raster
   FLOW_DIR_TIF    : flow direction raster
   FLOW_ACCUM_TIF  : flow accumulation raster
-  WATERSHED_TIF   : watershed mask raster
+  WATERSHED_TIF   : watershed mask raster (or the whole-DEM mask)
+  MODEL_AREA      : watershed | whole_dem (how the rasters above were made)
+  SAVE_FIELDS     : save depth/velocity/discharge maps over time (fields/)
   PRECIP_METHOD   : uniform | thiessen | idw | imerg_thiessen | imerg_idw
   RUNOFF_SOURCE   : none | coefficient | raster | scs_cn | physical
   ROUTING_SCHEME  : kinematic | diffusive | muskingum | dynamic | diffusive_implicit
@@ -54,6 +56,9 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
     FLOW_DIR_TIF = "FLOW_DIR_TIF"
     FLOW_ACCUM_TIF = "FLOW_ACCUM_TIF"
     WATERSHED_TIF = "WATERSHED_TIF"
+    MODEL_AREA = "MODEL_AREA"
+    SAVE_FIELDS = "SAVE_FIELDS"
+    _AREA_OPTIONS = ["watershed", "whole_dem"]
 
     # Routing parameters
     MANNINGS_N = "MANNINGS_N"
@@ -167,6 +172,17 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterRasterLayer(self.FLOW_DIR_TIF, "Flow direction raster"))
         self.addParameter(QgsProcessingParameterRasterLayer(self.FLOW_ACCUM_TIF, "Flow accumulation raster"))
         self.addParameter(QgsProcessingParameterRasterLayer(self.WATERSHED_TIF, "Watershed mask raster"))
+        self.addParameter(QgsProcessingParameterEnum(
+            self.MODEL_AREA, "Area to model (as set in DEM Pre-processing)",
+            options=["Watershed above an outlet",
+                     "Whole DEM (no outlet; reports all water leaving the DEM too)"],
+            defaultValue=0
+        ))
+        self.addParameter(QgsProcessingParameterBoolean(
+            self.SAVE_FIELDS,
+            "Save maps over time (for peak-depth maps and the flow animation)",
+            defaultValue=False
+        ))
 
         # ── Routing parameters ────────────────────────────────────────────────
         self.addParameter(QgsProcessingParameterNumber(
@@ -443,6 +459,9 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         cfg.ROUTING_FLOW_DIR_PATH = _rpath(self.FLOW_DIR_TIF)
         cfg.ROUTING_FLOW_ACCUM_PATH = _rpath(self.FLOW_ACCUM_TIF)
         cfg.ROUTING_WATERSHED_MASK_PATH = _rpath(self.WATERSHED_TIF)
+        cfg.MODEL_AREA = self._AREA_OPTIONS[
+            self.parameterAsEnum(parameters, self.MODEL_AREA, context)]
+        cfg.SAVE_FIELDS = self.parameterAsBool(parameters, self.SAVE_FIELDS, context)
 
         cfg.MANNINGS_N = self.parameterAsDouble(parameters, self.MANNINGS_N, context)
         cfg.TIME_STEP_SECONDS = self.parameterAsDouble(parameters, self.TIME_STEP, context)

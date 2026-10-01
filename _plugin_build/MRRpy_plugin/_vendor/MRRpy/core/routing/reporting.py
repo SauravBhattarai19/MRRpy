@@ -87,6 +87,8 @@ def save_hydrograph(hydrograph, cfg):
         time_s   – simulation time in seconds
         time_hr  – simulation time in hours
         Q_m3s    – discharge at the outlet [m³/s]
+    plus, for a whole-DEM run (rows carry a third value):
+        Q_total_outflow_m3s – all water leaving the DEM, every exit cell [m³/s]
     Also prints peak flow and time-to-peak.
     """
     times_s  = np.array([h[0] for h in hydrograph])
@@ -97,6 +99,8 @@ def save_hydrograph(hydrograph, cfg):
         "time_hr" : times_s / 3600.0,
         "Q_m3s"   : Q_values,
     })
+    if hydrograph and len(hydrograph[0]) > 2:
+        df["Q_total_outflow_m3s"] = np.array([h[2] for h in hydrograph])
 
     df.to_csv(cfg.HYDROGRAPH_CSV, index=False)
     print(f"\n  Hydrograph saved → {cfg.HYDROGRAPH_CSV}")

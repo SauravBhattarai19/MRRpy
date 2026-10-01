@@ -71,7 +71,8 @@ Discover them anytime with `MRRpy list-options` or
     |---|---|
     | `DEM_PATH` | input DEM (GeoTIFF); leave empty to auto-download (see below) |
     | `DEM_BOUNDS_WGS84`, `DEM_SOURCE`, `DEM_SCALE_M` | auto-download a DEM from Earth Engine when `DEM_PATH` is empty; `DEM_SCALE_M` overrides the source's native resolution (metres/pixel) |
-    | `OUTPUT_POINT` | `(lat, lon)` of the basin outlet |
+    | `MODEL_AREA` | `"watershed"` (default: everything upstream of `OUTPUT_POINT`) or `"whole_dem"` (every DEM cell, no outlet — see [Examples §7](examples.md#7-model-the-whole-dem-and-watch-the-flow-spread)) |
+    | `OUTPUT_POINT` | `(lat, lon)` of the basin outlet (not used for `MODEL_AREA="whole_dem"`) |
     | `TARGET_CRS_EPSG` | metric CRS for the run, e.g. `"EPSG:32645"` |
     | `OUTPUT_DIR` | where results are written |
     | `CELL_SIZE` | `None` → auto-detect from DEM |

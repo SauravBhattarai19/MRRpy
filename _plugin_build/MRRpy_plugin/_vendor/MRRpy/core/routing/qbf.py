@@ -205,19 +205,32 @@ def upstream_sum(w, ds):
     return _accumulate(np.array(w, dtype=np.float64), np.asarray(ds, dtype=np.int64))
 
 
-def _outlet_attrs(cfg):
+def _lookup_point(cfg, grid_data=None):
+    """(lat, lon) where the HydroATLAS lookup is made: OUTPUT_POINT, or — for a
+    whole-DEM run, which has no outlet point — the main exit (largest drainage)."""
+    if grid_data is not None and grid_data.get("whole_dem"):
+        from .terrain import cell_latlon
+        lat, lon = cell_latlon(grid_data["outlet_rc"], grid_data["transform"],
+                               getattr(cfg, "TARGET_CRS_EPSG", None))
+        return (lat, lon) if lat is not None else None
+    return getattr(cfg, "OUTPUT_POINT", None) or None
+
+
+def _outlet_attrs(cfg, point=None):
     from ...gee.hydroatlas import basin_attributes
-    lat, lon = cfg.OUTPUT_POINT
+    lat, lon = point if point is not None else cfg.OUTPUT_POINT
     cache = os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "hydroatlas_outlet.json")
     project = getattr(cfg, "GEE_PROJECT", None) or os.environ.get("GEE_PROJECT")
     return basin_attributes(lat, lon, project=project, cache_path=cache)
 
 
-def global_q2_at_outlet(cfg, a_out_km2):
-    """Automatic 2-year flood at the outlet → (Q2, source label, p10, p90)."""
+def global_q2_at_outlet(cfg, a_out_km2, point=None):
+    """Automatic 2-year flood at the outlet → (Q2, source label, p10, p90).
+    *point* (lat, lon) overrides OUTPUT_POINT (whole-DEM runs: the main exit)."""
     attrs = None
-    if getattr(cfg, "OUTPUT_POINT", None):
-        attrs = _outlet_attrs(cfg)
+    point = point if point is not None else getattr(cfg, "OUTPUT_POINT", None)
+    if point:
+        attrs = _outlet_attrs(cfg, point)
     if attrs and attrs.get("dis_m3_pmx", 0) > 0 and attrs.get("UP_AREA", 0) > 0:
         c = GLOBAL_HYDROATLAS
         x = attrs["dis_m3_pmx"] * a_out_km2 / attrs["UP_AREA"]
@@ -240,7 +253,7 @@ def resolve_qbf(cfg, grid_data, A_km2):
                                                f"× (area ratio)^{theta:g}")
 
     if kind == "auto":
-        q2, src, p10, p90 = global_q2_at_outlet(cfg, a_out)
+        q2, src, p10, p90 = global_q2_at_outlet(cfg, a_out, _lookup_point(cfg, grid_data))
         print(f"  Channel size   | no CHANNEL_QBF_M3S → global estimate ({src}):\n"
               f"                 | 2-year flood at the outlet ≈ {q2:.0f} m³/s "
               f"(80 % of basins: {q2 / p90:.0f}–{q2 / p10:.0f}); rivers scale as area^{theta:g}.\n"
@@ -266,7 +279,8 @@ def resolve_qbf(cfg, grid_data, A_km2):
                 below = z < level if name == "A_below" else z >= level
                 env[u] = A_km2 * upstream_sum(below.astype(np.float64), ds) / ones
     if "P" in f.uses:
-        attrs = _outlet_attrs(cfg) if getattr(cfg, "OUTPUT_POINT", None) else None
+        point = _lookup_point(cfg, grid_data)
+        attrs = _outlet_attrs(cfg, point) if point else None
         if not attrs or attrs.get("pre_mm_uyr") is None:
             raise ValueError(f"Q_bf formula {f.text!r} uses P (mean annual rain) but the HydroATLAS "
                              "lookup failed — set GEE_PROJECT, or write P as a number")

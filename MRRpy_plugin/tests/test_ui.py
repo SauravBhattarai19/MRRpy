@@ -323,6 +323,58 @@ def test_delineation_links_to_dem_stage(dialog):
     assert dialog.chk_dem.isChecked()               # new outlet → recompute
 
 
+def test_processing_algs_offer_whole_dem(qgis_app):
+    from MRRpy_plugin.processing.alg_router import RoutingAlgorithm
+    from MRRpy_plugin.processing.alg_process_dem import ProcessDemAlgorithm
+    for alg in (RoutingAlgorithm(), ProcessDemAlgorithm()):
+        alg.initAlgorithm()
+        p = alg.parameterDefinition("MODEL_AREA")
+        assert p is not None and len(p.options()) == 2 and "Whole DEM" in p.options()[1]
+    r = RoutingAlgorithm()
+    r.initAlgorithm()
+    assert r.parameterDefinition("SAVE_FIELDS") is not None
+
+
+def test_model_area_roundtrip(dialog):
+    tab = dialog.tab_dem
+    assert not tab.is_whole_dem() and tab.delineate_btn.text() == "Delineate watershed"
+    cfg = Config(MODEL_AREA="whole_dem")
+    tab.apply_config(cfg)
+    assert tab.is_whole_dem() and tab.delineate_btn.text() == "Use whole DEM"
+    assert tab._coord_box.isHidden()                 # no outlet to pick
+    out = Config()
+    tab.write_to_config(out)
+    assert out.MODEL_AREA == "whole_dem"
+    tab.apply_config(Config(MODEL_AREA="watershed"))
+    assert not tab.is_whole_dem() and not tab._coord_box.isHidden()
+
+
+def test_whole_dem_step_dispatch(dialog, tmp_path, monkeypatch):
+    monkeypatch.setattr(dialog, "_deps_ok", lambda: True)
+    (tmp_path / "flow_direction.tif").write_bytes(b"")
+    dialog.tab_dem.output_dir_widget.setFilePath(str(tmp_path))
+    dialog.tab_dem.area_whole.setChecked(True)
+    started = []
+    monkeypatch.setattr(dialog, "_start_dem_step", lambda task, params: started.append(task))
+    dialog._on_delineate()
+    assert started == ["whole_dem"]
+    dialog._on_dem_step_finished({"task": "whole_dem"})
+    assert not dialog.chk_dem.isChecked()           # Run reuses the whole-DEM set-up
+
+
+def test_save_fields_roundtrip_and_map_buttons(dialog, tmp_path):
+    dialog.tab_routing.apply_config(Config(SAVE_FIELDS=True))
+    cfg = Config()
+    dialog.tab_routing.write_to_config(cfg)
+    assert cfg.SAVE_FIELDS is True
+    res = dialog.tab_results
+    res.update_results({"fields_dir": str(tmp_path)})          # no fields.npz yet
+    assert not res.peak_maps_btn.isEnabled()
+    (tmp_path / "fields.npz").write_bytes(b"")
+    res.update_results({"fields_dir": str(tmp_path)})
+    assert res.peak_maps_btn.isEnabled()
+
+
 def test_routing_without_watershed_is_blocked(dialog, tmp_path, monkeypatch):
     from qgis.PyQt.QtWidgets import QMessageBox
     shown = []

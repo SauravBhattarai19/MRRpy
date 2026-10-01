@@ -303,10 +303,19 @@ PARAMS = [
       "Empty keeps the dataset's native resolution.", "float", unit="m",
       level="advanced", optional=True, none_label="native resolution",
       min=0, min_exclusive=True, when=(_NO_DEM,), example=90.0),
+    P("MODEL_AREA", "project", "Area to model",
+      "Either the watershed that drains to one outlet point, or every cell of "
+      "the DEM with no outlet. Use the whole DEM to see how water moves over a "
+      "whole area, such as a city or a valley with several rivers. Water then "
+      "leaves wherever it flows off the edge of the DEM, so the DEM should "
+      "cover the uphill land that drains into your area.", "choice",
+      choice_labels={"watershed": "watershed — everything upstream of an outlet point",
+                     "whole_dem": "whole_dem — every cell of the DEM, no outlet needed"}),
     P("OUTPUT_POINT", "project", "Basin outlet",
       "The river point your basin drains to. MRRpy delineates everything "
       "upstream of it and reports the flow there. Latitude first, e.g. "
-      "27.6322, 85.2933.", "latlon", unit="latitude, longitude", example=(28.0, 84.5)),
+      "27.6322, 85.2933.", "latlon", unit="latitude, longitude",
+      when=(("MODEL_AREA", In("watershed")),), example=(28.0, 84.5)),
     P("TARGET_CRS_EPSG", "project", "Map projection for the model grid",
       "A projected coordinate system in metres, as an EPSG code. The UTM zone "
       "of your outlet is a safe choice, and MRRpy suggests it for you.",
@@ -1568,16 +1577,42 @@ def _format_point(pt, p):
 # Small helpers shared by the front-ends
 # ═════════════════════════════════════════════════════════════════════════════
 def suggest_crs(values):
-    """(EPSG string, reason) for the outlet's UTM zone, or (None, '')."""
+    """(EPSG string, reason) for the UTM zone of the outlet — or, when the
+    whole DEM is modelled, of the DEM's centre — or (None, '')."""
     from .utils.crs import utm_epsg, describe_utm
-    pt = values.get("OUTPUT_POINT")
+    if values.get("MODEL_AREA") == "whole_dem":
+        pt, where = _dem_centre(values), "the centre of your DEM"
+    else:
+        pt, where = values.get("OUTPUT_POINT"), "your outlet"
     try:
         epsg = utm_epsg(*pt)
     except (TypeError, ValueError):
         return None, ""
     if epsg is None:
         return None, ""
-    return epsg, f"{describe_utm(epsg)}, the zone of your outlet"
+    return epsg, f"{describe_utm(epsg)}, the zone of {where}"
+
+
+def _dem_centre(values):
+    """(lat, lon) of the centre of DEM_BOUNDS_WGS84, else of the DEM file; None."""
+    bounds = values.get("DEM_BOUNDS_WGS84")
+    if not values.get("DEM_PATH") and bounds:
+        try:
+            w, s, e, n = (float(x) for x in bounds)
+            return (s + n) / 2.0, (w + e) / 2.0
+        except (TypeError, ValueError):
+            return None
+    path = values.get("DEM_PATH")
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        import rasterio
+        from rasterio.warp import transform_bounds
+        with rasterio.open(path) as src:
+            w, s, e, n = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+        return (s + n) / 2.0, (w + e) / 2.0
+    except Exception:            # unreadable file / no CRS — no suggestion
+        return None
 
 
 def _same(a, b):

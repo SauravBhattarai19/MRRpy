@@ -511,9 +511,10 @@ class Step:
 STEPS = [
     Step("terrain", "Terrain",
          "Choose the elevation data (a DEM file you have, or an area to download), "
-         "mark the basin outlet, and pick the results folder.",
+         "choose the area to model (a basin outlet, or the whole DEM), and pick "
+         "the results folder.",
          [("Elevation data (DEM)", ["__dem__"]),
-          ("Basin outlet", ["OUTPUT_POINT"]),
+          ("Area to model", ["MODEL_AREA"]),
           ("Results folder", ["OUTPUT_DIR"]),
           ("Terrain processing", ["DELINEATION_ENGINE", "DEM_CONDITIONING",
                                   "DEM_LAKE_MASK", "CELL_SIZE"])],
@@ -786,7 +787,7 @@ class ConfigForm:
             self._containers.append((box, [acc], None))
             return box
         children = [self._node(p) for p in direct]
-        if title == "Basin outlet":
+        if title == "Area to model":
             children.append(self._map_panel(want_map))
         if folded:
             children.append(self._accordion(folded, f"More options: {title}"))
@@ -805,7 +806,7 @@ class ConfigForm:
         direct = [c for c, _i, _g in kids if self._direct(c)]
         folded = [c for c, _i, _g in kids if not self._direct(c)]
         children = [self._node(c) for c in direct]
-        children.append(_html('<div class="mrrpy-help">Tip: the map under "Basin outlet" '
+        children.append(_html('<div class="mrrpy-help">Tip: the map under "Area to model" '
                                "can draw this area for you.</div>"))
         if folded:
             children.append(self._accordion(folded, "More options: download"))

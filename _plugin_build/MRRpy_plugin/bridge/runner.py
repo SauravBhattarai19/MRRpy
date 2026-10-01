@@ -185,6 +185,7 @@ class DemStepWorker(QThread):
     Used by the guided Tab-1 workflow:
         'analyze_terrain' → dem_processing.analyze_terrain(...)   (draw streams)
         'delineate'       → dem_processing.delineate_from_outlet(...) (watershed)
+        'whole_dem'       → dem_processing.use_whole_dem(...)       (no outlet)
 
     Emits the same signal shape as PipelineWorker so the dialog can wire them
     interchangeably.  The result dict always carries a "task" key identifying
@@ -198,7 +199,7 @@ class DemStepWorker(QThread):
 
     def __init__(self, task, params, parent=None):
         super().__init__(parent)
-        self._task = task               # "analyze_terrain" | "delineate"
+        self._task = task               # "analyze_terrain" | "delineate" | "whole_dem"
         self._params = dict(params)
         self._result = {}
 
@@ -228,6 +229,11 @@ class DemStepWorker(QThread):
                     self._params["output_point_latlon"],
                     self._params["target_crs_epsg"],
                     engine=engine,
+                )
+            elif self._task == "whole_dem":
+                out = dp.use_whole_dem(
+                    self._params["output_dir"],
+                    self._params["target_crs_epsg"],
                 )
             else:
                 raise ValueError(f"Unknown DEM step: {self._task!r}")

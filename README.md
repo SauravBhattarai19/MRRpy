@@ -48,10 +48,18 @@ plugin (`pip install "MRRpy[notebook]"`).
 Prefer a file? `MRRpy init-config -o run.yaml` writes a commented template, and
 `MRRpy explain <SETTING>` explains any setting.
 
+![Water depth and river discharge spreading over the whole Kathmandu-valley DEM](https://raw.githubusercontent.com/SauravBhattarai19/MRRpy/main/docsite/assets/img/whole_dem_flow.gif)
+
+*One storm over a whole DEM, animated with `MRRpy.animate_fields(out, ["depth", "discharge"])`:
+water depth, river flow drawn wider where it is larger, and the hydrograph.*
+
 ## What it offers
 
 - **DEM → watershed** — reproject, pit-fill, D8 flow direction/accumulation and
-  delineation (`pysheds` or `pyflwdir`).
+  delineation (`pysheds` or `pyflwdir`) — or route the **whole DEM** with no
+  outlet (`MODEL_AREA="whole_dem"`).
+- **Flood maps** — save depth/discharge maps over time, then animate the flow
+  spreading (`animate_fields`) or export peak-depth GeoTIFFs (`export_peak_maps`).
 - **Runoff generation** — `none · coefficient · raster · scs_cn · vsa_opm`; VSA
   saturation-excess + Green-Ampt + impervious as composable mechanisms.
 - **Flood routing** — kinematic, diffusive-wave, or Muskingum–Cunge, with

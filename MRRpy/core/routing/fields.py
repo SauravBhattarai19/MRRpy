@@ -25,6 +25,7 @@ import numpy as np
 from ...utils import gpu_utils
 
 _EPS = 1e-12
+_LARGE_GB = 2.0      # warn when the in-memory archive would exceed this
 
 _UNITS = {
     "depth": "m",
@@ -52,6 +53,10 @@ class FieldRecorder:
         t = grid_data["transform"]
         self._transform = [t.a, t.b, t.c, t.d, t.e, t.f]
         self._crs = str(getattr(cfg, "TARGET_CRS_EPSG", "") or "")
+        # Run outputs the plotting helpers draw alongside the maps (relief, hydrograph).
+        self._dem_path = os.path.abspath(getattr(cfg, "ROUTING_DEM_PATH", "") or "") or None
+        self._hyd_path = os.path.abspath(getattr(cfg, "HYDROGRAPH_CSV", "") or "") or None
+        self._fdir_path = os.path.abspath(getattr(cfg, "ROUTING_FLOW_DIR_PATH", "") or "") or None
 
         self._times = []
         self._store = {v: [] for v in self._vars}
@@ -59,6 +64,22 @@ class FieldRecorder:
 
         print(f"  FieldRecorder   |  vars={self._vars}  stride={self._stride}  "
               f"→ {self._out_dir}")
+        self._warn_if_large(cfg)
+
+    def _warn_if_large(self, cfg):
+        """Print the expected in-memory size; warn when it gets big (whole DEMs)."""
+        interval = float(getattr(cfg, "OUTPUT_INTERVAL_SECONDS", None)
+                         or getattr(cfg, "TIME_STEP_SECONDS", 1.0) or 1.0)
+        hours = float(getattr(cfg, "TOTAL_SIMULATION_TIME_HOURS", 0.0) or 0.0)
+        n_rec = int(np.ceil(np.ceil(hours * 3600.0 / interval) / self._stride))
+        gb = n_rec * self._s_rows.size * len(self._vars) * 4 / 1e9
+        print(f"  FieldRecorder   |  ≈{n_rec:,} maps × {self._s_rows.size:,} cells × "
+              f"{len(self._vars)} vars ≈ {gb:.2f} GB held in memory until the run ends")
+        if gb > _LARGE_GB:
+            print(f"  [WARNING] The saved maps will need about {gb:.1f} GB of memory. "
+                  "To reduce it, save fewer maps (raise FIELD_STRIDE), record fewer "
+                  "quantities (FIELD_VARS, e.g. just ['depth']), or raise "
+                  "OUTPUT_INTERVAL_SECONDS.")
 
     @property
     def active(self):
@@ -117,6 +138,9 @@ class FieldRecorder:
             "units": {v: _UNITS.get(v, "") for v in self._vars},
             "dtype": "float32",
             "stride": self._stride,
+            "dem_path": self._dem_path,
+            "hydrograph_csv": self._hyd_path,
+            "fdir_path": self._fdir_path,      # river lines in the plots
         }
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)

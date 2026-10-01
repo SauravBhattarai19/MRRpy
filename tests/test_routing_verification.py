@@ -280,11 +280,11 @@ def test_qbf_number_and_auto_spread_from_outlet(monkeypatch):
     A = g["faccum_1d"] * g["cell_area"] / 1e6
     q, _ = qbf.resolve_qbf(Config(CHANNEL_QBF_M3S=300.0, CHANNEL_QBF_AREA_KM2=float(A[10])), g, A)
     assert q[10] == pytest.approx(300.0) and q[-1] == pytest.approx(300.0 * (A[-1] / A[10]) ** 0.75)
-    monkeypatch.setattr(qbf, "_outlet_attrs", lambda cfg: None)              # offline
+    monkeypatch.setattr(qbf, "_outlet_attrs", lambda cfg, point=None: None)            # offline
     q, label = qbf.resolve_qbf(Config(), g, A)
     assert q[-1] == pytest.approx(np.exp(0.5477) * A[-1] ** 0.6057) and "area only" in label
     monkeypatch.setattr(qbf, "_outlet_attrs",
-                        lambda cfg: dict(UP_AREA=2 * A[-1], dis_m3_pmx=40.0, pre_mm_uyr=1500.0))
+                        lambda cfg, point=None: dict(UP_AREA=2 * A[-1], dis_m3_pmx=40.0, pre_mm_uyr=1500.0))
     q, label = qbf.resolve_qbf(Config(), g, A)
     assert q[-1] == pytest.approx(np.exp(2.7126) * 20.0 ** 0.6441) and "HydroATLAS" in label
     assert q[0] == pytest.approx(q[-1] * (A[0] / A[-1]) ** 0.75)
