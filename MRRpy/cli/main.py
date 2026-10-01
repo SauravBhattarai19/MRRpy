@@ -70,7 +70,11 @@ def _cmd_validate(args):
 
 
 def _cmd_list_options(args):
+    from ..core.routing.qbf import describe_presets
     print(Config.describe_options())
+    print("\nCHANNEL_QBF_M3S — bankfull flow: None/'auto' (global estimate), a number "
+          "[m³/s], a formula, or a preset:")
+    print(describe_presets())
     return 0
 
 

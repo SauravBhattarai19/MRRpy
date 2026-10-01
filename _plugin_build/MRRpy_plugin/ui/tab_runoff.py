@@ -314,6 +314,17 @@ class TabRunoff(QWidget):
         self._ga_ksat.setToolTip("VERTICAL (surface) Ksat — NOT the lateral K_sat. Sand≈50, loam≈10, clay≈1 mm/hr.")
         self._ga_form.addRow("Vertical Ksat:", self._ga_ksat)
 
+        self._ga_ksat_depth = QDoubleSpinBox()
+        self._ga_ksat_depth.setRange(5.0, 200.0); self._ga_ksat_depth.setDecimals(0)
+        self._ga_ksat_depth.setValue(60.0); self._ga_ksat_depth.setSuffix(" cm")
+        self._ga_ksat_depth.setToolTip(
+            "HiHydroSoil Ksat is averaged over this top soil depth (harmonic mean of its\n"
+            "layers) — pick by how deep the storm soaks in:\n"
+            "  30 cm: short, intense bursts (monsoon cloudbursts, convective flash floods)\n"
+            "  60 cm: default, best overall compromise\n"
+            "  100 cm: long frontal/winter rain on a tight clay subsoil")
+        self._ga_form.addRow("Ksat soil depth:", self._ga_ksat_depth)
+
         self._ga_ksat_raster = QgsFileWidget()
         self._ga_ksat_raster.setStorageMode(QgsFileWidget.GetFile)
         self._ga_ksat_raster.setFilter("GeoTIFF (*.tif *.tiff);;All files (*)")
@@ -388,6 +399,8 @@ class TabRunoff(QWidget):
             ksat_raster = self._ksat_source.currentIndex() == 2
             _set_row_visible(self._ga_form, self._ga_ksat, ksat_scalar)
             _set_row_visible(self._ga_form, self._ga_ksat_raster, ksat_raster)
+            _set_row_visible(self._ga_form, self._ga_ksat_depth,
+                             self._ksat_source.currentIndex() == 1)
 
         # Impervious group only when the mechanism is active.
         imperv = self._chk_imperv.isChecked()
@@ -488,6 +501,7 @@ class TabRunoff(QWidget):
         if getattr(cfg, "GA_KSAT_RASTER", None):
             self._ga_ksat_raster.setFilePath(cfg.GA_KSAT_RASTER)
         self._ga_ksat_scale.setValue(float(getattr(cfg, "GA_KSAT_SCALE", 1.0)))
+        self._ga_ksat_depth.setValue(float(getattr(cfg, "GA_KSAT_DEPTH_CM", 60.0)))
 
         if imp_src in self._IMPERVIOUS_UI:
             self._imperv_source.setCurrentIndex(self._IMPERVIOUS_UI.index(imp_src))
@@ -530,6 +544,7 @@ class TabRunoff(QWidget):
         cfg.GA_KSAT_MMHR = self._ga_ksat.value()
         cfg.GA_KSAT_RASTER = self._ga_ksat_raster.filePath() or None
         cfg.GA_KSAT_SCALE = self._ga_ksat_scale.value()
+        cfg.GA_KSAT_DEPTH_CM = self._ga_ksat_depth.value()
 
         # Impervious source is gated by the Impervious mechanism.
         if self._chk_imperv.isChecked():

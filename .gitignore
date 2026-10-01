@@ -113,3 +113,12 @@ understand_formulas/
 # Unrelated work-in-progress notes (e.g. r.avaflow/Trishuli GLOF studies) that
 # sometimes get dropped at repo root while working here — not vsa_opm code.
 plan.md
+
+# Local station data (DHM rating curves, gauge rain files) — not redistributable
+RT_*.txt
+*.gag
+
+# Per-run caches written next to model outputs
+hydroatlas_outlet.json
+*.nbi
+*.nbc

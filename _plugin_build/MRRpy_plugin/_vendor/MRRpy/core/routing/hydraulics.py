@@ -34,7 +34,8 @@ def cell_discharge(depth, velocity, cell_size):
     return velocity * cell_size * depth
 
 
-def mannings_discharge(depth, slope, n, width, chan_mask, cell_size, xp):
+def mannings_discharge(depth, slope, n, width, chan_mask, cell_size, xp,
+                       bank=None, n_fp=None):
     """
     Kinematic Manning discharge with an optional CONFINED rectangular channel
     section on channel cells.
@@ -68,6 +69,9 @@ def mannings_discharge(depth, slope, n, width, chan_mask, cell_size, xp):
     Q    : (n,) array [m³/s]  – Manning discharge (pre flux-limiter)
     A_xs : (n,) array [m²]    – flow cross-section area; celerity uses c = 5/3·Q/A_xs
     """
+    if bank is not None:                          # sub-grid incised channel
+        C, A_xs = compound_conveyance(depth, n, width, chan_mask, bank, cell_size, xp, n_fp)
+        return C * slope ** 0.5, A_xs
     # Overland (wide sheet): identical arithmetic to the original kinematic path.
     velocity   = (1.0 / n) * (depth ** (2.0 / 3.0)) * (slope ** 0.5)
     Q_overland = velocity * cell_size * depth
@@ -110,7 +114,8 @@ def local_inertial_update(Q_inertia, Q_fric, A_xs, R, S, n, dt, xp, g=9.81):
 
 
 def diffusive_wave_discharge(depth, dem, dist, slope_bnd, n, ds_safe, valid_ds,
-                             theta, cell_size, xp, min_depth, width, chan_mask):
+                             theta, cell_size, xp, min_depth, width, chan_mask,
+                             bank=None, n_fp=None):
     """
     CASC2D / GSSHA-style diffusion-wave cell discharge [m³/s].
 
@@ -182,6 +187,9 @@ def diffusive_wave_discharge(depth, dem, dist, slope_bnd, n, ds_safe, valid_ds,
     h_flow   = xp.where(valid_ds, h_flow, depth)          # free-outflow cells: own depth
     h_flow   = xp.maximum(h_flow, min_depth)
 
+    if bank is not None:                          # sub-grid incised channel
+        C, A_xs = compound_conveyance(h_flow, n, width, chan_mask, bank, cell_size, xp, n_fp)
+        return C * S_eff ** 0.5, A_xs, S_eff
     # Conveyance discharge.  Overland (chan_mask False): wide sheet R≈h_flow,
     # width=cell_size — identical arithmetic to the original diffusive path.
     # Channel: confined rectangular section, true hydraulic radius R=A/P.
@@ -199,7 +207,8 @@ def diffusive_wave_discharge(depth, dem, dist, slope_bnd, n, ds_safe, valid_ds,
     return Q, A_xs, S_eff
 
 
-def normal_depth(Q_ref, slope, n, width, chan_mask, xp, iters=3):
+def normal_depth(Q_ref, slope, n, width, chan_mask, xp, iters=3, bank=None,
+                 cell_size=None, n_fp=None):
     """
     Manning normal depth, matching the conveyance convention of ``mannings_discharge``.
 
@@ -246,6 +255,25 @@ def normal_depth(Q_ref, slope, n, width, chan_mask, xp, iters=3):
         step = xp.where(ref, (Qp - Qpos) / xp.maximum(dQ, 1e-30), 0.0)
         h    = xp.maximum(h - step, 0.0)
     A_xs = width * h
+    if bank is not None:
+        # Compound section (sub-grid channel): the slot solution above is exact
+        # below bankfull, so refine ONLY channel cells whose slot depth exceeds
+        # the bank, with Newton on Q(h) = C(h)·√S (finite-difference derivative).
+        over = chan_mask & (Qpos > 1e-12) & (h > bank)
+        idx = xp.nonzero(over)[0]
+        if int(idx.size):
+            sub = lambda a: a[idx] if getattr(a, "ndim", 0) else a
+            hs, ns, ws, bs, Qs, sS = h[idx], sub(n), sub(width), sub(bank), Qpos[idx], sqrtS[idx]
+            nfs = None if n_fp is None else sub(n_fp)
+            tru = xp.ones(idx.shape, dtype=bool)
+            for _ in range(8):
+                C, _A = compound_conveyance(hs, ns, ws, tru, bs, cell_size, xp, nfs)
+                dh = xp.maximum(1e-4 * hs, 1e-6)
+                C2, _ = compound_conveyance(hs + dh, ns, ws, tru, bs, cell_size, xp, nfs)
+                hs = xp.maximum(hs - (C * sS - Qs) / xp.maximum((C2 - C) * sS / dh, 1e-30), 0.0)
+            h = h.copy()
+            h[idx] = hs
+        _C, A_xs = compound_conveyance(h, n, width, chan_mask, bank, cell_size, xp, n_fp)
     return h, A_xs
 
 
@@ -370,3 +398,107 @@ def build_rainfall_array(shape, intensity_mm_hr, duration_hours, dt_seconds, t_s
                      if t_seconds < duration_hours * 3600.0
                      else 0.0)
     return np.full(shape, rain_ms_value, dtype=np.float64)
+
+
+# ---------------------------------------------------------------------------
+# 7.  Sub-grid incised channel (compound section)
+# ---------------------------------------------------------------------------
+# A channel narrower than the DEM cell is cut BELOW the DEM surface to a
+# bankfull depth D (LISFLOOD-FP sub-grid channel, Neal, Schumann & Bates 2012):
+#   bed = DEM − D;  stage h is measured from the bed.
+#   h ≤ D : water in the slot of width B            (storage footprint B·L)
+#   h > D : slot full, excess spreads over the cell  (storage footprint A_cell)
+# Conveyance = in-bank channel (R = A/P, walls up to the bank, channel n) plus a
+# floodplain sheet over the remaining width (cell_size − B) above the bank
+# (floodplain n = the cell's land-cover n).  Overland cells are unchanged.
+
+def stage_from_volume(volume, store_area, bank, cell_area, chan_mask, xp):
+    """Stage above the bed [m] from stored volume (piecewise linear)."""
+    v_bank = store_area * bank
+    h_chan = xp.where(volume <= v_bank, volume / store_area,
+                      bank + (volume - v_bank) / cell_area)
+    return xp.where(chan_mask, h_chan, volume / cell_area)
+
+
+def volume_from_stage(h, store_area, bank, cell_area, chan_mask, xp):
+    """Inverse of ``stage_from_volume``."""
+    v_chan = xp.where(h <= bank, h * store_area, bank * store_area + (h - bank) * cell_area)
+    return xp.where(chan_mask, v_chan, h * cell_area)
+
+
+def storage_area(h, store_area, bank, cell_area, chan_mask, xp):
+    """dV/dh [m²] at stage h: slot footprint below bank, whole cell above."""
+    return xp.where(chan_mask & (h > bank), cell_area, store_area)
+
+
+def compound_conveyance(h, n, width, chan_mask, bank, cell_size, xp, n_fp=None):
+    """
+    Manning conveyance C [m³/s per √(m/m)] (Q = C·√S) and flow area A_xs [m²].
+    Overland: wide sheet, identical arithmetic to ``mannings_discharge``.
+    Channel: slot (channel n) + above-bank floodplain sheet (``n_fp``; defaults
+    to the channel n when None).
+    """
+    h = xp.maximum(h, 0.0)
+    C_over = (1.0 / n) * (h ** (5.0 / 3.0)) * cell_size
+    A_over = h * cell_size
+    nf = n if n_fp is None else n_fp
+    hc = xp.minimum(h, bank)
+    hf = xp.maximum(h - bank, 0.0)
+    Bf = xp.maximum(cell_size - width, 0.0)
+    A_ch = width * h
+    R_ch = A_ch / xp.maximum(width + 2.0 * hc, 1e-12)
+    C_ch = (1.0 / n) * A_ch * R_ch ** (2.0 / 3.0) + (1.0 / nf) * Bf * hf ** (5.0 / 3.0)
+    return xp.where(chan_mask, C_ch, C_over), xp.where(chan_mask, A_ch + Bf * hf, A_over)
+
+
+# ---------------------------------------------------------------------------
+# 8.  Muskingum–Cunge upstream-first sweep
+# ---------------------------------------------------------------------------
+try:
+    from numba import njit as _njit
+except Exception:                                 # pragma: no cover
+    def _njit(*a, **k):
+        return (lambda f: f) if not (a and callable(a[0])) else a[0]
+
+
+@_njit(cache=True)
+def _mc_sweep(C0, C1, C2, C3, I1, O1, Q_L, ds_idx):
+    n = C0.shape[0]
+    I2 = np.zeros(n)
+    O2 = np.empty(n)
+    neg = 0
+    for i in range(n):                            # topological: ds_idx[i] > i
+        o = C0[i] * I2[i] + C1[i] * I1[i] + C2[i] * O1[i] + C3[i] * Q_L[i]
+        if o < 0.0:
+            o = 0.0
+            neg += 1
+        O2[i] = o
+        d = ds_idx[i]
+        if d >= 0:
+            I2[d] += o
+    return O2, I2, neg
+
+
+def muskingum_cunge_sweep(I1, O1, Q_L, c, A_xs, width, slope, dist, dt, ds_idx, xp, Dg=None):
+    """
+    Textbook Muskingum–Cunge on the D8 tree: cells solved upstream-first so each
+    reach's inflow I₂ is the NEW-time outflow of its upstream reaches (the
+    Jacobi form ``muskingum_cunge_step`` used the previous-step inflow, adding a
+    one-step lag per reach).  Coefficients as in ``muskingum_cunge_step``.
+    ``Dg`` may be given explicitly (general Cunge form Q/(B_top·S0·c·Δx), used
+    for compound sections); otherwise the wide-channel form 0.6·(A/B)/(S0·Δx).
+    Returns (O2, I2, neg_frac).
+    """
+    Cr    = c * dt / dist
+    if Dg is None:
+        h_eff = A_xs / xp.maximum(width, 1e-30)
+        Dg    = 0.6 * h_eff / (slope * dist)
+    den   = 1.0 + Cr + Dg
+    C0 = (-1.0 + Cr + Dg) / den
+    C1 = ( 1.0 + Cr - Dg) / den
+    C2 = ( 1.0 - Cr + Dg) / den
+    C3 = ( 2.0 * Cr)       / den
+    to_np = (lambda a: a.get()) if hasattr(C0, 'get') else (lambda a: np.asarray(a))
+    O2, I2, neg = _mc_sweep(to_np(C0), to_np(C1), to_np(C2), to_np(C3), to_np(I1),
+                            to_np(O1), to_np(Q_L), to_np(ds_idx).astype(np.int64))
+    return xp.asarray(O2), xp.asarray(I2), neg / max(O2.size, 1)

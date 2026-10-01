@@ -201,8 +201,10 @@ class InfiltrationExcessMechanism(RunoffMechanism):
         if source == 'scalar':
             return np.full(n, kv_scalar, dtype=np.float64)
 
+        depth_cm = float(getattr(cfg, 'GA_KSAT_DEPTH_CM', 60.0))
         path = getattr(cfg, 'GA_KSAT_RASTER', None) \
-            or os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'), 'ksat_hihydro.tif')
+            or os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'),
+                            f'ksat_hihydro_0-{depth_cm:g}cm.tif')
 
         if source == 'gee':
             try:
@@ -212,7 +214,8 @@ class InfiltrationExcessMechanism(RunoffMechanism):
                     watershed_geojson_path=getattr(
                         cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson'),
                     output_path=path,
-                    project=getattr(cfg, 'GEE_PROJECT', None))
+                    project=getattr(cfg, 'GEE_PROJECT', None),
+                    depth_cm=depth_cm)
             except Exception as exc:
                 print(f"  [WARN] Ksat download failed ({exc}); "
                       f"scalar K_v={kv_scalar} mm/hr")

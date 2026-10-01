@@ -272,6 +272,10 @@ class MainDialog(QDialog):
             "target_crs_epsg": self.tab_dem.get_target_crs(),
             "output_dir": out,
             "engine": self.tab_dem.get_delineation_engine(),
+            "conditioning": self.tab_dem.get_dem_conditioning(),
+            # same conditioning inputs as the pipeline's process_dem stage
+            "min_slope": self.tab_routing.min_slope.value(),
+            "lake_mask_path": getattr(self._base_cfg, "DEM_LAKE_MASK", None),
         }
         self._start_dem_step("analyze_terrain", params)
 

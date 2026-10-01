@@ -62,6 +62,9 @@ REQUIRED = [
     ("geopandas",  "geopandas",  "watershed / stream vector output"),
     ("shapely",    "shapely",    "geometry for watershed polygons"),
     ("pyproj",     "pyproj",     "CRS transforms (outlet snapping, reprojection)"),
+    # Pinned <3 in pyproject.toml: pyflwdir's numba kernels (DEM carving used
+    # by DEM_CONDITIONING='carve'/'carve_spread') cannot type affine>=3.
+    ("affine",     "affine<3",   "raster transforms (pyflwdir DEM conditioning)"),
 ]
 
 OPTIONAL = [

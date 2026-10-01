@@ -131,7 +131,7 @@ BASELINE_SRC = REPO_ROOT / "outputs collection/100m_diff_inflt_imperv/stations_1
 SEED_FILES = [
     "clipped_dem.tif", "flow_direction.tif", "clipped_flow_accumulation.tif",
     "watershed.tif", "watershed.geojson",
-    "ksat_hihydro.tif", "lulc_mannings_lcz.tif", "texture_sandclay.tif",
+    "ksat_hihydro_0-60cm.tif", "lulc_mannings_lcz.tif", "texture_sandclay.tif",
 ]
 
 

@@ -86,6 +86,19 @@ DEM_CATALOG = {
             "consistent near-global coverage of the surface-model options."
         ),
     },
+    "fabdem": {
+        "title": "FABDEM v1.2 (Forest And Buildings removed Copernicus DEM)",
+        "gee_id": "projects/sat-io/open-datasets/FABDEM",
+        "gee_type": "ImageCollection",
+        "band": "b1",
+        "resolution_m": 30,
+        "bbox": (-180.0, -60.0, 180.0, 80.0),
+        "description": (
+            "Hawker et al. (2022): Copernicus GLO-30 with tree and building "
+            "height bias removed by machine learning — a global BARE-EARTH DEM, "
+            "useful for floodplain hydraulics (GEE community catalog)."
+        ),
+    },
     "usgs_3dep_1m": {
         "title": "USGS 3DEP 1m (lidar)",
         "gee_id": "USGS/3DEP/1m",
