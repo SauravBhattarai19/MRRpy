@@ -416,6 +416,11 @@ class ImplicitDiffusiveSolver:
         self.theta       = float(getattr(cfg, "IMPLICIT_THETA", 1.0))
         self.relax       = float(getattr(cfg, "IMPLICIT_RELAX", 0.7))
         self.min_depth   = float(getattr(cfg, "MIN_DEPTH_M", 1e-6))
+        # Water created by flooring over-drained cells at zero (sub-grid path),
+        # and the deepest over-drain of the last step [m].  The router rejects
+        # and retries a step whose over-drain exceeds IMPLICIT_TOL.
+        self.neg_volume_m3 = 0.0
+        self.last_floor_depth_m = 0.0
 
         solver = str(getattr(cfg, "IMPLICIT_SOLVER", "auto")).lower()
         if solver == "auto":
@@ -492,6 +497,7 @@ class ImplicitDiffusiveSolver:
         n_iters    : int   – Picard iterations taken
         residual   : float – final max|Δz| [m]
         """
+        self.last_floor_depth_m = 0.0
         if self.bank is not None:
             return self._solve_step_subgrid(volume, source_rate, bc_rate, dt)
         dem, dist, n = self.dem, self.dist, self.n
@@ -693,7 +699,8 @@ def _solve_step_subgrid(self, volume, source_rate, bc_rate, dt):
     # water this creates is not hidden: it surfaces in the mass-balance closure.
     neg = volume_new < 0.0
     if neg.any():
-        self.neg_volume_m3 = getattr(self, "neg_volume_m3", 0.0) - float(volume_new[neg].sum())
+        self.neg_volume_m3 -= float(volume_new[neg].sum())
+        self.last_floor_depth_m = float(np.max(-volume_new[neg] / store[neg]))
         volume_new = np.where(neg, 0.0, volume_new)
     q_out_face = np.where(valid, f_int, f_bnd)
     return volume_new, q_out_face, n_iters, residual

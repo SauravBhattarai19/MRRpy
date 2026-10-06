@@ -618,7 +618,7 @@ def _write_config_py(cfg: Config, path: str):
             "RUNOFF_MECHANISMS", "VSA_SD_MAX_INITIAL", "VSA_SD_MIN", "VSA_Q_MAX", "VSA_PHI",
             "VSA_K_SAT", "VSA_PER_POLYGON",
             "GA_SUCTION_SOURCE", "GA_SUCTION_M", "GA_KSAT_SOURCE",
-            "GA_KSAT_MMHR", "GA_KSAT_RASTER", "GA_KSAT_SCALE",
+            "GA_KSAT_MMHR", "GA_KSAT_RASTER", "GA_KSAT_SCALE", "GA_RECOVERY",
             "IMPERVIOUS_SOURCE", "IMPERVIOUS_RASTER_PATH", "VSA_BASEFLOW",
         ]),
         ("6. SHARED SOIL / SATELLITE FORCING", [

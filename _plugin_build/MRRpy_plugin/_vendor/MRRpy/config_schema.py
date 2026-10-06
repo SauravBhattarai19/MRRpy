@@ -533,6 +533,11 @@ PARAMS = [
       "frontal rain on tight clay subsoils.", "float", unit="cm",
       level="advanced", min=0, max=200, min_exclusive=True,
       when=_INF + (("GA_KSAT_SOURCE", In("gee")),), example=30.0),
+    P("GA_RECOVERY", "runoff", "Let the soil dry out between storms",
+      "Soaked-in water drains out of the top soil layer in dry weather, so a "
+      "later storm meets drier soil again (the EPA SWMM method, from Ksat "
+      "alone). Keep it on for runs of weeks to years. Off means the soil only "
+      "gets wetter for the whole run.", "bool", level="advanced", when=_INF),
     P("GA_KSAT_RASTER", "runoff", "Ksat raster",
       "GeoTIFF of vertical Ksat in mm/h.", "file", optional=True,
       none_label="automatic file in the results folder",

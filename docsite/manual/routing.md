@@ -134,7 +134,13 @@ travel time through the basin, plus the recession you want to see. Results
 - The **implicit** method is stable at any step, so $\Delta t$ only controls
   accuracy. The adaptive step aims at a Courant number of `IMPLICIT_CFL_TARGET`
   (1–3 is typical: far longer steps than the explicit limit) and is capped at
-  the output interval, not at `CFL_DT_MAX`.
+  the output interval, not at `CFL_DT_MAX`. If a step would drain any cell
+  more than `IMPLICIT_TOL` below empty, MRRpy throws that step away and
+  repeats it at half the length, down to `CFL_DT_MIN`. Without this, the
+  shortfall would be refilled with water that was never there. It mostly
+  happens on the first wet step after a dry spell, because the step has grown
+  to the output interval while nothing was flowing. The run summary reports
+  how many steps were repeated.
 
 With `ADAPTIVE_TIMESTEP` off, every step is `TIME_STEP_SECONDS` long; with it on,
 `TIME_STEP_SECONDS` is only the first step.

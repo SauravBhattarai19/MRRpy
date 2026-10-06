@@ -186,6 +186,13 @@ time loop. It's a two-level plugin registry, not a single dispatch:
   Green-Ampt Horton; any subset composes (e.g. `['infiltration_excess']` alone
   is a standalone GSSHA/HEC-HMS-style model).
 
+Soil state must recover between storms for runs longer than one event:
+`saturation_excess` drains its sandbox (`q_b`), and `infiltration_excess`
+uses the EPA SWMM 5 Green-Ampt recovery (`GA_RECOVERY`, default on; upper
+zone L_u, drain rate k_r and new-storm dry time T_r all from K_v), verified
+against the SWMM engine. `GA_RECOVERY=False` is byte-identical to the old
+F-only-grows update. `scs_cn` is cumulative over the whole run (event-only).
+
 `soil.py` resolves SD_max / phi / K_sat / suction (scalar, GEE/SERVES/
 SoilGrids, or raster) for the mechanisms above. Adding a new whole runoff
 generator (e.g. a third-party method) registers at the `RunoffMode` level in
@@ -201,7 +208,10 @@ Explicit grid solver in `router.py` (the time loop). Supporting modules:
 (hydrograph + always-on mass balance). `ROUTING_SCHEME` selects
 `kinematic | diffusive | muskingum` (all three wired in the time loop). Cells
 are flattened to 1-D arrays in topological order for fast indexing; the outlet
-is the last (highest-accumulation) cell.
+is the last (highest-accumulation) cell. `diffusive_implicit` (`implicit.py`) is a
+semi-implicit tree solve; the router rejects and retries at half dt any step
+that over-drains a cell by more than `IMPLICIT_TOL` (otherwise floored → water
+created, e.g. the first wet step after a dry spell at dt = output interval).
 
 Optional routing add-ons (all off by default, config-gated):
 - `boundary.py` (`ROUTING_INFLOW_BC`) — inject an external Q(t) hydrograph at
@@ -262,5 +272,6 @@ local DEM yet.
   package at `MRRpy/data/` and are the config defaults.
 - Packaging lives in `pyproject.toml` (`MRRpy` dist, `MRRpy` console
   script, `[gpu]`/`[gee]` extras), plus `LICENSE` (MIT) and `MANIFEST.in`.
-  Build with `python -m build`; tagged through `v0.2.0` (first PyPI upload
-  under the `MRRpy` name pending).
+  Build with `python -m build`; 0.2.0 is on PyPI, 0.3.0 is prepared (see
+  `CHANGELOG.md`). Bump `pyproject.toml`, `MRRpy/__init__.py` and
+  `MRRpy_plugin/metadata.txt` together.

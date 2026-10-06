@@ -117,6 +117,22 @@ plan.md
 # Local station data (DHM rating curves, gauge rain files) — not redistributable
 RT_*.txt
 *.gag
+# Raw observed data received from DHM / citizen-science partners (not ours to publish)
+raw/
+
+# Extra model-output folders (output1/, output2/, …) and results/ from example configs
+output[0-9]*/
+results/
+
+# Long-term (multi-year) analysis workspace: runs, figures, notes
+Longterm_Analysis/
+
+# Conference poster build: figures, fonts, model runs (large; lives outside the package)
+poster/
+
+# Personal run configs written at the repo root (configs/ holds the shared examples)
+/run.yaml
+/kathmandu_khokana_5yr.yaml
 
 # Per-run caches written next to model outputs
 hydroatlas_outlet.json
