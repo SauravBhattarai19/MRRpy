@@ -43,7 +43,7 @@ stage fetch one automatically (requires ``pip install MRRpy[gee]`` +
 authentication).
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .config import Config, OpmConfig
 from .pipeline import run_pipeline, DEFAULT_STAGES

@@ -336,6 +336,14 @@ class TabRunoff(QWidget):
         self._ga_ksat_scale.setToolTip("Calibration multiplier on the (gridded) Ksat.")
         self._ga_form.addRow("Ksat calibration scale:", self._ga_ksat_scale)
 
+        self._ga_recovery = QCheckBox("Let the soil dry out between storms (EPA SWMM recovery)")
+        self._ga_recovery.setChecked(True)
+        self._ga_recovery.setToolTip(
+            "Soaked-in water drains out of the top soil layer in dry weather, so a "
+            "later storm meets drier soil again. Keep it on for runs of weeks to "
+            "years; off means the soil only gets wetter for the whole run.")
+        self._ga_form.addRow(self._ga_recovery)
+
         v.addWidget(self._grp_ga)
 
         # ── Impervious (urban shedding) ────────────────────────────────────
@@ -502,6 +510,7 @@ class TabRunoff(QWidget):
             self._ga_ksat_raster.setFilePath(cfg.GA_KSAT_RASTER)
         self._ga_ksat_scale.setValue(float(getattr(cfg, "GA_KSAT_SCALE", 1.0)))
         self._ga_ksat_depth.setValue(float(getattr(cfg, "GA_KSAT_DEPTH_CM", 60.0)))
+        self._ga_recovery.setChecked(bool(getattr(cfg, "GA_RECOVERY", True)))
 
         if imp_src in self._IMPERVIOUS_UI:
             self._imperv_source.setCurrentIndex(self._IMPERVIOUS_UI.index(imp_src))
@@ -545,6 +554,7 @@ class TabRunoff(QWidget):
         cfg.GA_KSAT_RASTER = self._ga_ksat_raster.filePath() or None
         cfg.GA_KSAT_SCALE = self._ga_ksat_scale.value()
         cfg.GA_KSAT_DEPTH_CM = self._ga_ksat_depth.value()
+        cfg.GA_RECOVERY = self._ga_recovery.isChecked()
 
         # Impervious source is gated by the Impervious mechanism.
         if self._chk_imperv.isChecked():

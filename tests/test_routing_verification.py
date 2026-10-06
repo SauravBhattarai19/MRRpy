@@ -410,3 +410,28 @@ def test_muskingum_pulse_drains_on_mild_slope(tmp_path):
     v_in = 0.5 * 300.0 * 9 * 3600
     v_out = np.sum(Q * np.diff(np.concatenate([[0.0], t])))
     assert v_out / v_in > 0.99
+
+
+def test_implicit_storm_after_dry_spell_conserves_mass(tiny_basin, tmp_path):
+    """Two 2-h storms 72 h apart.  During the dry spell the adaptive dt grows to
+    the output interval, and the first wet step at that dt over-drained cells,
+    which the solver floored at zero: +11.5 % water before step rejection."""
+    dem_p, outlet = tiny_basin
+    with rasterio.open(dem_p) as ds:
+        cx, cy = ds.xy(ds.height // 2, ds.width // 2)
+    g, r = str(tmp_path / "g.csv"), str(tmp_path / "r.csv")
+    pd.DataFrame({"gauge_id": ["G1"], "name": ["G1"], "easting_m": [cx],
+                  "northing_m": [cy]}).to_csv(g, index=False)
+    t = np.arange(0, 80 * 3600 + 1, 1800)
+    storm = (t < 2 * 3600) | ((t >= 74 * 3600) & (t < 76 * 3600))
+    pd.DataFrame({"time_s": t, "G1": np.where(storm, 30.0, 0.0)}).to_csv(r, index=False)
+    cfg = Config(DEM_PATH=dem_p, OUTPUT_POINT=outlet, OUTPUT_DIR=str(tmp_path / "out"),
+                 TARGET_CRS_EPSG="EPSG:32645", DELINEATION_ENGINE="pysheds",
+                 PRECIP_METHOD="thiessen", PRECIP_GAUGE_FILE=g, PRECIP_TIMESERIES_FILE=r,
+                 RUNOFF_SOURCE="none", ROUTING_SCHEME="diffusive_implicit",
+                 TOTAL_SIMULATION_TIME_HOURS=80.0, OUTPUT_INTERVAL_SECONDS=600,
+                 CHANNEL_QBF_M3S=1.0)
+    with contextlib.redirect_stdout(io.StringIO()):
+        run_pipeline(cfg, on_log=lambda *_: None)
+    mb = pd.read_csv(cfg.MASS_BALANCE_CSV).iloc[-1]
+    assert abs(float(mb["rel_error"])) < 1e-6

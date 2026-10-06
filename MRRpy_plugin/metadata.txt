@@ -2,7 +2,7 @@
 name=MRRpy_plugin
 qgisMinimumVersion=3.16
 description=QGIS interface to MRRpy, a distributed rainfall–runoff and flood-routing model: DEM preprocessing and watershed delineation, gauge or IMERG satellite rainfall, physical (VSA saturation-excess / Green-Ampt / impervious) or SCS-CN runoff, and kinematic, diffusive, Muskingum–Cunge, dynamic or semi-implicit diffusive routing, with optional GPU (CuPy/CUDA) acceleration.
-version=3.0.0
+version=3.1.0
 author=ORISE / Saurav Bhattarai
 email=saurav.bhattarai.1999@gmail.com
 
@@ -29,7 +29,10 @@ deprecated=False
 server=False
 hasProcessingProvider=yes
 
-changelog=3.0.0
+changelog=3.1.0
+  - Tracks the MRRpy 0.3 core: Green-Ampt soil now dries out between storms (new "Let the soil dry out between storms" checkbox on the Runoff tab, on by default; untick to reproduce 3.0.0 results)
+  - Semi-implicit diffusive routing no longer creates water on the first storm after a dry spell (over-draining steps are retried at half the time step)
+  3.0.0
   - Renamed to MRRpy_plugin (plugin folder, menu, toolbar, dialog and Processing provider). Processing ids are now mrrpy_plugin:process_dem and mrrpy_plugin:routing. Remove any old vsa_opm / vsa_opm_plugin folder before installing.
   - Works offline out of the box: Earth Engine settings appear only when an option that needs them is selected; the default runoff setup no longer requires Earth Engine
   - Guided delineation and the Run stages are linked: after delineating, Run skips re-processing the DEM; a routing-only run is blocked with a clear message until a watershed exists

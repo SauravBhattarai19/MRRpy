@@ -254,6 +254,15 @@ def test_ksat_depth_roundtrip(dialog):
     tab.write_to_config(out)
     assert out.GA_KSAT_DEPTH_CM == pytest.approx(100.0)
 
+
+def test_ga_recovery_roundtrip(dialog):
+    tab = dialog.tab_runoff
+    for on in (False, True):
+        tab.apply_config(Config(GA_RECOVERY=on))
+        out = Config(GA_RECOVERY=not on)
+        tab.write_to_config(out)
+        assert out.GA_RECOVERY is on
+
 # ── Naming, labels and first-run behaviour ────────────────────────────────────
 
 def test_plugin_names(qgis_app):

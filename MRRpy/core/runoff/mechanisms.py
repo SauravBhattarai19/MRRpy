@@ -106,9 +106,19 @@ class InfiltrationExcessMechanism(RunoffMechanism):
     Hortonian infiltration-excess overland flow.
 
     Infiltration capacity f_p [m/s] follows Green-Ampt:
-        f_p = K_v · (1 + ψ·Δθ₀ / max(F, F_floor))
-    with cumulative infiltration F advanced each step.  The pervious-soil runoff
-    fraction is max(rain − f_p, 0)/rain.
+        f_p = K_v · (1 + ψ·Δθ / max(F, F_floor))
+    with the storm's cumulative infiltration F advanced each step.  The
+    pervious-soil runoff fraction is max(rain − f_p, 0)/rain.
+
+    Recovery between storms (``GA_RECOVERY``, EPA SWMM 5 Green-Ampt; Rossman &
+    Huber 2016, SWMM Reference Manual Vol. I §4.4): infiltration also fills an
+    upper soil zone of depth L_u holding at most F_u,max = Δθ₀·L_u.  In dry
+    steps the zone drains at k_r·F_u,max per second and F shrinks by the same
+    depth; once rain heavier than K_v has been absent for T_r, the next step
+    starts a new storm with Δθ = (F_u,max − F_u)/L_u and F = 0, and an emptied
+    zone restores Δθ = Δθ₀.  L_u, k_r and T_r follow from K_v alone, so the
+    method needs no extra data.  With ``GA_RECOVERY=False`` F accumulates over
+    the whole run (legacy behaviour).
     """
 
     def __init__(self, cfg, grid_data, shared):
@@ -160,16 +170,39 @@ class InfiltrationExcessMechanism(RunoffMechanism):
         self._ksat    = xp.asarray(kv_ms_1d)
         self._dtheta0 = xp.asarray(dtheta0_np)
         self._F       = xp.zeros(self._n_cells, dtype=np.float64)
+        self._dtheta  = self._dtheta0    # Δθ of the current storm
         print(f"  Green-Ampt    |  K_v(mm/hr)=[{kv_mmhr.min():.2f}, "
               f"{kv_mmhr.max():.2f}] mean={kv_mmhr.mean():.2f}"
               f"  psi(m)=[{psi_m.min():.3f}, {psi_m.max():.3f}]"
               f"  dtheta0=[{dtheta0_np.min():.3f}, {dtheta0_np.max():.3f}]")
 
+        # ── Recovery between storms (SWMM 5; constants in inches and hours) ──
+        self._recovery = bool(getattr(cfg, 'GA_RECOVERY', True))
+        if self._recovery:
+            root_ks = np.sqrt(np.maximum(kv_mmhr / 25.4, 1e-12))   # √K_s, K_s in in/h
+            lu_m    = 4.0 * root_ks * 0.0254                       # upper-zone depth [m]
+            kr_s    = root_ks / 75.0 / 3600.0                      # drain rate [1/s]
+            tr_s    = 4.5 / root_ks * 3600.0                       # dry time → new storm [s]
+            self._Lu    = xp.asarray(lu_m)
+            self._kr    = xp.asarray(kr_s)
+            self._Tr    = xp.asarray(tr_s)
+            self._Fumax = self._dtheta0 * self._Lu                 # zone capacity [m]
+            self._Fu    = xp.zeros(self._n_cells, dtype=np.float64)
+            self._T     = xp.zeros(self._n_cells, dtype=np.float64)
+            print(f"  GA recovery   |  upper soil zone {1000 * lu_m.min():.0f}–"
+                  f"{1000 * lu_m.max():.0f} mm deep, empties after "
+                  f"{1 / (3600 * kr_s.max()):.0f}–{1 / (3600 * kr_s.min()):.0f} h of "
+                  f"dry weather; a new storm starts after "
+                  f"{tr_s.min() / 3600:.1f}–{tr_s.max() / 3600:.1f} h without rain "
+                  f"heavier than K_v")
+        else:
+            print("  GA recovery   |  off — the soil never dries out between storms")
+
     # ── Contract ─────────────────────────────────────────────────────────────
     def capacity(self):
         """Green-Ampt infiltration capacity f_p [m/s] per cell (uses current F)."""
         xp = self._xp
-        return self._ksat * (1.0 + self._psi * self._dtheta0
+        return self._ksat * (1.0 + self._psi * self._dtheta
                              / xp.maximum(self._F, self._F_floor))
 
     def excess_fraction(self, rain_1d):
@@ -180,9 +213,44 @@ class InfiltrationExcessMechanism(RunoffMechanism):
                         excess / xp.maximum(rain_1d, 1e-30), 0.0)
 
     def update_state(self, rain_1d, dt):
-        """Advance cumulative infiltration F by the infiltrated depth this step."""
+        """Advance cumulative infiltration F by the infiltrated depth this step
+        (and, with recovery, the upper soil zone and the storm clock)."""
         f = self._xp.minimum(rain_1d, self.capacity())    # infiltration rate
-        self._F = self._F + f * dt
+        if not self._recovery:
+            self._F = self._F + f * dt
+            return
+        self._recover_step(rain_1d, f, dt)
+
+    def _recover_step(self, rain_1d, f, dt):
+        """One SWMM 5 ``grnampt_getInfil`` state update, vectorised per cell.
+
+        Heavy rain (> K_v) restarts the dry clock T at T_r; light rain and dry
+        steps run it down.  Rain fills the upper zone (capped at F_u,max); a dry
+        step drains it.  When the clock runs out the next step opens a new storm
+        from the zone's current deficit, and an emptied zone resets fully.
+        """
+        xp  = self._xp
+        T   = xp.where(rain_1d > self._ksat, self._Tr, self._T - dt)
+        dry = rain_1d <= 0.0
+
+        # Rain: soak in.  Dry: the upper zone drains (only while it holds water).
+        soak     = f * dt
+        drain    = self._kr * self._Fumax * dt
+        draining = dry & (self._Fu > 0.0)
+        Fu = xp.where(dry, xp.where(draining, self._Fu - drain, self._Fu),
+                      xp.minimum(self._Fu + soak, self._Fumax))
+        F  = xp.where(dry, xp.where(draining, xp.maximum(self._F - drain, 0.0), self._F),
+                      self._F + soak)
+
+        emptied   = draining & (Fu <= 0.0)
+        new_storm = (T <= 0.0) & ~emptied & (~dry | draining)
+        Fu = xp.maximum(Fu, 0.0)
+        self._dtheta = xp.where(emptied, self._dtheta0,
+                                xp.where(new_storm, (self._Fumax - Fu) / self._Lu,
+                                         self._dtheta))
+        self._F  = xp.where(emptied | new_storm, 0.0, F)
+        self._Fu = Fu
+        self._T  = T
 
     # ── Green-Ampt parameter resolution (ported verbatim; GA_* config) ───────
     def _resolve_ksat_mmhr(self, cfg, grid_data, kv_scalar):

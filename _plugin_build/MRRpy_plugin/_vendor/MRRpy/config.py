@@ -292,6 +292,15 @@ class Config:
     #          (Kathmandu, Blue River OK, Illinois River OK/AR)
     #  100 cm  long frontal / winter rain on soils with a tight clay subsoil
     GA_KSAT_DEPTH_CM: float = 60.0
+    # Soil recovery between storms (EPA SWMM 5 Green-Ampt; Rossman & Huber 2016).
+    # Infiltrated water fills a shallow upper soil zone L_u = 4·√K_s (L_u in
+    # inches, K_s in in/h) that drains at k_r = √K_s/75 per hour of dry weather;
+    # after T_r = 4.5/√K_s hours with no rain heavier than K_s the next rain
+    # starts a NEW storm whose deficit is the zone's current emptiness.  The
+    # soil recovers towards its starting deficit Δθ₀.  Needed for runs longer
+    # than one storm: without it F only grows and f_p falls to K_s for good.
+    # False → legacy (F accumulates over the whole run).
+    GA_RECOVERY: bool = True
 
     # ── impervious: urban shedding ───────────────────────────────────────────
     IMPERVIOUS_SOURCE: str = "none"         # 'none'|'lcz'|'lulc'|'raster'

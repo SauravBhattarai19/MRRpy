@@ -181,7 +181,7 @@ $$
 | $K_v$ | vertical saturated hydraulic conductivity: how fast saturated soil drains | `GA_KSAT_MMHR` or a map |
 | $\psi$ | wetting-front suction head: how strongly dry soil pulls water in | `GA_SUCTION_M` or from texture |
 | $\Delta\theta_0$ | initial moisture deficit: how much empty pore space the soil has at the start (fraction) | from the soil-storage settings below |
-| $F$ | cumulative depth infiltrated since the start (updated every step) | — |
+| $F$ | depth infiltrated since the current storm began (updated every step) | — |
 
 **$K_v$, the most important value.** Typical values: sand ~50 mm/h, loam ~10,
 clay ~1. `GA_KSAT_SOURCE = gee` reads the global **HiHydroSoil v2.0** map and
@@ -205,7 +205,32 @@ at 1.
 When saturation excess is on too, the infiltration capacity also limits how fast
 rain can recharge its soil store (below).
 
-<!-- settings: GA_SUCTION_SOURCE GA_SUCTION_M GA_KSAT_SOURCE GA_KSAT_MMHR GA_KSAT_DEPTH_CM GA_KSAT_RASTER GA_KSAT_SCALE -->
+**Drying out between storms.** Green–Ampt describes one storm. Without any
+drying, $F$ keeps growing over a long run, and after a few storms $f_p$
+stays at $K_v$ for good, as if the soil never dried. With `GA_RECOVERY` on
+(the default), MRRpy uses the recovery method of EPA SWMM 5 (Rossman & Huber
+2016). The water that soaks in fills a thin **upper soil zone**. That zone
+drains in dry weather, and after a long enough dry spell the next rain counts
+as a **new storm**, which meets partly dried soil. Everything follows from
+$K_v$, written $K_s$ in inches per hour as in SWMM:
+
+| Quantity | Formula | $K_v$ = 1 / 10 / 50 mm/h |
+|---|---|---|
+| depth of the upper zone, $L_u$ | $4\sqrt{K_s}$ inches | 20 / 64 / 143 mm |
+| time for a full zone to drain, $1/k_r$ | $75/\sqrt{K_s}$ hours | 378 / 120 / 53 h |
+| dry spell that ends a storm, $T_r$ | $4.5/\sqrt{K_s}$ hours | 22.7 / 7.2 / 3.2 h |
+
+The zone holds at most $F_{u,max} = \Delta\theta_0 L_u$. Rain adds the
+infiltrated depth to its content $F_u$. Each dry step drains
+$k_r F_{u,max}\,\Delta t$ from both $F_u$ and $F$. Rain lighter than $K_v$
+does not stop the dry-spell clock; rain heavier than $K_v$ restarts it. When
+the clock passes $T_r$, a new storm starts with $F = 0$ and
+$\Delta\theta = (F_{u,max} - F_u)/L_u$. A fully drained zone returns the soil
+to $\Delta\theta_0$. So $\Delta\theta_0$ is both the starting dryness and
+the driest the soil gets. For a run of months or years, start it in the dry
+season, so that the starting soil moisture describes dry soil.
+
+<!-- settings: GA_SUCTION_SOURCE GA_SUCTION_M GA_KSAT_SOURCE GA_KSAT_MMHR GA_KSAT_DEPTH_CM GA_KSAT_RASTER GA_KSAT_SCALE GA_RECOVERY -->
 
 ### 4.6.3 Saturation excess (VSA-OPM)
 

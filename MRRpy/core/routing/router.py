@@ -442,6 +442,7 @@ def run_time_loop(grid_data, cfg):
     _c_max_prev       = 0.0     # previous-step max celerity [m/s] (0 → seed dt at dt_max)
     _impl_iters_sum   = 0       # Σ Picard iterations (mean reported at the end)
     _impl_res_max     = 0.0     # peak final Picard residual [m]
+    _impl_rejects     = 0       # steps retried at half dt (over-drained a cell)
     if _implicit:
         from .implicit import ImplicitDiffusiveSolver
         implicit_solver = ImplicitDiffusiveSolver(cfg, grid_data)
@@ -814,12 +815,36 @@ def run_time_loop(grid_data, cfg):
             # per-cell downstream outflow used for the hydrograph / boundary budget.
             # No volume flux limiter: the scheme is unconditionally stable and a
             # limiter would re-introduce the numerical diffusion it avoids.
-            volume_1d, Q_out_1d, _n_it, _res = implicit_solver.solve_step(
-                volume_1d, source_1d, bc_rate_1d, dt)
+            #
+            # Step rejection: a step that over-drained a cell by more than
+            # IMPLICIT_TOL of depth (an unconverged Picard iterate the solver
+            # floors at zero, which creates water) is discarded and retried at
+            # half the dt, down to CFL_DT_MIN.  The usual trigger is the first wet
+            # step after a dry spell, when the celerity-based dt has grown to the
+            # output interval while nothing flowed.  Over-drains within IMPLICIT_TOL
+            # are solver noise and pass, and a residual above tol alone is not
+            # rejected: wet/dry fronts can keep it there at any dt, while the
+            # flux-form update conserves mass regardless.  solve_step is
+            # stateless, so a retry only undoes the floored tally.
+            _rejected = False
+            while True:
+                _neg0 = implicit_solver.neg_volume_m3
+                _vol_try, _q_try, _n_it, _res = implicit_solver.solve_step(
+                    volume_1d, source_1d, bc_rate_1d, dt)
+                _impl_iters_sum += _n_it
+                _bad = implicit_solver.last_floor_depth_m > _impl_tol
+                if not _bad or dt * 0.5 < cfl_dt_min:
+                    break
+                implicit_solver.neg_volume_m3 = _neg0
+                dt *= 0.5
+                _impl_rejects += 1
+                _rejected = True
+            volume_1d, Q_out_1d = _vol_try, _q_try
             Q_out_vol_1d = Q_out_1d * dt
             rain_vol     = source_1d * cell_area * dt       # [m³] effective runoff added
-            _impl_iters_sum += _n_it
             _impl_res_max    = max(_impl_res_max, _res)
+            if adaptive and _rejected:
+                _dt_cfl_prev = dt          # grow again from the accepted step
             # Celerity proxy for the NEXT step's dt: c = 5/3·V, V = Q/(h·width).
             if bank_1d is not None:
                 depth_1d = np.maximum(hydraulics.stage_from_volume(
@@ -1050,7 +1075,7 @@ def run_time_loop(grid_data, cfg):
         _mean_it = _impl_iters_sum / step_count if step_count > 0 else 0.0
         print(f"  Implicit solve |  mean {_mean_it:.2f} Picard iters/step  "
               f"(max_iters={implicit_solver.max_iters})  |  peak residual "
-              f"{_impl_res_max:.2e} m")
+              f"{_impl_res_max:.2e} m  |  {_impl_rejects:,} steps retried at half dt")
         if _impl_res_max > _impl_tol:
             print(f"  [NOTE] Peak Picard residual {_impl_res_max:.2e} m > tol "
                   f"{_impl_tol:g} m on at least one step — raise IMPLICIT_MAX_ITERS "
