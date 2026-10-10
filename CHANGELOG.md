@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — HAND flood maps
+## Unreleased
 
 ### Added
 - **Flood depth and extent maps (HAND).** With `INUNDATION_MAP: true` a run
