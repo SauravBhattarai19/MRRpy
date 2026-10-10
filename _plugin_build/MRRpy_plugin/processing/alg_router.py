@@ -17,6 +17,7 @@ Inputs (key ones — all config.py parameters are exposed)
   WATERSHED_TIF   : watershed mask raster (or the whole-DEM mask)
   MODEL_AREA      : watershed | whole_dem (how the rasters above were made)
   SAVE_FIELDS     : save depth/velocity/discharge maps over time (fields/)
+  INUNDATION_MAP  : flood depth and extent maps from the river flow (HAND, inundation/)
   PRECIP_METHOD   : uniform | thiessen | idw | imerg_thiessen | imerg_idw
   RUNOFF_SOURCE   : none | coefficient | raster | scs_cn | physical
   ROUTING_SCHEME  : kinematic | diffusive | muskingum | dynamic | diffusive_implicit
@@ -58,6 +59,7 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
     WATERSHED_TIF = "WATERSHED_TIF"
     MODEL_AREA = "MODEL_AREA"
     SAVE_FIELDS = "SAVE_FIELDS"
+    INUNDATION_MAP = "INUNDATION_MAP"
     _AREA_OPTIONS = ["watershed", "whole_dem"]
 
     # Routing parameters
@@ -181,6 +183,11 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterBoolean(
             self.SAVE_FIELDS,
             "Save maps over time (for peak-depth maps and the flow animation)",
+            defaultValue=False
+        ))
+        self.addParameter(QgsProcessingParameterBoolean(
+            self.INUNDATION_MAP,
+            "Flood depth and extent maps from the river flow (HAND)",
             defaultValue=False
         ))
 
@@ -462,6 +469,7 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         cfg.MODEL_AREA = self._AREA_OPTIONS[
             self.parameterAsEnum(parameters, self.MODEL_AREA, context)]
         cfg.SAVE_FIELDS = self.parameterAsBool(parameters, self.SAVE_FIELDS, context)
+        cfg.INUNDATION_MAP = self.parameterAsBool(parameters, self.INUNDATION_MAP, context)
 
         cfg.MANNINGS_N = self.parameterAsDouble(parameters, self.MANNINGS_N, context)
         cfg.TIME_STEP_SECONDS = self.parameterAsDouble(parameters, self.TIME_STEP, context)
@@ -586,6 +594,12 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
             feedback.setProgress(90)
             kwr.save_hydrograph(hydrograph, cfg)
 
+            flood = {}
+            if cfg.INUNDATION_MAP:
+                from MRRpy.core.inundation import make_flood_maps
+                feedback.setProgress(93)
+                flood = make_flood_maps(cfg, log=feedback.pushInfo)
+
         finally:
             # Always restore stdout/stderr
             sys.stdout = _orig_stdout
@@ -607,6 +621,15 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         }
         for name, path in routing_rasters.items():
             if os.path.exists(path):
+                details = QgsProcessingContext.LayerDetails(
+                    name, QgsProject.instance(), name.replace(" ", "_")
+                )
+                context.addLayerToLoadOnCompletion(path, details)
+
+        for key, name in (("flood_depth_max", "Flood depth, deepest (m)"),
+                          ("flood_extent_geojson", "Flooded area")):
+            path = flood.get(key)
+            if path and os.path.exists(path):
                 details = QgsProcessingContext.LayerDetails(
                     name, QgsProject.instance(), name.replace(" ", "_")
                 )

@@ -645,6 +645,9 @@ def _write_config_py(cfg: Config, path: str):
         ("9. OUTPUTS", [
             "HYDROGRAPH_CSV", "MASS_BALANCE_REPORT", "MASS_BALANCE_CSV",
             "SAVE_FIELDS", "FIELD_VARS", "FIELD_STRIDE", "FIELD_OUTPUT_DIR",
+            "INUNDATION_MAP", "INUNDATION_AREA", "INUNDATION_DEM", "INUNDATION_DEM_PATH",
+            "INUNDATION_DEM_SCALE_M", "INUNDATION_ANIMATION", "INUNDATION_REACH_LENGTH_M",
+            "INUNDATION_BACKWATER",
         ]),
         ("10. COMPUTE BACKEND", [
             "BACKEND", "GPU_PRECISION",

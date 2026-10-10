@@ -412,3 +412,43 @@ def test_cancel_reenables_run(dialog, tmp_path):
     dialog.run_btn.setEnabled(False)
     dialog._on_cancelled()
     assert dialog.run_btn.isEnabled()
+
+
+def test_flood_maps_roundtrip_disclosure_and_buttons(dialog, tmp_path):
+    tab = dialog.tab_routing
+    assert tab.flood_dem.isHidden() and tab.flood_dem_path.isHidden()   # off → hidden
+    tab.apply_config(Config(INUNDATION_MAP=True, INUNDATION_DEM="file",
+                            INUNDATION_DEM_PATH="/data/lidar.tif",
+                            INUNDATION_AREA=(85.26, 27.63, 85.36, 27.72),
+                            INUNDATION_ANIMATION=False))
+    assert not tab.flood_dem.isHidden() and not tab.flood_dem_path.isHidden()
+    cfg = Config()
+    tab.write_to_config(cfg)
+    assert cfg.INUNDATION_MAP is True and cfg.INUNDATION_DEM == "file"
+    assert cfg.INUNDATION_DEM_PATH == "/data/lidar.tif"
+    assert cfg.INUNDATION_AREA == (85.26, 27.63, 85.36, 27.72)
+    assert cfg.INUNDATION_ANIMATION is False
+    tab.flood_dem.setCurrentIndex(tab.flood_dem.findData("fabdem"))
+    assert tab.flood_dem_path.isHidden()
+    tab.write_to_config(cfg)
+    assert cfg.INUNDATION_DEM == "fabdem"
+    tab.flood_area.setText("")
+    tab.write_to_config(cfg)
+    assert cfg.INUNDATION_AREA is None
+
+    from MRRpy_plugin.processing.alg_router import RoutingAlgorithm
+    r = RoutingAlgorithm()
+    r.initAlgorithm()
+    assert r.parameterDefinition("INUNDATION_MAP") is not None
+
+    res = dialog.tab_results
+    res.update_results({})
+    assert not res.flood_maps_btn.isEnabled() and not res.flood_gif_btn.isEnabled()
+    depth = tmp_path / "flood_depth_max.tif"
+    depth.write_bytes(b"x")
+    summary = tmp_path / "inundation_summary.json"
+    summary.write_text('{"grid": "fabdem 30 m", "flooded_km2": 2.5, "max_depth_m": 1.8, '
+                       '"reaches": 10, "reaches_above_bank": 4}')
+    res.update_results({"flood_depth_max": str(depth), "summary_json": str(summary)})
+    assert res.flood_maps_btn.isEnabled() and not res.flood_gif_btn.isEnabled()
+    assert "2.50 km² flooded" in res.flood_hint.text()

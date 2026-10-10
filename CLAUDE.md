@@ -164,6 +164,33 @@ own threading/stdout. Stages:
 - `routing` — `core/routing/router.py`: `initialise_grid` → `run_time_loop` →
   `save_hydrograph`.
 - `vsa_opm` — `core/opm.py::run_opm`, the standalone OPM runner.
+- `inundation` — `core/inundation/` (HAND flood depth/extent maps). Runs at the
+  end of `routing` when `INUNDATION_MAP` is on; on its own it redraws the maps
+  from `{OUTPUT_DIR}/inundation/network.npz` without re-routing.
+
+### Flood maps (`core/inundation/`)
+
+Post-processing of the routed discharge; routing must stay byte-identical with
+`INUNDATION_MAP` on (the recorder only reads `Q_out_vol_1d`). `recorder.py`
+(`PeakDischargeRecorder`, hooked into `run_time_loop` like `FieldRecorder`) keeps
+the per-cell peak of the interval-mean Q (= `hydrograph.csv`'s quantity) and the
+river-cell Q series; `snapshot.py` saves them with the static network.
+`network.py` (nearest drain/HAND, reaches split at confluences into equal pieces;
+grid-agnostic: flat `ds` + a downstream-first `order`), `rating.py` (synthetic
+rating curve = the model's own `compound_conveyance` slot + HAND floodplain strips;
+identical to the model's section when only river cells are present), `mapping.py`
+(`FloodModel`: backwater levels, stages, depth, outputs; `SavedFlood` for plots) and
+`finegrid.py` (the maps are drawn on the run's own original DEM `reprojected_dem.tif`
+or a finer `INUNDATION_DEM`, NOT on the routing network: flow paths by least-cost
+search `network.least_cost_d8` on the original DEM — a filled DEM turned the
+Kathmandu valley floor into flats crossed by straight-line rivers — and HAND =
+original elevation above the river bed lowered only (`river_bed_profile`). Q is
+passed to each map river from the routed river nearby with about the same drainage
+area; water entering the area from outside is added before accumulation; unmatched
+river cells inherit only from downstream — never upstream, because cells along a
+cropped DEM's edge collect flow along the edge). The routing network itself is only
+the fallback when `reprojected_dem.tif` is missing. Tests: `tests/test_inundation.py`;
+science check: `TestCases/inundation_khokana/`.
 
 ### Runoff generation (`core/runoff/`)
 

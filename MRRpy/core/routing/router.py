@@ -378,6 +378,12 @@ def run_time_loop(grid_data, cfg):
         if not gauge_rec.active:
             gauge_rec = None
 
+    # Optional flood maps (HAND): peak + river-cell series of interval-mean Q
+    peak_rec = None
+    if getattr(cfg, 'INUNDATION_MAP', False):
+        from ..inundation.recorder import PeakDischargeRecorder
+        peak_rec = PeakDischargeRecorder(cfg, grid_data)
+
     # ── Routing scheme ────────────────────────────────────────────────────────
     # Scheme behaviour is described by a registry descriptor (schemes.py); the
     # time loop branches on its trait flags rather than raw name comparisons.
@@ -930,6 +936,8 @@ def run_time_loop(grid_data, cfg):
         # it downstream in this same step (below); MC and dynamic read it at the
         # start of the next step as that step's inflow.
         Q_out_vol_1d = Q_out_1d * dt                 # [m³] outflow volume this step
+        if peak_rec is not None:
+            peak_rec.accumulate(Q_out_vol_1d)        # read-only: flood-map discharge
         if not (_mc or _implicit or _dyn):
             # Same-step scatter (standard explicit finite volume): the volume that
             # leaves a cell this step enters its downstream neighbour this step.
@@ -1040,6 +1048,8 @@ def run_time_loop(grid_data, cfg):
                                 volume_1d, xp)
             if gauge_rec is not None:
                 gauge_rec.record(t_seconds, depth_1d, Q_out_1d, A_xs_1d, xp)
+            if peak_rec is not None:
+                peak_rec.record(t_seconds, _interval)
             if _partition:
                 # Cumulative mechanism volumes [m³] at the hydrograph cadence —
                 # one D→H transfer per recorded row (cheap, same rate as Q).
@@ -1181,6 +1191,8 @@ def run_time_loop(grid_data, cfg):
         recorder.save()
     if gauge_rec is not None:
         gauge_rec.save()
+    if peak_rec is not None:
+        peak_rec.save()
 
     return hydrograph
 

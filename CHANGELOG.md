@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.4.0 — HAND flood maps
+
+### Added
+- **Flood depth and extent maps (HAND).** With `INUNDATION_MAP: true` a run
+  turns the routed river flow into flood maps. Every cell gets its height above
+  the river it drains to; each ~1 km river reach gets a rating curve (the
+  model's own bankfull channel plus the land beside it, each cell with its own
+  roughness); the reach's peak flow gives the water level that floods all lower
+  land. Main rivers are mapped again on their own so they back up into side
+  streams (`INUNDATION_BACKWATER`). Writes `inundation/flood_depth_max.tif`,
+  `flood_extent_max.tif/.geojson`, `flood_animation.gif`, the time of the peak,
+  first-wet time and duration, HAND, per-reach tables and rating curves.
+  Routing results do not change: the recorder only reads the flow. Flow paths
+  for the maps are traced on the original DEM by least-cost search (Metz et al.
+  2011), so rivers stay in their real channels across flat valley floors, and
+  heights are measured on the original DEM above a river bed lowered only
+  (NOAA OWP practice); on the Kathmandu valley floor, a filled DEM gave
+  straight-line rivers and flood stripes.
+- Finer flood maps than the model grid: `INUNDATION_DEM: auto` uses the run's
+  Earth Engine DEM at its native resolution when the model ran coarser (e.g.
+  FABDEM 30 m for a 90 m run); `file` takes your own DEM (e.g. LiDAR); a dataset
+  name downloads one. Each fine river takes the flow of the routed river nearby
+  that drains about the same area. `INUNDATION_AREA` limits the maps to a box;
+  the flow still comes from the whole basin.
+- A new `inundation` pipeline stage (`MRRpy run --stages inundation`) redraws
+  the maps without routing again. `plot_inundation` and `animate_inundation` in
+  Python.
+- QGIS plugin: a flood-maps group on the Routing tab, **Load Flood Maps** and
+  **Open Flood Animation** on the Results tab, and an `INUNDATION_MAP`
+  Processing parameter.
+
+### Tests
+- `tests/test_inundation.py`: HAND and reaches on hand-built networks; the
+  rating curve equals the model's channel section with no floodplain and the
+  analytic V-valley; full runs (peak = hydrograph peak for kinematic,
+  Muskingum–Cunge and implicit; routing unchanged; redraw; finer DEM; area;
+  `auto` fallback; whole DEM).
+
 ## 0.3.0
 
 **Results change for Green-Ampt runs longer than one storm.** Set

@@ -67,6 +67,7 @@ nav:
       - "9 Roughness and river channels": examples/roughness-channels.md
       - "10 The whole DEM and flood maps": examples/whole-dem.md
       - "11 Many runs from Python": examples/batch-runs.md
+      - "12 Flood depth and extent maps": examples/flood-maps.md
       - "Case study: Nepal (Trishuli)": examples/nepal-case-study.md
   - Reference:
       - Command line: reference/cli.md

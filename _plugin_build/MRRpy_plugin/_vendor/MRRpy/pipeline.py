@@ -13,6 +13,10 @@ Stages (in order):
     'routing'      – kinematic/diffusive-wave routing
                      (initialise_grid → run_time_loop → save_hydrograph)
     'vsa_opm'      – standalone OPM run (core.opm.run_opm)
+    'inundation'   – flood depth / extent maps from a routed run's discharge
+                     (HAND; core.inundation.make_flood_maps).  Runs at the end
+                     of 'routing' when INUNDATION_MAP is on; on its own it
+                     redraws the maps without routing again.
 """
 
 import os
@@ -24,6 +28,7 @@ _STAGE_PROGRESS = {
     "process_dem": (0, 30),
     "routing": (30, 65),
     "vsa_opm": (30, 65),
+    "inundation": (95, 5),
 }
 
 
@@ -130,7 +135,17 @@ def stage_routing(cfg, log=print, progress=None, is_cancelled=None):
     if getattr(cfg, "SAVE_FIELDS", False):
         out["fields_dir"] = (getattr(cfg, "FIELD_OUTPUT_DIR", None)
                              or os.path.join(cfg.OUTPUT_DIR, "fields"))
+    if getattr(cfg, "INUNDATION_MAP", False):
+        log("  Making flood maps …")
+        out.update(stage_inundation(cfg, log=log))
     return out
+
+
+def stage_inundation(cfg, log=print):
+    """Flood depth / extent maps from the discharge saved by a routed run."""
+    from .core.inundation import make_flood_maps
+
+    return make_flood_maps(cfg, log=log)
 
 
 def stage_vsa_opm(cfg):
@@ -155,7 +170,8 @@ def run_pipeline(cfg, stages=DEFAULT_STAGES, on_log=None, on_progress=None,
     ----------
     cfg : OpmConfig (or any object with the same attributes)
     stages : sequence of str
-        Subset of ('process_dem', 'routing', 'vsa_opm'), run in the given order.
+        Subset of ('process_dem', 'routing', 'vsa_opm', 'inundation'), run in
+        the given order.
     on_log : callable(str), optional
         Receives human-readable log lines (default: print).
     on_progress : callable(int), optional
@@ -198,6 +214,10 @@ def run_pipeline(cfg, stages=DEFAULT_STAGES, on_log=None, on_progress=None,
             elif stage == "routing":
                 result.update(stage_routing(cfg, log=log, progress=emit,
                                             is_cancelled=is_cancelled))
+                emit(base + span)
+            elif stage == "inundation":
+                emit(base + span // 2)
+                result.update(stage_inundation(cfg, log=log))
                 emit(base + span)
             elif stage == "vsa_opm":
                 emit(base + span // 2)

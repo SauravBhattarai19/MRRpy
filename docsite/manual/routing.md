@@ -31,7 +31,7 @@ $$
 with $A$ the flow area and $R$ the hydraulic radius ($R \approx h$ for a wide
 sheet of water; for river channels see [5.5](channels.md)). The water balance is
 always closed: a run reports any lost or created water in
-[`mass_balance.csv`](outputs.md#64-the-water-balance).
+[`mass_balance.csv`](outputs.md#65-the-water-balance).
 
 ## 5.1 Routing method
 

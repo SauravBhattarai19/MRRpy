@@ -70,6 +70,7 @@ _ENUM_CHOICES = {
     "DEM_CONDITIONING":      ["fill", "carve", "carve_spread"],
     "CHANNEL_GEOMETRY":      ["order", "area", "discharge"],
     "MODEL_AREA":            ["watershed", "whole_dem"],
+    "INUNDATION_DEM":        ["auto", "model_grid", "file"] + list(_DEM_CATALOG),
 }
 
 # Fixed-choice options that may also be None (None = "use the default rule").
@@ -511,6 +512,23 @@ class Config:
     FIELD_STRIDE: int = 1            # record every Nth OUTPUT_INTERVAL (memory control)
     FIELD_OUTPUT_DIR = None          # None → {OUTPUT_DIR}/fields/  (resolved at runtime)
 
+    # ── Flood depth and extent maps (HAND) ───────────────────────────────────
+    # Spread each river reach's routed flow sideways over the land that drains
+    # to it and lies below the water level (Height Above Nearest Drainage with a
+    # rating curve per reach) and write flood depth / extent maps, an animation
+    # and tables to {OUTPUT_DIR}/inundation/.  Routing results are unchanged.
+    INUNDATION_MAP: bool = False
+    INUNDATION_AREA = None           # (west, south, east, north) degrees; None → whole model area
+    # Elevation data for the maps: 'auto' (the run's Earth Engine DEM at its native
+    # resolution when the model grid is coarser, else the model grid) | 'model_grid'
+    # | 'file' (INUNDATION_DEM_PATH) | a DEM_SOURCE dataset name, e.g. 'fabdem'.
+    INUNDATION_DEM: str = "auto"
+    INUNDATION_DEM_PATH = None       # GeoTIFF used when INUNDATION_DEM='file'
+    INUNDATION_DEM_SCALE_M = None    # [m] download resolution; None → the dataset's native
+    INUNDATION_ANIMATION: bool = True     # flood_animation.gif of the largest flood
+    INUNDATION_REACH_LENGTH_M: float = 1000.0   # advanced: river reach length [m]
+    INUNDATION_BACKWATER: bool = True     # advanced: big rivers back up into side streams
+
     # ═════════════════════════════════════════════════════════════════════════
     # 10. COMPUTE BACKEND
     # ═════════════════════════════════════════════════════════════════════════
@@ -898,6 +916,33 @@ class Config:
                 errors.append("SAVE_FIELDS is on but FIELD_VARS is empty.")
             if int(self.FIELD_STRIDE) < 1:
                 errors.append(f"FIELD_STRIDE must be >= 1 (got {self.FIELD_STRIDE}).")
+
+        if self.INUNDATION_MAP:
+            area = self.INUNDATION_AREA
+            if area:
+                try:
+                    w, so, e, n = (float(v) for v in area)
+                    ok = -180 <= w < e <= 180 and -90 <= so < n <= 90
+                except (TypeError, ValueError):
+                    ok = False
+                if not ok:
+                    errors.append(f"INUNDATION_AREA must be (west, south, east, north) in "
+                                  f"degrees with west < east and south < north (got {area!r}).")
+            if self.INUNDATION_DEM == "file":
+                path = self.INUNDATION_DEM_PATH
+                if not path or not os.path.exists(path):
+                    errors.append(f"INUNDATION_DEM is 'file' but INUNDATION_DEM_PATH was not "
+                                  f"found: {path!r}")
+            elif (self.INUNDATION_DEM not in ("auto", "model_grid")
+                  and not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT"))):
+                errors.append(f"INUNDATION_DEM '{self.INUNDATION_DEM}' is downloaded from Google "
+                              "Earth Engine: set GEE_PROJECT (or the GEE_PROJECT env var).")
+            if self.INUNDATION_DEM_SCALE_M is not None and not float(self.INUNDATION_DEM_SCALE_M) > 0:
+                errors.append(f"INUNDATION_DEM_SCALE_M must be > 0 or None "
+                              f"(got {self.INUNDATION_DEM_SCALE_M}).")
+            if not float(self.INUNDATION_REACH_LENGTH_M) > 0:
+                errors.append(f"INUNDATION_REACH_LENGTH_M must be > 0 "
+                              f"(got {self.INUNDATION_REACH_LENGTH_M}).")
 
         if errors:
             raise ValueError(

@@ -10,7 +10,8 @@ Only the fields relevant to the current choices are shown:
   • Scheme diffusive → diffusion θ; dynamic → flux-centering θ;
     diffusive_implicit → the Picard / solver controls.
   • Channel routing off → hide per-order widths.
-  • Adaptive off → hide the CFL controls.  The implicit scheme has no CFL
+  • Adaptive off → hide the CFL controls.
+  • Flood maps off → hide their options; the DEM file only for 'file'.  The implicit scheme has no CFL
     stability limit, so it swaps the explicit C target / dt-max for its own
     (≫1 allowed) Courant target.
 
@@ -59,6 +60,19 @@ _SCHEME_LABELS = {
     "diffusive_implicit": "diffusive_implicit — semi-implicit diffusion wave "
                           "(HEC-RAS-style, unconditionally stable, CPU only)",
 }
+_FLOOD_DEM_LABELS = {
+    "auto": "auto — a finer copy of the run's DEM when there is one",
+    "model_grid": "model grid — the grid the model ran on",
+    "file": "file — my own finer DEM (e.g. LiDAR)",
+}
+
+
+def flood_dem_choices():
+    """Ordered INUNDATION_DEM values, as the installed core package defines them."""
+    from ..bridge import core_choices
+    return core_choices("INUNDATION_DEM", list(_FLOOD_DEM_LABELS))
+
+
 def qbf_presets():
     """{name: (formula, description)} bankfull-flow presets from the core package."""
     try:
@@ -110,6 +124,7 @@ class TabRouting(QWidget):
         self._build_scheme_group(root)
         self._build_channel_group(root)
         self._build_time_group(root)
+        self._build_flood_group(root)
         self._build_backend_group(root)
         self._build_advanced_group(root)
         root.addStretch()
@@ -467,6 +482,59 @@ class TabRouting(QWidget):
 
         root.addWidget(grp)
 
+    # ── Flood maps (HAND) ──────────────────────────────────────────────────────
+
+    def _build_flood_group(self, root):
+        grp = QGroupBox("Flood Depth and Extent Maps (HAND)")
+        form = self._flood_form = QFormLayout(grp)
+
+        self.flood_maps = QCheckBox("Make flood depth and extent maps from the river flow")
+        self.flood_maps.setToolTip(
+            "Spreads each river's flow sideways over the land beside it that lies\n"
+            "below the water (Height Above Nearest Drainage), and writes\n"
+            "inundation/flood_depth_max.tif, flood_extent_max.tif/.geojson and an\n"
+            "animation. The routing itself does not change.")
+        form.addRow(self.flood_maps)
+
+        self.flood_dem = QComboBox()
+        for name in flood_dem_choices():
+            self.flood_dem.addItem(_FLOOD_DEM_LABELS.get(name, f"{name} — download from "
+                                                              "Earth Engine"), name)
+        self.flood_dem.setToolTip(
+            "A finer DEM draws sharper flood edges; the river flow is passed to it\n"
+            "from the model. 'auto' uses your Earth Engine DEM at its finest\n"
+            "resolution when the model ran coarser, else the model grid.")
+        form.addRow("Elevation data for the maps:", self.flood_dem)
+
+        self.flood_dem_path = QgsFileWidget()
+        self.flood_dem_path.setStorageMode(QgsFileWidget.GetFile)
+        self.flood_dem_path.setFilter("GeoTIFF (*.tif *.tiff);;All files (*)")
+        form.addRow("Finer DEM file:", self.flood_dem_path)
+
+        self.flood_area = QLineEdit()
+        self.flood_area.setPlaceholderText("west, south, east, north — empty: the whole model area")
+        self.flood_area.setToolTip(
+            "Only map this box (degrees), e.g. a town. The flow still comes from the\n"
+            "whole basin; with a finer DEM only the box and 3 km around it are used.")
+        form.addRow("Map only this area:", self.flood_area)
+
+        self.flood_animation = QCheckBox("Also write an animation (GIF) of the largest flood")
+        self.flood_animation.setChecked(True)
+        form.addRow(self.flood_animation)
+
+        root.addWidget(grp)
+
+    @staticmethod
+    def _parse_area(text):
+        text = (text or "").strip()
+        if not text:
+            return None
+        try:
+            vals = tuple(float(v) for v in text.replace(";", ",").split(","))
+        except ValueError:
+            return text            # Config.validate() explains what is wrong
+        return vals
+
     # ── Backend ────────────────────────────────────────────────────────────────
 
     def _build_backend_group(self, root):
@@ -581,6 +649,8 @@ class TabRouting(QWidget):
         self.channel_qbf_mode.currentIndexChanged.connect(self._apply_disclosure)
         self.adaptive.toggled.connect(self._apply_disclosure)
         self._rb_gpu.toggled.connect(self._apply_disclosure)
+        self.flood_maps.toggled.connect(self._apply_disclosure)
+        self.flood_dem.currentIndexChanged.connect(self._apply_disclosure)
 
     def uses_gee(self) -> bool:
         """LULC / LCZ Manning's n is downloaded from Earth Engine."""
@@ -635,6 +705,12 @@ class TabRouting(QWidget):
         self._prec_widget.setVisible(self._rb_gpu.isChecked())
 
         self._implicit_cpu_note.setVisible(implicit and self._rb_gpu.isChecked())
+
+        flood = self.flood_maps.isChecked()
+        for w in (self.flood_dem, self.flood_area, self.flood_animation):
+            _set_row_visible(self._flood_form, w, flood)
+        _set_row_visible(self._flood_form, self.flood_dem_path,
+                         flood and self.flood_dem.currentData() == "file")
 
     def _on_channel_override_toggled(self, on):
         if not on:
@@ -750,6 +826,13 @@ class TabRouting(QWidget):
 
         self.mass_balance.setChecked(bool(getattr(cfg, "MASS_BALANCE_REPORT", True)))
         self.save_fields.setChecked(bool(getattr(cfg, "SAVE_FIELDS", False)))
+        self.flood_maps.setChecked(bool(getattr(cfg, "INUNDATION_MAP", False)))
+        i = self.flood_dem.findData(str(getattr(cfg, "INUNDATION_DEM", "auto") or "auto"))
+        self.flood_dem.setCurrentIndex(max(i, 0))
+        self.flood_dem_path.setFilePath(getattr(cfg, "INUNDATION_DEM_PATH", None) or "")
+        area = getattr(cfg, "INUNDATION_AREA", None)
+        self.flood_area.setText(", ".join(f"{float(v):g}" for v in area) if area else "")
+        self.flood_animation.setChecked(bool(getattr(cfg, "INUNDATION_ANIMATION", True)))
         self.min_slope.setValue(float(cfg.MIN_SLOPE))
         self.min_depth.setValue(float(cfg.MIN_DEPTH_M))
         self.slope_cap.setValue(float(getattr(cfg, "MANNING_SLOPE_CAP", None) or 0.0))
@@ -823,6 +906,11 @@ class TabRouting(QWidget):
 
         cfg.MASS_BALANCE_REPORT = self.mass_balance.isChecked()
         cfg.SAVE_FIELDS = self.save_fields.isChecked()
+        cfg.INUNDATION_MAP = self.flood_maps.isChecked()
+        cfg.INUNDATION_DEM = self.flood_dem.currentData() or "auto"
+        cfg.INUNDATION_DEM_PATH = self.flood_dem_path.filePath() or None
+        cfg.INUNDATION_AREA = self._parse_area(self.flood_area.text())
+        cfg.INUNDATION_ANIMATION = self.flood_animation.isChecked()
         cfg.MIN_SLOPE = self.min_slope.value()
         cfg.MIN_DEPTH_M = self.min_depth.value()
         cfg.MANNING_SLOPE_CAP = self.slope_cap.value() or None

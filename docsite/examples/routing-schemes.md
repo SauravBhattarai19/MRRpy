@@ -97,5 +97,5 @@ the timing and shape of the peak (the volume is the same for all three).
 | smaller channels: more spreading | `CHANNEL_QBF_M3S: 100` | [Example 9](roughness-channels.md) |
 | rougher ground: a slower flood | `MANNINGS_N: 0.15` | [5.4.1](../manual/roughness.md#541-roughness-of-the-ground) |
 | a more accurate implicit run | `IMPLICIT_CFL_TARGET: 1.0` | [5.2](../manual/routing.md#52-simulation-time-and-time-step) |
-| the GPU (explicit methods) | `BACKEND: gpu` | [6.3](../manual/outputs.md#63-computer-cpu-or-gpu) |
+| the GPU (explicit methods) | `BACKEND: gpu` | [6.4](../manual/outputs.md#64-computer-cpu-or-gpu) |
 | many combinations at once | a Python loop | [Example 11](batch-runs.md) |

@@ -12,6 +12,8 @@ Features
 - Peak discharge & timing summary label
 - Flood maps from the saved fields (SAVE_FIELDS): peak-depth/discharge
   GeoTIFFs loaded as layers, and an animation of the flow spreading
+- Flood depth and extent maps (INUNDATION_MAP, HAND): the depth GeoTIFF and
+  extent outlines loaded as layers, and the flood animation opened
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -129,6 +131,33 @@ class TabResults(QWidget):
         h_maps.addStretch()
         v_maps.addLayout(h_maps)
         root.addWidget(grp_maps)
+
+        # ── Flood depth and extent (needs "flood depth and extent maps") ──────
+        grp_flood = QGroupBox("Flood depth and extent (HAND)")
+        v_flood = QVBoxLayout(grp_flood)
+        self.flood_hint = QLabel(
+            "Turn on “flood depth and extent maps” on the Routing tab before running "
+            "to see how far the rivers spread.")
+        self.flood_hint.setWordWrap(True)
+        v_flood.addWidget(self.flood_hint)
+        h_flood = QHBoxLayout()
+        self.flood_maps_btn = QPushButton(QgsApplication.getThemeIcon("/mActionAddRasterLayer.svg"),
+                                          "Load Flood Maps")
+        self.flood_maps_btn.setToolTip(
+            "Add the deepest flood water (m) and the outline of the flooded area\n"
+            "to the QGIS project.")
+        self.flood_maps_btn.setEnabled(False)
+        self.flood_maps_btn.clicked.connect(self._load_flood_maps)
+        self.flood_gif_btn = QPushButton(QgsApplication.getThemeIcon("/mActionPlay.svg"),
+                                         "Open Flood Animation")
+        self.flood_gif_btn.setToolTip("Open flood_animation.gif in your image viewer.")
+        self.flood_gif_btn.setEnabled(False)
+        self.flood_gif_btn.clicked.connect(self._open_flood_animation)
+        h_flood.addWidget(self.flood_maps_btn)
+        h_flood.addWidget(self.flood_gif_btn)
+        h_flood.addStretch()
+        v_flood.addLayout(h_flood)
+        root.addWidget(grp_flood)
         root.addStretch()
 
     # ── Plot helpers ──────────────────────────────────────────────────────────
@@ -211,6 +240,32 @@ class TabResults(QWidget):
             if has_maps else
             "Turn on “save maps over time” before running to get peak-depth maps "
             "and an animation of the flow.")
+        import os
+        has_flood = bool(result.get("flood_depth_max")) and os.path.isfile(
+            result.get("flood_depth_max", ""))
+        has_gif = bool(result.get("flood_animation")) and os.path.isfile(
+            result.get("flood_animation", ""))
+        self.flood_maps_btn.setEnabled(has_flood)
+        self.flood_gif_btn.setEnabled(has_gif)
+        if has_flood:
+            summary = self._flood_summary()
+            self.flood_hint.setText(summary or "Flood maps were made — load them.")
+        else:
+            self.flood_hint.setText(
+                "Turn on “flood depth and extent maps” on the Routing tab before running "
+                "to see how far the rivers spread.")
+
+    def _flood_summary(self):
+        """One plain sentence from inundation_summary.json, or ''."""
+        import json
+        try:
+            with open(self._result["summary_json"]) as fh:
+                s = json.load(fh)
+        except (OSError, KeyError, ValueError):
+            return ""
+        return (f"Flood maps on the {s['grid']} grid: {s['flooded_km2']:.2f} km² flooded, "
+                f"deepest {s['max_depth_m']:.2f} m; {s['reaches_above_bank']} of "
+                f"{s['reaches']} river reaches went above their banks.")
 
     # ── Button slots ──────────────────────────────────────────────────────────
 
@@ -276,6 +331,24 @@ class TabResults(QWidget):
         loaded = [n for k, n in names.items() if k in written and add_raster(written[k], n)]
         self._iface.messageBar().pushSuccess(
             "MRRpy_plugin", f"Loaded {len(loaded)} map(s): {', '.join(loaded)}")
+
+    def _load_flood_maps(self):
+        """Add the flood depth raster and the flooded-area outlines as layers."""
+        from .layer_utils import add_raster, add_vector
+        loaded = []
+        if add_raster(self._result.get("flood_depth_max"), "Flood depth, deepest (m)"):
+            loaded.append("flood depth")
+        if add_vector(self._result.get("flood_extent_geojson"), "Flooded area"):
+            loaded.append("flooded area")
+        if loaded:
+            self._iface.messageBar().pushSuccess("MRRpy_plugin", f"Loaded {', '.join(loaded)}")
+        else:
+            self._iface.messageBar().pushWarning("MRRpy_plugin", "No flood maps found.")
+
+    def _open_flood_animation(self):
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self._result.get("flood_animation", "")))
 
     def _save_animation(self):
         """Ask for a .gif path and render the flow animation there."""

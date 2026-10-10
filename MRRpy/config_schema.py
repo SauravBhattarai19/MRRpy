@@ -274,6 +274,7 @@ _CHANNELS = ("CHANNEL_ROUTING", On())
 _BY_Q = (_CHANNELS, ("CHANNEL_GEOMETRY", In("discharge")))
 _SCHEME = "ROUTING_SCHEME"
 _ADAPTIVE = ("ADAPTIVE_TIMESTEP", On())
+_FLOOD = ("INUNDATION_MAP", On())
 
 _GEE_NOTE = " Needs Google Earth Engine (GEE_PROJECT)."
 
@@ -844,6 +845,44 @@ PARAMS = [
       "Where the maps are written.", "folder", level="advanced",
       optional=True, none_label="a 'fields' folder inside the results folder",
       when=(("SAVE_FIELDS", On()),), example="maps/"),
+    P("INUNDATION_MAP", "outputs", "Flood depth and extent maps",
+      "Spread each river's flow sideways over the land beside it that lies below "
+      "the water (the HAND method), and write maps of flood depth and extent. "
+      "The routing itself does not change.", "bool"),
+    P("INUNDATION_AREA", "outputs", "Area for the flood maps",
+      "The box to map, in longitude/latitude degrees, e.g. a town or a valley. "
+      "The flow still comes from the whole basin.", "bbox",
+      unit="west, south, east, north", optional=True, none_label="the whole modelled area",
+      when=(_FLOOD,), example=(85.25, 27.62, 85.35, 27.72)),
+    P("INUNDATION_DEM", "outputs", "Elevation data for the flood maps",
+      "A finer DEM draws sharper flood edges; the river flow is passed to it from "
+      "the model. 'auto' uses your Earth Engine DEM at its finest resolution when "
+      "the model ran coarser (e.g. FABDEM 30 m for a 90 m run), else the model grid.",
+      "choice", when=(_FLOOD,),
+      choice_labels=dict({"auto": "auto — a finer copy of the run's DEM when there is one",
+                          "model_grid": "model_grid — the grid the model ran on",
+                          "file": "file — my own finer DEM (e.g. LiDAR)"},
+                         **{k: f"{k} — download {v['title']}, {v['resolution_m']} m"
+                            for k, v in _DEM_CATALOG.items()})),
+    P("INUNDATION_DEM_PATH", "outputs", "Finer DEM file for the flood maps",
+      "A GeoTIFF of ground elevation, finer than the model grid, in any projection.",
+      "file", optional=True, none_label="not set yet",
+      when=(_FLOOD, ("INUNDATION_DEM", In("file"))), example="lidar_5m.tif"),
+    P("INUNDATION_DEM_SCALE_M", "outputs", "Flood-map DEM resolution",
+      "Cell size to download the flood-map DEM at. Empty uses the dataset's own "
+      "finest resolution.", "float", unit="m", level="advanced", optional=True,
+      none_label="the dataset's finest", min=0, min_exclusive=True,
+      when=(_FLOOD, ("INUNDATION_DEM", NotIn("model_grid", "file"))), example=30.0),
+    P("INUNDATION_ANIMATION", "outputs", "Flood animation (GIF)",
+      "Also write an animation of the largest flood spreading and draining, with "
+      "the hydrograph beside it.", "bool", when=(_FLOOD,)),
+    P("INUNDATION_REACH_LENGTH_M", "outputs", "River reach length for flood maps",
+      "Rivers are cut into reaches about this long; each gets its own "
+      "level-versus-flow curve.", "float", unit="m", level="advanced", min=0,
+      min_exclusive=True, when=(_FLOOD,), example=500.0),
+    P("INUNDATION_BACKWATER", "outputs", "Big rivers back up into side streams",
+      "Map the main rivers again on their own, so a high main river also floods the "
+      "mouths of the streams that join it.", "bool", level="advanced", when=(_FLOOD,)),
     P("MASS_BALANCE_REPORT", "outputs", "Water-balance report",
       "Check that no water is lost or created, and write mass_balance.csv.",
       "bool", level="advanced"),

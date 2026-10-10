@@ -120,7 +120,7 @@ water is routed with the kinematic wave for 12 hours.
   (`mass_balance.csv`).
 
 The run writes `hydrograph.csv`, `gauges.csv`, `mass_balance.csv` and the terrain
-files to `results/first_run/` ([what each file holds](../manual/outputs.md#66-files-a-run-writes)).
+files to `results/first_run/` ([what each file holds](../manual/outputs.md#67-files-a-run-writes)).
 It took 18 seconds on one CPU.
 
 ## Other options to try
@@ -131,5 +131,5 @@ It took 18 seconds on one CPU.
 | let rain soak in | `RUNOFF_SOURCE: scs_cn` or `physical` | [Example 4](runoff-methods.md) |
 | another routing method | `ROUTING_SCHEME: diffusive_implicit` | [Example 3](routing-schemes.md) |
 | a coarser, faster grid | `DEM_SCALE_M` on a download, or resample your DEM | [1.1](../manual/terrain.md#11-elevation-data-dem) |
-| the GPU | `BACKEND: gpu` | [6.3](../manual/outputs.md#63-computer-cpu-or-gpu) |
-| rerun routing only | `MRRpy run -c run.yaml --stages routing` | [6.5](../manual/outputs.md#65-running) |
+| the GPU | `BACKEND: gpu` | [6.4](../manual/outputs.md#64-computer-cpu-or-gpu) |
+| rerun routing only | `MRRpy run -c run.yaml --stages routing` | [6.6](../manual/outputs.md#66-running) |

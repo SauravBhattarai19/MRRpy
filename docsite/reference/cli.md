@@ -77,7 +77,7 @@ MRRpy run -c my_run.yaml --backend gpu --output-dir results/
 
 | Flag | Purpose |
 |---|---|
-| `--stages` | subset/order of `process_dem`, `routing`, `vsa_opm` |
+| `--stages` | subset/order of `process_dem`, `routing`, `inundation`, `vsa_opm` (`inundation` redraws the flood maps of a routed run) |
 | `--backend` | override `BACKEND` (`cpu`/`gpu`) |
 | `--output-dir` | override `OUTPUT_DIR` |
 

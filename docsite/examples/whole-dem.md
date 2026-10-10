@@ -110,6 +110,12 @@ colour scale and shows its time. Pass `out_path="flow.mp4"` for a video (needs
 ffmpeg) or `every=3` for a shorter GIF. `export_peak_maps` writes, for each saved
 quantity, `max_<var>.tif` and `time_of_max_<var>_hours.tif` (when the peak came).
 
+!!! tip "How far does the water spread?"
+    The routing passes water from cell to cell along one flow path, so these
+    depth maps show the rivers as a one-cell ribbon. For flood depth and extent
+    beside the rivers, turn on `INUNDATION_MAP`
+    ([Example 12](flood-maps.md)).
+
 !!! note "Memory"
     The maps stay in memory until the run ends: about *saved times × cells ×
     quantities × 4 bytes*. The log prints the estimate and warns above 2 GB. For
@@ -123,4 +129,4 @@ quantity, `max_<var>.tif` and `time_of_max_<var>_hours.tif` (when the peak came)
 | maps for a single watershed | `MODEL_AREA: watershed` with `SAVE_FIELDS: true` | [6.2](../manual/outputs.md#62-maps-over-time) |
 | fewer maps, less memory | `FIELD_STRIDE: 3`, `FIELD_VARS: [depth]` | [6.2](../manual/outputs.md#62-maps-over-time) |
 | flow at named places | `ROUTING_GAUGES` | [6.1](../manual/outputs.md#61-virtual-gauges) |
-| a faster explicit run on the GPU | `ROUTING_SCHEME: kinematic`, `BACKEND: gpu` | [6.3](../manual/outputs.md#63-computer-cpu-or-gpu) |
+| a faster explicit run on the GPU | `ROUTING_SCHEME: kinematic`, `BACKEND: gpu` | [6.4](../manual/outputs.md#64-computer-cpu-or-gpu) |

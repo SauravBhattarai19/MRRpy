@@ -41,7 +41,7 @@ ROUTING_INFLOW_BC:
 wizard's starting point *Route a known inflow hydrograph downstream* does this
 for you.
 
-The [water balance](outputs.md#64-the-water-balance) counts inflow water
+The [water balance](outputs.md#65-the-water-balance) counts inflow water
 separately (`bc_inflow_m3`), so it still closes. To see the flow at points along
 the way, add [virtual gauges](outputs.md#61-virtual-gauges).
 

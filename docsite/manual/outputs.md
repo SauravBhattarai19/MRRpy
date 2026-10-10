@@ -1,7 +1,8 @@
 # 6 Outputs and run
 
 Every run writes the outlet hydrograph and checks its water balance. This step
-adds optional results, **virtual gauges** and **maps over time**, and picks the
+adds optional results, **virtual gauges**, **maps over time** and **flood
+maps**, and picks the
 **computer** (CPU or GPU). It ends with the files a run writes and how to plot
 them.
 
@@ -49,7 +50,89 @@ The maps stay in memory until the run ends: about *(number of output times) ×
 
 <!-- settings: SAVE_FIELDS FIELD_VARS FIELD_STRIDE FIELD_OUTPUT_DIR -->
 
-## 6.3 Computer: CPU or GPU
+## 6.3 Flood depth and extent maps
+
+The routing moves water from cell to cell along one flow path, so water above
+the banks stays in the river cell: the depth maps of 6.2 show a one-cell-wide
+ribbon, not how far a flood spreads. With `INUNDATION_MAP` on, MRRpy draws
+**flood depth and extent maps** from the routed river flow with the **HAND
+method** (Height Above Nearest Drainage), the method behind the flood maps of
+the US National Water Model:
+
+1. Every cell is linked to the river cell its water reaches first, and gets its
+   **height above that river cell**. Flow paths are traced on the original DEM
+   by a least-cost search, which keeps rivers in their real channels; filling
+   the DEM instead would turn a valley floor behind a bridge into a flat that
+   flow crosses in straight lines. Heights are measured on the original DEM
+   above the river bed.
+2. Rivers are cut into reaches about `INUNDATION_REACH_LENGTH_M` long. Each reach
+   gets a **rating curve** (water level against flow) from the land that drains
+   to it: the model's own river channel below the banks
+   ([5.5](channels.md)), plus every cell below the water level, each with its own
+   roughness.
+3. The reach's routed flow gives its water level. Every cell lower than that is
+   flooded: **depth = water level − height above the river**.
+4. With `INUNDATION_BACKWATER`, the big rivers are mapped again on their own, so
+   a high main river also floods the mouths of the streams that join it.
+
+Up to the bankfull flow, the flood the channel is sized for (about the 2-year
+flood), water stays in the channel and nothing is flooded. The routing itself
+does not change.
+
+**Finer maps.** The maps can be drawn on a finer DEM than the model ran on: the
+flow of each routed river cell is passed to the fine river nearby that drains
+about the same area. `INUNDATION_DEM: auto` does this by itself when the run
+downloaded its DEM from Earth Engine at a coarser size (e.g. FABDEM averaged to
+90 m → flood maps at FABDEM's 30 m). Choose `file` for your own DEM (e.g. LiDAR)
+or name a dataset to download. Without Earth Engine, `auto` keeps the model grid
+and says why.
+
+**One area.** `INUNDATION_AREA` limits the maps to a box, such as a town or a
+valley. The flow still comes from the whole basin. With a finer DEM only the box
+and 3 km around it are downloaded and processed.
+
+```yaml
+INUNDATION_MAP: true
+INUNDATION_AREA: [85.26, 27.63, 85.36, 27.72]   # optional: west, south, east, north
+INUNDATION_DEM: auto                             # model_grid | file | fabdem | …
+```
+
+The maps are written to `inundation/` in the results folder:
+
+| File | Contents |
+|---|---|
+| `flood_depth_max.tif` | the deepest water each place reached (m) |
+| `flood_extent_max.tif`, `flood_extent_max.geojson` | where it flooded (raster 1/0, and outlines with their area in km²) |
+| `flood_animation.gif` | the largest flood spreading and draining, with the hydrograph (`INUNDATION_ANIMATION`) |
+| `flood_time_of_max_hours.tif`, `flood_first_wet_hours.tif`, `flood_duration_hours.tif` | when the water was deepest, when it first passed 10 cm, and for how many hours |
+| `hand.tif` | height of every cell above its nearest river (m) |
+| `reaches.csv`, `reaches.geojson` | each reach: length, slope, channel, bankfull flow, peak flow, water level above the banks, flooded area |
+| `rating_curves.csv` | each reach's water level against flow and flooded area |
+| `inundation_summary.json` | the grid used and why, flooded area, deepest water, and how the flow was passed to a finer DEM |
+| `network.npz`, `flood_model.npz` | the data to redraw the maps |
+
+To redraw the maps (another area, another DEM) without routing again, run the
+`inundation` stage on its own (see [6.6](#66-running)). In Python:
+
+```python
+from MRRpy import plot_inundation, animate_inundation
+plot_inundation(out)                 # the deepest water, outlined
+plot_inundation(out, time=30.0)      # the flood 30 h into the run
+animate_inundation(out, start_hours=20, end_hours=60, out_path="flood.gif")
+```
+
+!!! warning "What the flood maps leave out"
+    Each reach is mapped with a steady flow, so floodplain storage and timing
+    within a reach are not modelled, and water held back by a narrow gorge or
+    bridge downstream is not seen: just above one, floods are drawn too shallow. Embankments, walls, culverts and bridges
+    count only if the DEM shows them, and very flat land can be flooded too
+    widely. The map is only as good as the DEM: in cities use a bare-earth DEM
+    such as FABDEM or LiDAR. The maps show river flooding only, not rain ponding
+    away from rivers.
+
+<!-- settings: INUNDATION_MAP INUNDATION_AREA INUNDATION_DEM INUNDATION_DEM_PATH INUNDATION_DEM_SCALE_M INUNDATION_ANIMATION INUNDATION_REACH_LENGTH_M INUNDATION_BACKWATER -->
+
+## 6.4 Computer: CPU or GPU
 
 The **CPU** works everywhere. An NVIDIA **GPU** (`pip install "MRRpy[gpu]"`) can
 be much faster for large grids with the explicit routing methods. If no usable
@@ -58,7 +141,7 @@ always runs on the CPU. On a GPU, `float32` is faster and `float64` more exact.
 
 <!-- settings: BACKEND GPU_PRECISION -->
 
-## 6.4 The water balance
+## 6.5 The water balance
 
 At the end of every routing run MRRpy checks that no water was lost or created:
 
@@ -85,14 +168,15 @@ one table. Columns:
 
 <!-- settings: MASS_BALANCE_REPORT -->
 
-## 6.5 Running
+## 6.6 Running
 
-A run has two **stages**; you can run them separately:
+A run has two **stages**, three with flood maps; you can run them separately:
 
 | Stage | Does | Writes |
 |---|---|---|
 | `process_dem` | [1 Terrain](terrain.md): DEM, flow directions, the area to model | the terrain files |
 | `routing` | rain → runoff → routing | `hydrograph.csv`, `mass_balance.csv`, … |
+| `inundation` | flood maps from the routed flow ([6.3](#63-flood-depth-and-extent-maps)); runs after `routing` when `INUNDATION_MAP` is on | `inundation/` |
 
 Running `routing` alone reuses the terrain already in the results folder, which
 is the quick way to try other rain, runoff or routing settings on the same basin.
@@ -110,6 +194,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
     MRRpy validate -c run.yaml
     MRRpy run -c run.yaml                          # both stages
     MRRpy run -c run.yaml --stages routing         # routing only
+    MRRpy run -c run.yaml --stages inundation      # redraw the flood maps
     MRRpy run -c run.yaml --backend gpu --output-dir results_gpu/
     ```
 
@@ -129,7 +214,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
     the hydrograph; **Load Layers into QGIS**, **Load Peak Maps** and **Save Flow
     Animation…** load the results.
 
-## 6.6 Files a run writes
+## 6.7 Files a run writes
 
 | File | Contents |
 |---|---|
@@ -139,6 +224,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
 | `gauges.csv` | virtual gauges: `time_s`, `time_hr`, then `<name>_depth_m`, `<name>_Q_m3s`, `<name>_vel_ms` for each gauge |
 | `fields/fields.npz`, `fields/fields_meta.json` | maps over time |
 | `max_<var>.tif`, `time_of_max_<var>_hours.tif` | peak maps, from `export_peak_maps` |
+| `inundation/` | flood depth and extent maps ([6.3](#63-flood-depth-and-extent-maps)) |
 | `mrrpy_run.log` | the run's log (notebook form) |
 | the terrain files | see [1.3 Results folder](terrain.md#13-results-folder) |
 | downloads | `raw_dem_gee.tif`, `imerg/`, `cn_gcn250_amc*.tif`, `ksat_hihydro_*.tif`, `deficit_serves_*.tif`, … reused by later runs |

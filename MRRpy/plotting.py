@@ -731,3 +731,207 @@ def export_peak_maps(source, vars=None, out_dir=None, *, min_value=None):
             written[stem] = path
             print(f"Saved {path}")
     return written
+
+
+# ── Flood depth and extent maps (INUNDATION_MAP=True) ─────────────────────────
+
+def _flood_view(sf, area=None):
+    """(row slice, col slice, extent) framing the mapped cells (or the area)."""
+    a = sf.a
+    sel = a["inside"]
+    rows, cols = a["rows"][sel], a["cols"][sel]
+    r0, r1, c0, c1 = rows.min(), rows.max() + 1, cols.min(), cols.max() + 1
+    if area:
+        from pyproj import Transformer
+        w, s, e, n = (float(v) for v in area)
+        xs, ys = Transformer.from_crs("EPSG:4326", sf.meta["crs"], always_xy=True).transform(
+            [w, e, e, w], [s, s, n, n])
+        cc, rr = ~sf.transform * (np.array(xs), np.array(ys))
+        r0, r1 = max(r0, int(np.floor(rr.min()))), min(r1, int(np.ceil(rr.max())))
+        c0, c1 = max(c0, int(np.floor(cc.min()))), min(c1, int(np.ceil(cc.max())))
+    t = sf.transform
+    x0, y0 = t * (c0, r0)
+    x1, y1 = t * (c1, r1)
+    return slice(r0, r1), slice(c0, c1), [x0, x1, y1, y0]
+
+
+def _flood_relief(ax, sf, rs, cs_, extent):
+    from matplotlib.colors import LightSource
+    z = np.full((sf.nrows, sf.ncols), np.nan)
+    z[sf.a["rows"], sf.a["cols"]] = sf.a["z"]
+    z = z[rs, cs_]
+    if not np.isfinite(z).any():
+        return
+    cell = float(sf.meta["cell_size"])
+    shade = LightSource(azdeg=315, altdeg=45).hillshade(
+        np.where(np.isfinite(z), z, np.nanmin(z)), vert_exag=2, dx=cell, dy=cell)
+    ax.imshow(np.ma.masked_where(~np.isfinite(z), shade), extent=extent, cmap="gray",
+              vmin=-0.6, vmax=1.4, interpolation="nearest")
+
+
+def _flood_frame(sf, depth, rs, cs_):
+    from .core.inundation.mapping import WET_M
+    g = sf.to_2d(depth)[rs, cs_]
+    return np.ma.masked_where(~np.isfinite(g) | (g < WET_M), g)
+
+
+def _flood_outline(ax, grid, extent):
+    """Black outline of the flooded area, so the extent never relies on colour."""
+    wet = (~np.ma.getmaskarray(grid)).astype(float)
+    if wet.any() and not wet.all():
+        return ax.contour(wet, levels=[0.5], colors="black", linewidths=0.6,
+                          extent=extent, origin="upper")
+    return None
+
+
+def plot_inundation(source, time="peak", ax=None, *, hillshade=True, area=None, vmax=None):
+    """
+    Map of flood depth over the shaded relief, with the flooded area outlined.
+
+    Parameters
+    ----------
+    source : run_pipeline() result dict, Config, OUTPUT_DIR, its inundation/
+        folder or inundation/flood_model.npz (needs a run with INUNDATION_MAP).
+    time : 'peak' (the deepest water each place reached) or hours since the
+        start (the nearest saved time).
+    ax : matplotlib.axes.Axes, optional
+    hillshade : draw the relief underneath.
+    area : (west, south, east, north) degrees to zoom to.
+    vmax : top of the colour scale [m] (default: the deepest water shown).
+
+    Returns
+    -------
+    (fig, ax)
+    """
+    from .core.inundation.mapping import SavedFlood, flood_model_path
+    sf = SavedFlood(flood_model_path(source))
+    if time is None or time == "peak":
+        depth, when = sf.depth(None), "deepest over the run"
+    else:
+        i = int(np.argmin(np.abs(sf.times_s / 3600.0 - float(time))))
+        depth, when = sf.depth(i), f"t = {sf.times_s[i] / 3600.0:.1f} h"
+    rs, cs_, extent = _flood_view(sf, area)
+    grid = _flood_frame(sf, depth, rs, cs_)
+    fig, ax = _get_fig_ax(ax)
+    if hillshade:
+        _flood_relief(ax, sf, rs, cs_, extent)
+    top = float(vmax) if vmax else (float(grid.max()) if grid.count() else 1.0)
+    from matplotlib.colors import Normalize
+    im = ax.imshow(grid, extent=extent, cmap=_field_cmap("Blues"),
+                   norm=Normalize(vmin=0.0, vmax=max(top, 0.1)), interpolation="nearest")
+    _flood_outline(ax, grid, extent)
+    _colorbar(fig, im, ax, "Flood depth", "m")
+    km2 = grid.count() * float(sf.meta["cell_size"]) ** 2 / 1e6
+    ax.set_title(f"Flood depth, {when}\n{km2:.2f} km² flooded ({sf.meta['label']})")
+    _map_axes(ax)
+    return fig, ax
+
+
+def animate_inundation(source, out_path=None, *, start_hours=None, end_hours=None,
+                       every=None, fps=6, hydrograph=True, dpi=100, area=None,
+                       max_frames=120, log=print):
+    """
+    GIF (or MP4) of the flood spreading and draining: depth over the relief
+    with the flooded area outlined, the time in the title, and the outlet
+    hydrograph with a moving time marker.
+
+    By default it shows the largest flood of the run: from when the flooded
+    area first passes 5 % of its maximum (minus 6 h) to when it falls below
+    that again (plus 12 h), in at most ``max_frames`` frames.
+
+    Returns the path written, or None when no river rose above its banks.
+    """
+    import matplotlib.animation as animation
+    from matplotlib.colors import Normalize
+    from .core.inundation.mapping import SavedFlood, flood_model_path
+
+    path = flood_model_path(source)
+    sf = SavedFlood(path)
+    times_h = sf.times_s / 3600.0
+    if not len(times_h):
+        log("  Flood maps     |  no flows over time were saved, so there is no animation.")
+        return None
+    fl = sf.flooded_area_series()
+    if start_hours is None and end_hours is None:
+        if not fl.max() > 0:
+            log("  Flood maps     |  no river rose above its banks in this run, so there is "
+                "no flood animation.")
+            return None
+        i_max = int(np.argmax(fl))
+        thr = 0.05 * fl[i_max]
+        i0 = i_max
+        while i0 > 0 and fl[i0 - 1] >= thr:
+            i0 -= 1
+        i1 = i_max
+        while i1 < len(fl) - 1 and fl[i1 + 1] >= thr:
+            i1 += 1
+        start_hours, end_hours = times_h[i0] - 6.0, times_h[i1] + 12.0
+    t0 = times_h[0] if start_hours is None else max(float(start_hours), 0.0)
+    t1 = times_h[-1] if end_hours is None else min(float(end_hours), float(times_h[-1]))
+    frames = np.flatnonzero((times_h >= t0) & (times_h <= t1))
+    if not frames.size:
+        raise ValueError(f"no saved times between {t0:g} h and {t1:g} h")
+    step = int(every) if every else max(1, int(np.ceil(frames.size / max_frames)))
+    frames = frames[::step]
+
+    rs, cs_, extent = _flood_view(sf, area)
+    peak = _flood_frame(sf, sf.depth(None), rs, cs_)
+    top = float(peak.max()) if peak.count() else 1.0
+    hyd = sf.meta.get("hydrograph_csv") if hydrograph else None
+    hyd = hyd if hyd and os.path.isfile(hyd) else None
+    fig, axes = plt.subplots(1, 2 if hyd else 1, figsize=(11.5 if hyd else 6.8, 5.4),
+                             gridspec_kw={"width_ratios": [1.3, 1.0]} if hyd else None,
+                             squeeze=False)
+    ax = axes[0][0]
+    _flood_relief(ax, sf, rs, cs_, extent)
+    im = ax.imshow(_flood_frame(sf, sf.depth(frames[0]), rs, cs_), extent=extent,
+                   cmap=_field_cmap("Blues"), norm=Normalize(vmin=0.0, vmax=max(top, 0.1)),
+                   interpolation="nearest")
+    _colorbar(fig, im, ax, "Flood depth", "m")
+    _map_axes(ax)
+    ax.set_xlim(extent[0], extent[1])
+    ax.set_ylim(extent[2], extent[3])
+    title = ax.set_title("")
+    cursor = None
+    if hyd:
+        axh = axes[0][1]
+        df = pd.read_csv(hyd)
+        axh.plot(df["time_hr"], df["Q_m3s"], color="#1f4e79", label="Outlet")
+        axh.set_xlim(t0, t1)
+        axh.set_xlabel("Time (hours)")
+        axh.set_ylabel("Discharge Q (m³/s)")
+        axh.set_title("Hydrograph")
+        cursor = axh.axvline(times_h[frames[0]], color="black", linewidth=1.2)
+    fig.tight_layout()
+    state = {"outline": None}
+
+    def update(k):
+        i = frames[k]
+        grid = _flood_frame(sf, sf.depth(i), rs, cs_)
+        im.set_data(grid)
+        if state["outline"] is not None:
+            state["outline"].remove()
+        state["outline"] = _flood_outline(ax, grid, extent)
+        km2 = grid.count() * float(sf.meta["cell_size"]) ** 2 / 1e6
+        title.set_text(f"Flood at t = {times_h[i]:.1f} h — {km2:.2f} km² flooded")
+        if cursor is not None:
+            cursor.set_xdata([times_h[i], times_h[i]])
+        return [im, title]
+
+    anim = animation.FuncAnimation(fig, update, frames=len(frames), interval=1000.0 / fps,
+                                   blit=False)
+    out_path = str(out_path or os.path.join(os.path.dirname(path), "flood_animation.gif"))
+    if out_path.lower().endswith(".mp4"):
+        if not animation.FFMpegWriter.isAvailable():
+            plt.close(fig)
+            raise RuntimeError("Writing .mp4 needs ffmpeg, which was not found. "
+                               "Install ffmpeg, or save a .gif instead.")
+        writer = animation.FFMpegWriter(fps=fps)
+    else:
+        writer = animation.PillowWriter(fps=fps)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    anim.save(out_path, writer=writer, dpi=dpi)
+    plt.close(fig)
+    log(f"  Flood animation → {out_path}  ({len(frames)} frames, "
+        f"{times_h[frames[0]]:.1f}–{times_h[frames[-1]]:.1f} h)")
+    return out_path
