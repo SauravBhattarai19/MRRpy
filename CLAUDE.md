@@ -263,8 +263,11 @@ mapping, tested without QGIS). **Coefficients come only from the compendium
 (B.D. Richards, PCJ, MIP 2016, WECS low flows) is deferred, not guessed — see
 `NEPAL_PLAN.md` §2.3. When adding a method: register it in `FLOOD_METHODS` (with
 `source` caveats and a `check`), add any new input to `INPUTS`, add its worked
-example to `tests/test_nepal_methods.py`, and document it in
-`docsite/nepal/methods.md`.
+example to `tests/test_nepal_methods.py`, and document it: a row in the
+at-a-glance table of `docsite/nepal/methods.md` and a full section (formula,
+symbols, step-by-step worked example computed by the code, validity, source
+caveats) on the matching formula page (`regional-formulas.md`,
+`rainfall-methods.md`, `frequency.md`, `monthly-flows.md`).
 
 ### CPU/GPU backend selection
 
@@ -293,10 +296,15 @@ local DEM yet.
 - `config.py` at the repo root is the **legacy research scenario module** (values
   only), used by `tools/` and `tests/`. It is distinct from
   `MRRpy/config.py::Config`. Both are loadable by the CLI.
-- `docsite/` + `mkdocs.yml` is the user documentation (Read the Docs):
-  `getting-started/`, `manual/` (one chapter per form step, every setting),
-  `examples/` (each in four tabs: notebook form, YAML+CLI, Python, QGIS),
-  `reference/`. `[[NAME]]` in a page links to a setting's table row.
+- `docsite/` + `mkdocs.yml` is the user documentation, hosted on this branch at
+  **mrrpy-nepal.readthedocs.io** (RTD project `mrrpy-nepal`, default branch
+  `MRRpy-Nepal`): `index.md` is the MRRpy-Nepal home, `nepal/` the Nepal pages
+  (overview, use cases, guidelines, results, and one page per formula family —
+  every number in them was computed by `MRRpy.nepal`), `mrrpy.md` the general
+  MRRpy home, then `getting-started/`, `manual/` (one chapter per form step,
+  every setting), `examples/` (each in four tabs: notebook form, YAML+CLI,
+  Python, QGIS), `reference/`. `[[NAME]]` in a page links to a setting's table
+  row.
 - `study/` is a separate Next.js MDX interactive textbook (the public course
   site); `docs/` is the LaTeX companion. They are documentation, not the model.
 - The plugin **source** (`MRRpy_plugin/`) imports `MRRpy`;

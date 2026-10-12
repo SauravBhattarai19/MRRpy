@@ -1,5 +1,6 @@
 # Read the Docs build config — https://docs.readthedocs.io/en/stable/config-file/
-# Hosts the mkdocs site (docsite/ + mkdocs.yml) at mrrpy.readthedocs.io.
+# Hosts the mkdocs site (docsite/ + mkdocs.yml) at mrrpy-nepal.readthedocs.io
+# (Read the Docs project 'mrrpy-nepal', default branch MRRpy-Nepal).
 version: 2
 
 build:

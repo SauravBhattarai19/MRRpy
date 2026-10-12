@@ -36,7 +36,18 @@ core addition is two bankfull-flow presets.
 - `CHANNEL_QBF_M3S` presets `dhm2004_nepal` and `specific_q_nepal`.
 - QGIS plugin: Processing tools "3. Nepal flood estimates (official methods)" and
   "4. Nepal design storm (rain-gauge CSVs)", plus a menu entry.
-- Docs: a MRRpy-Nepal section (overview, methods and formulas, design floods).
+- Docs for mrrpy-nepal.readthedocs.io: a Nepal-first home page, seven worked use
+  cases (culvert, weir, hydropower, gauged bridge, irrigation monthly flows,
+  climate factor, screening), and one page per formula family — catchment
+  numbers, regional formulas, Rational method and design rainfall, frequency
+  analysis, design floods, monthly and low flows — each formula with its
+  symbols, derivation, a step-by-step worked example and its validity rules;
+  plus manuals/structures and reading the results.
+
+### Fixed
+- Docs: `[[NAME]]` setting links now work for names with lower-case letters
+  (e.g. `RUNOFF_SCS_Ia_FACTOR`), and `tests/test_docs.py` fails on any link left
+  unexpanded.
 
 ## 0.3.0
 

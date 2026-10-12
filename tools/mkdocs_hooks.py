@@ -30,7 +30,7 @@ import yaml
 
 TABLE = re.compile(r"^<!--\s*settings:\s*(.*?)\s*-->[ \t]*$", re.M)
 INDEX = re.compile(r"^<!--\s*settings-index\s*-->[ \t]*$", re.M)
-LINK = re.compile(r"\[\[([A-Z][A-Z0-9_]+)\]\]")
+LINK = re.compile(r"\[\[([A-Z][A-Za-z0-9_]+)\]\]")
 INLINE_CODE = re.compile(r"(`[^`\n]*`)")
 FENCE = re.compile(r"^([ \t]*)(```|~~~).*?^\1\2[ \t]*$", re.M | re.S)
 

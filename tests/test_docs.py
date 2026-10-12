@@ -73,6 +73,8 @@ def test_pages_expand():
         out = hooks.expand(text, page, where, titles)   # raises on an unknown [[NAME]]
         rest = hooks._strip_code(out)
         assert not hooks.TABLE.search(rest) and not hooks.INDEX.search(rest), page
+        left = re.findall(r"\[\[[A-Za-z_][A-Za-z0-9_]*\]\]", hooks.INLINE_CODE.sub("", rest))
+        assert not left, f"{page}: setting links left unexpanded: {left}"
 
 
 def test_yaml_blocks_are_valid_configs():

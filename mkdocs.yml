@@ -1,6 +1,6 @@
-site_name: MRRpy
-site_description: MRRpy (Multi-Mechanism Runoff and Routing) — a distributed, physics-based hydrological + hydrodynamic model for rainfall-runoff generation and grid-based flood routing, driven by open satellite data.
-site_url: https://mrrpy.readthedocs.io/
+site_name: MRRpy-Nepal
+site_description: MRRpy-Nepal — Nepal's official flood-estimation methods (WECS/DHM, DHM 2004, MHSP, Modified Dickens, Rational, frequency analysis, MIP) next to the MRRpy physics-based rainfall-runoff and flood-routing model, with every formula explained.
+site_url: https://mrrpy-nepal.readthedocs.io/
 repo_url: https://github.com/SauravBhattarai19/MRRpy
 repo_name: MRRpy
 docs_dir: docsite
@@ -36,7 +36,21 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting started:
+  - MRRpy-Nepal:
+      - nepal/index.md
+      - "Use cases (worked studies)": nepal/use-cases.md
+      - "Manuals, structures and recommendations": nepal/guidelines.md
+      - "Reading the results": nepal/results.md
+  - Formulas explained:
+      - "All formulas at a glance": nepal/methods.md
+      - "Catchment numbers from the DEM": nepal/catchment.md
+      - "Official regional flood formulas": nepal/regional-formulas.md
+      - "Rational method and design rainfall": nepal/rainfall-methods.md
+      - "Frequency analysis, donor gauges, flood marks": nepal/frequency.md
+      - "Design floods with the physics model": nepal/design-floods.md
+      - "Monthly and low flows": nepal/monthly-flows.md
+  - The MRRpy model:
+      - mrrpy.md
       - Installation: getting-started/installation.md
       - Quickstart: getting-started/quickstart.md
       - "Ways to set up a run": getting-started/interfaces.md
@@ -68,10 +82,6 @@ nav:
       - "10 The whole DEM and flood maps": examples/whole-dem.md
       - "11 Many runs from Python": examples/batch-runs.md
       - "Case study: Nepal (Trishuli)": examples/nepal-case-study.md
-  - MRRpy-Nepal:
-      - nepal/index.md
-      - "Methods and formulas": nepal/methods.md
-      - "Design floods with the physics model": nepal/design-floods.md
   - Reference:
       - Command line: reference/cli.md
       - Python API: reference/api.md

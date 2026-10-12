@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Docs](https://img.shields.io/badge/docs-mrrpy.readthedocs.io-teal.svg)](https://mrrpy.readthedocs.io)
+[![Docs](https://img.shields.io/badge/docs-mrrpy--nepal.readthedocs.io-teal.svg)](https://mrrpy-nepal.readthedocs.io)
 
 **Rainfall–runoff and flood routing for any basin on Earth, from a DEM and a storm.**
 
@@ -19,7 +19,8 @@ QGIS; it runs on a CPU or an NVIDIA GPU.
 
 ## 📖 Documentation
 
-**Full docs, guides and API reference → [mrrpy.readthedocs.io](https://mrrpy.readthedocs.io)**
+**Full docs, guides and API reference → [mrrpy-nepal.readthedocs.io](https://mrrpy-nepal.readthedocs.io)**
+(MRRpy-Nepal first, with every formula explained; the whole MRRpy manual follows)
 
 Learn the science interactively → [the MRRpy course](https://sauravbhattarai19.github.io/MRRpy/)
 
@@ -104,11 +105,12 @@ MRRpy nepal estimate --results results/ --agency dowri_2019 --structure weir \
 In Jupyter: `from MRRpy.nepal import NepalForm; NepalForm()`. In QGIS: Processing
 → MRRpy_plugin → *3. Nepal flood estimates*. What is included, deferred or left out,
 and why: [NEPAL_PLAN.md](NEPAL_PLAN.md) and the
-[MRRpy-Nepal docs](https://mrrpy.readthedocs.io/en/latest/nepal/).
+[MRRpy-Nepal docs](https://mrrpy-nepal.readthedocs.io/), which explain every
+formula with a worked example and walk through seven use cases.
 
 ## Links
 
-- **Documentation:** <https://mrrpy.readthedocs.io>
+- **Documentation:** <https://mrrpy-nepal.readthedocs.io>
 - **Interactive course:** <https://sauravbhattarai19.github.io/MRRpy/>
 - **Source & issues:** <https://github.com/SauravBhattarai19/MRRpy>
 

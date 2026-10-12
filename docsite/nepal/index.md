@@ -24,8 +24,9 @@ are on a separate tab and command.
 The physics core of MRRpy is unchanged; MRRpy-Nepal is a layer around it
 (`MRRpy.nepal`). Every coefficient comes from the compendium *Nepal Flood
 Estimation Methods*. Where the compendium says a value still has to be checked
-against the original report, the method's notes say so too. The
-[methods page](methods.md) lists every formula, and what was left out and why.
+against the original report, the method's notes say so too. These pages explain
+every formula with a worked example ([all formulas at a glance](methods.md)),
+and what was left out and why.
 
 !!! note "Why both?"
     Section 6 of the compendium explains why the national formulas break down
@@ -35,49 +36,26 @@ against the original report, the method's notes say so too. The
     exactly those three, and reviewers still see the official numbers they
     expect.
 
-## Which method for what
+## Where to start
 
-The compendium's quick guide (§7), which MRRpy-Nepal applies when you choose
-*Recommended for this catchment*:
-
-| Situation | Commonly used in Nepal | Good practice — in MRRpy-Nepal |
-|---|---|---|
-| Flood, catchment under 12 km² | Rational; Modified Dickens | Rational with local rainfall, the physics model as the rainfall-runoff check, flood marks |
-| Flood, 12–500 km², no gauge | WECS/DHM, DHM 2004, Modified Dickens, MHSP | the physics model, with the national methods as checks |
-| Flood, gauge nearby | catchment area ratio, frequency analysis | frequency analysis with confidence bands; a similar donor gauge |
-| Monthly flow for irrigation | MIP with one measurement; WECS/DHM | MIP with several measurements; the lower of WECS/DHM and MIP for low flows |
-| Hydrograph and volume | Snyder / SCS unit hydrograph | the physics model (full hydrograph, routed on the DEM) |
+| I want to… | Read |
+|---|---|
+| see a whole study for my kind of structure | [use cases](use-cases.md): culvert, weir, hydropower, bridge, irrigation, climate, screening |
+| know which methods my manual asks for | [manuals, structures and recommendations](guidelines.md) |
+| understand a formula and check a number by hand | [all formulas at a glance](methods.md), then its page |
+| know how the catchment numbers are measured | [catchment numbers from the DEM](catchment.md) |
+| run the physics model with a design storm | [design floods](design-floods.md) |
+| estimate monthly flows, the e-flow or low flows | [monthly and low flows](monthly-flows.md) |
+| understand a status, a flag or the official range | [reading the results](results.md) |
 
 ## Choose a manual and a structure
 
 You do not need to know which methods to tick. Choose **the manual** you design
-to, and the methods it names are ticked. Choose **what you are designing**, and
-its design return period is ticked:
-
-| Manual (agency preset) | Methods it ticks |
-|---|---|
-| DoWRI — Headworks & Cross-Drainage Guidelines (2019) | WECS/DHM, Modified Dickens, catchment area ratio, Rational (B.D. Richards not yet in MRRpy-Nepal) |
-| DoWRI (ex-DoI) — PDSP Irrigation Design Manuals (1990) | WECS/DHM, Modified Dickens, Rational, frequency analysis |
-| DoLIDAR — Small-Scale Irrigation Design Manual (2015) | DHM 2004, Rational, frequency analysis |
-| DoED — Hydropower Study Guidelines (2003/2018) | WECS/DHM, DHM 2004, MHSP, catchment area ratio, frequency analysis |
-| WECS — Flood Control and Management Manual (2019) | WECS/DHM, DHM 2004, specific discharge, Rational |
-| DoR — Nepal Bridge Standards 2067 / Bridge Hydrology Guidelines | Rational, physics model, frequency analysis; WECS/DHM, DHM 2004 and Modified Dickens as checks |
-| AEPC — Micro-Hydro Design Aids (2004) | WECS/DHM |
-| NEA — Medium Hydropower Study Project (1997) | MHSP |
-
-| Structure | Design flood | Source |
-|---|---|---|
-| Bridge | 100 years; freeboard at least 1.0 m | DoR Nepal Bridge Standards 2067, Cl. 3.2 and 8.1 |
-| Culvert | 25 years | DoWRI Headworks & Cross-Drainage Guidelines 2019 |
-| Aqueduct | 50 years | DoWRI 2019 |
-| Weir | 50–100 years | DoWRI 2019; DoLIDAR 2015 |
-| Barrage | 100–500 years | DoWRI 2019 |
-| River embankment | 50–100 years; freeboard 1.0–1.5 m | DoWRI 2019; DWIDM/ADB projects |
-| Small irrigation intake | 10–25 years | DoLIDAR 2015 |
-| Study | 2, 5, 10, 20, 50, 100, 200, 500 years | the DoWRI pilot ToR |
-
-The presets say which methods a manual names (per the compendium). They are a
-starting point, not a statement that a design complies with that manual.
+to (DoWRI 2019, DoLIDAR 2015, DoED, WECS 2019, DoR bridges, AEPC, NEA, or
+*Recommended for this catchment*), and the methods it names are ticked. Choose
+**what you are designing** (bridge, culvert, aqueduct, weir, barrage,
+embankment, intake, or a study), and its design return period is ticked. The
+full tables are on [manuals, structures and recommendations](guidelines.md).
 
 ## Run it
 
@@ -170,21 +148,13 @@ rainfall from the nearest DHM station.
 
 ## Reading the results
 
-| In the table | Meaning |
-|---|---|
-| *ok* | inside the method's range |
-| *use with caution* | usable, with a caveat in its notes (e.g. AEPC calls WECS/DHM reliable only above 100 km²) |
-| *outside its range* | computed but outside the method's stated range (e.g. Rational above 50 km²); left out of the official range |
-| *needs input* | something is missing; the notes say what |
-| *comparison only* | the Indian formulas (Dickens, Ryves, Inglis); never in the official range |
-| ≈ | interpolated between tabulated return periods (MHSP, specific discharge) or design rainfalls |
-| \* | extrapolated beyond 100 years, or beyond twice a gauge record |
+The table gives each method's flood by return period with a status (*ok*, *use
+with caution*, *outside its range*, *needs input*, *comparison only*) and marks
+interpolated (≈) and extrapolated (\*) values. The **official range** is the
+minimum, median and maximum of the regional peak methods that are usable for
+this catchment. The report says whether the physics flood is inside, above or
+below it. A range wider than a factor of 3 is flagged. Every rule is on
+[reading the results](results.md).
 
-The **official range** is the minimum, median and maximum of the regional peak
-methods that are usable for this catchment. The report says whether the physics
-flood is inside, above or below it, and its ratio to the median. A wide range
-(more than a factor of 3) is flagged, because then the choice of method needs to
-be explained and checked against the nearest gauges.
-
-Next: [the methods and their formulas](methods.md) ·
+Next: [use cases](use-cases.md) · [all formulas at a glance](methods.md) ·
 [design floods with the physics model](design-floods.md).
