@@ -85,6 +85,43 @@ The elevation-rule dispatch shared by `mannings_n_from_dem` and by
     options:
       heading_level: 3
 
+## MRRpy-Nepal (`MRRpy.nepal`)
+
+The official Nepali flood methods next to the physics model — see
+[MRRpy-Nepal](../nepal/index.md).
+
+::: MRRpy.nepal.NepalStudy
+    options:
+      heading_level: 3
+      members:
+        - from_numbers
+        - from_results
+        - from_config
+        - from_dem
+        - run
+        - save
+        - load
+
+::: MRRpy.nepal.estimate_floods
+    options:
+      heading_level: 3
+
+::: MRRpy.nepal.measure_catchment
+    options:
+      heading_level: 3
+
+::: MRRpy.nepal.run_design_floods
+    options:
+      heading_level: 3
+
+::: MRRpy.nepal.design_hyetograph
+    options:
+      heading_level: 3
+
+::: MRRpy.nepal.monthly_flows
+    options:
+      heading_level: 3
+
 ## Pluggable runoff modes
 
 `MRRpy.core.runoff.register` adds a new `RUNOFF_SOURCE` from your own code; see

@@ -68,6 +68,10 @@ nav:
       - "10 The whole DEM and flood maps": examples/whole-dem.md
       - "11 Many runs from Python": examples/batch-runs.md
       - "Case study: Nepal (Trishuli)": examples/nepal-case-study.md
+  - MRRpy-Nepal:
+      - nepal/index.md
+      - "Methods and formulas": nepal/methods.md
+      - "Design floods with the physics model": nepal/design-floods.md
   - Reference:
       - Command line: reference/cli.md
       - Python API: reference/api.md

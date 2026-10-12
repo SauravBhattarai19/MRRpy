@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — MRRpy-Nepal
+
+Nothing changes for existing runs: the physics core is untouched, and the only
+core addition is two bankfull-flow presets.
+
+### Added
+- `MRRpy.nepal` (MRRpy-Nepal): the official Nepali flood-estimation methods next
+  to the physics model, built from the compendium *Nepal Flood Estimation
+  Methods*. See `NEPAL_PLAN.md` for which methods are in, deferred or left out.
+  - Catchment numbers measured from the DEM results (`measure_catchment`): A, the
+    area below 3,000 m and 5,000 m, permanent snow, the longest flow path and its
+    slope, Lc, elevations, and an approximate river class.
+  - Flood methods (`estimate_floods`): WECS/DHM 1990 (instantaneous and daily),
+    DHM 2004, MHSP 1997, Modified Dickens, specific discharge (WECS 2019),
+    Rational (Kirpich + Mononobe), frequency analysis, catchment area ratio;
+    Dickens, Ryves and Inglis for comparison only. Each method carries a
+    validity flag and its source caveats, and the official range is computed
+    per return period.
+  - Frequency analysis: Gumbel, Log-Pearson III and GEV (L-moments), each with
+    bootstrap confidence bands.
+  - Agency presets (DoWRI, DoLIDAR, DoED, WECS, DoR, AEPC, NEA), design return
+    periods by structure, and the compendium's quick guide.
+  - Design storms: R24 spread with the Mononobe curve into alternating blocks,
+    written as rain-gauge CSVs; physics design-flood runs (`run_design_floods`)
+    with an offline default model (SCS-CN, WECS/DHM channels, less rain above
+    3,000 m).
+  - Monthly and low flows: MIP 1982, WECS/DHM and MHSP monthly, the
+    lower-of-two low-flow rule, e-flow, 80 % dependable flow, 7Q10.
+  - `NepalStudy`: site → methods → table, chart and Markdown report; saved and
+    loaded as YAML.
+  - Interfaces: the `MRRpy nepal` CLI (`methods`, `estimate`, `frequency`,
+    `monthly`, `design-storm`), `NepalForm` for Jupyter, and the notebook
+    `notebooks/nepal_flood_study.ipynb`.
+- `CHANNEL_QBF_M3S` presets `dhm2004_nepal` and `specific_q_nepal`.
+- QGIS plugin: Processing tools "3. Nepal flood estimates (official methods)" and
+  "4. Nepal design storm (rain-gauge CSVs)", plus a menu entry.
+- Docs: a MRRpy-Nepal section (overview, methods and formulas, design floods).
+
 ## 0.3.0
 
 **Results change for Green-Ampt runs longer than one storm.** Set

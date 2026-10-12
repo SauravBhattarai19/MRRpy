@@ -15,6 +15,7 @@ about=MRRpy_plugin runs the MRRpy model directly inside QGIS. It supports:
   - Load / save YAML, JSON or config.py files interchangeable with the MRRpy command-line tool
   - Optional GPU acceleration via CuPy/CUDA (falls back to CPU automatically)
   - QGIS Processing algorithms (mrrpy_plugin:process_dem, mrrpy_plugin:routing) for scripting and the Graphical Modeler
+  - MRRpy-Nepal: the official Nepali flood methods (WECS/DHM, DHM 2004, MHSP, Modified Dickens, specific discharge, Rational, frequency analysis, catchment area ratio) next to a physics-based design flood, with agency and structure presets (mrrpy_plugin:nepal_flood_estimates, mrrpy_plugin:nepal_design_storm)
 
 tracker=https://github.com/SauravBhattarai19/MRRpy/issues
 repository=https://github.com/SauravBhattarai19/MRRpy

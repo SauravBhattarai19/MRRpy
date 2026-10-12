@@ -104,6 +104,8 @@ Formula variables and presets:
 | Preset | Formula | Notes |
 |---|---|---|
 | `wecs_nepal` | `1.8767 * (A_below(3000) + 1) ^ 0.8783` | WECS/DHM (1990) 2-year flood for Nepal; only area below 3,000 m counts |
+| `dhm2004_nepal` | `2.29 * A_below(3000) ^ 0.86` | Sharma & Adhikari (DHM 2004) 2-year flood for Nepal; usually above WECS/DHM |
+| `specific_q_nepal` | `4.2 * A ^ 0.70` | WECS (2019) specific-discharge 2-year flood for Nepal; fitted above 12 km² |
 | `global_area` | `1.73 * A ^ 0.606` | global fit on area only (offline); 80 % within 0.32–3.9× |
 | `global_area_rain` | `1.72e-4 * A ^ 0.640 * P ^ 1.313` | global fit on area and rain; 80 % within 0.36–3.3× |
 

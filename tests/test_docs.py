@@ -4,7 +4,8 @@ The documentation site (docsite/) stays complete and correct:
 * every catalogued setting is explained in exactly one settings table of the
   user manual (``<!-- settings: … -->``, expanded by tools/mkdocs_hooks.py);
 * every ``[[NAME]]`` link points at a documented setting;
-* every YAML block is a valid MRRpy configuration and every Python block parses;
+* every YAML block is a valid MRRpy configuration (or MRRpy-Nepal study) and
+  every Python block parses;
 * with mkdocs installed, the site builds with ``--strict`` (no broken links).
 """
 
@@ -75,12 +76,16 @@ def test_pages_expand():
 
 
 def test_yaml_blocks_are_valid_configs():
+    from MRRpy.nepal import NepalStudy
     n = 0
     for page, body in _blocks("yaml"):
         data = yaml.safe_load(body)
         assert isinstance(data, dict), f"{page}: a YAML block is not a mapping"
         try:
-            Config.from_dict(data)
+            if "site" in data:                        # an MRRpy-Nepal study file
+                NepalStudy.from_dict(data)
+            else:
+                Config.from_dict(data)
         except Exception as exc:                      # noqa: BLE001 — report which block
             pytest.fail(f"{page}: invalid configuration block {list(data)}: {exc}")
         n += 1

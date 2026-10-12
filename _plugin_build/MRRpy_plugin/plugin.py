@@ -35,6 +35,7 @@ class MRRpyPlugin:
         """
         self.iface = iface
         self._action = None
+        self._nepal_action = None
         self._dialog = None
         self._provider = ProcessingProvider()
 
@@ -56,6 +57,15 @@ class MRRpyPlugin:
         self.iface.addToolBarIcon(self._action)
         self.iface.addPluginToMenu("&MRRpy_plugin", self._action)
 
+        # MRRpy-Nepal: the official Nepali flood methods (a Processing tool)
+        self._nepal_action = QAction("Nepal flood estimates (official methods)…",
+                                     self.iface.mainWindow())
+        self._nepal_action.setToolTip(
+            "WECS/DHM, DHM 2004, MHSP, Modified Dickens, Rational and more for one catchment, "
+            "next to the MRRpy physics model")
+        self._nepal_action.triggered.connect(self._open_nepal)
+        self.iface.addPluginToMenu("&MRRpy_plugin", self._nepal_action)
+
         # ── Register Processing provider ──────────────────────────────────────
         QgsApplication.processingRegistry().addProvider(self._provider)
 
@@ -64,6 +74,8 @@ class MRRpyPlugin:
         # Remove menu / toolbar
         self.iface.removePluginMenu("&MRRpy_plugin", self._action)
         self.iface.removeToolBarIcon(self._action)
+        if self._nepal_action is not None:
+            self.iface.removePluginMenu("&MRRpy_plugin", self._nepal_action)
 
         # Close dialog if open
         if self._dialog is not None:
@@ -100,6 +112,20 @@ class MRRpyPlugin:
         self._dialog.show()
         self._dialog.raise_()
         self._dialog.activateWindow()
+
+    def _open_nepal(self):
+        """Open the 'Nepal flood estimates' Processing dialog."""
+        if not self._ensure_dependencies():
+            return
+        try:
+            import processing
+            processing.execAlgorithmDialog("mrrpy_plugin:nepal_flood_estimates", {})
+        except Exception as exc:          # noqa: BLE001 — explain instead of failing silently
+            from qgis.PyQt.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.iface.mainWindow(), "MRRpy_plugin — Nepal flood estimates",
+                "Open it from Processing Toolbox → MRRpy_plugin → '3. Nepal flood estimates "
+                f"(official methods)'.\n\n({exc})")
 
     def _ensure_dependencies(self) -> bool:
         """Offer the installer when required packages are missing.

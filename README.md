@@ -79,6 +79,32 @@ water depth, river flow drawn wider where it is larger, and the hydrograph.*
 - **Interfaces for every taste** — Python API, a `MRRpy` CLI with a
   question-and-answer `wizard`, a Jupyter form, and a QGIS plugin, all driven
   by one `Config` object.
+- **MRRpy-Nepal** — the official Nepali flood methods next to the physics model
+  (see below).
+
+## MRRpy-Nepal
+
+`MRRpy.nepal` puts the official Nepali flood-estimation methods next to the
+physics model. It measures the catchment numbers from the DEM (area, area below
+3,000 m and 5,000 m, snow area, flow length and slope). It then runs WECS/DHM
+1990, DHM 2004, MHSP 1997, Modified Dickens, the specific-discharge method, the
+Rational method, frequency analysis and the catchment area ratio, each with a
+validity flag. Last, it runs the physics model with a design storm built from
+the T-year 24-hour rainfall and the Mononobe curve, and reports where it falls
+within the official range. Choose the manual you design to (DoWRI, DoLIDAR,
+DoED, WECS, DoR, …) and the structure (bridge, weir, culvert, …): the methods and
+return periods are ticked for you. Monthly and low flows (MIP 1982, WECS/DHM,
+MHSP, e-flow) are included.
+
+```bash
+MRRpy nepal estimate --results results/ --agency dowri_2019 --structure weir \
+    --C 0.45 --rain24 2=120 50=230 100=250 --physics
+```
+
+In Jupyter: `from MRRpy.nepal import NepalForm; NepalForm()`. In QGIS: Processing
+→ MRRpy_plugin → *3. Nepal flood estimates*. What is included, deferred or left out,
+and why: [NEPAL_PLAN.md](NEPAL_PLAN.md) and the
+[MRRpy-Nepal docs](https://mrrpy.readthedocs.io/en/latest/nepal/).
 
 ## Links
 

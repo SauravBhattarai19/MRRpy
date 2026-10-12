@@ -102,6 +102,29 @@ Engine (dataset id, native resolution, coverage) — set `DEM_SOURCE` to one
 of these keys and `DEM_BOUNDS_WGS84` to skip needing a local `DEM_PATH`. See
 [1.1 Elevation data](../manual/terrain.md#11-elevation-data-dem).
 
+### `nepal` — MRRpy-Nepal: official methods, design storms, monthly flows
+
+```bash
+MRRpy nepal methods                                   # methods, agency and structure presets
+MRRpy nepal estimate --results results/ --agency dowri_2019 --structure weir \
+    --C 0.45 --rain24 2=120 50=230 100=250 --physics  # official methods + physics model
+MRRpy nepal estimate --area 65 --methods wecs_dhm dhm_2004 --T 2 100   # typed numbers
+MRRpy nepal frequency peaks.csv --T 2 10 100          # Gumbel, LP-III, GEV with bands
+MRRpy nepal monthly --area 65 --mip-region 4 --measured 2024-02-15=1.5 --mmp 1500
+MRRpy nepal design-storm --rain24 250 -o storm/       # rain-gauge CSVs for any run
+```
+
+| `estimate` flag | Purpose |
+|---|---|
+| `--results` / `-c` / `--dem … --outlet` / `--area …` / `--study` | the catchment: a results folder, a config file, a DEM to delineate, typed numbers, or a saved study |
+| `--agency`, `--methods` | tick the methods a manual names, or list them |
+| `--structure`, `--T` | tick a structure's design return periods, or list them |
+| `--region`, `--C`, `--rain24`, `--rain-series`, `--flood-series`, `--donor-area`, `--donor-floods` | what the methods need |
+| `--physics`, `--physics-T`, `--cn`, `--duration`, `--climate-factor`, `--model-config` | the physics model's design flood |
+| `-o`, `--save-study` | where to write the table, chart and report; save the settings as a study YAML |
+
+See [MRRpy-Nepal](../nepal/index.md).
+
 ## Typical session
 
 ```bash

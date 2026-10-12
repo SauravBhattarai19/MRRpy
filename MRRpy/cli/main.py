@@ -39,6 +39,11 @@ Commands
         Print every DEM dataset MRRpy can auto-download from Google Earth
         Engine (dataset id, resolution, coverage) — set DEM_SOURCE to one of
         these keys.
+
+    MRRpy nepal methods | estimate | frequency | monthly | design-storm
+        MRRpy-Nepal: the official Nepali flood methods (WECS/DHM, DHM 2004,
+        MHSP, Modified Dickens, Rational, …) next to the physics model, design
+        storms, frequency analysis and monthly flows (MRRpy/nepal/cli.py).
 """
 
 import argparse
@@ -224,6 +229,9 @@ def build_parser():
     p_dems = sub.add_parser("list-dems",
                             help="list DEM datasets available via Google Earth Engine")
     p_dems.set_defaults(func=_cmd_list_dems)
+
+    from ..nepal.cli import add_parser as _add_nepal_parser
+    _add_nepal_parser(sub)
 
     return parser
 

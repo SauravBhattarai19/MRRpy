@@ -25,6 +25,7 @@ runs with MRRpy 0.2.0 on a 90 m ALOS DEM. On your own DEM they will differ.
 | [10 The whole DEM and flood maps](whole-dem.md) | every DEM cell, maps and animations | `MODEL_AREA`, `SAVE_FIELDS` | no |
 | [11 Many runs from Python](batch-runs.md) | sweeps and comparison tables | Python loops | no |
 | [Case study: Nepal (Trishuli)](nepal-case-study.md) | a large Himalayan basin, satellite storm and an outburst flood | many | yes |
+| [MRRpy-Nepal](../nepal/index.md) | the official Nepali flood methods next to a physics design flood | `MRRpy nepal estimate`, `NepalForm` | no |
 
 !!! tip "Before you start"
     [Install MRRpy](../getting-started/installation.md). For the notebook form,

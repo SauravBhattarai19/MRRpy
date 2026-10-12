@@ -8,7 +8,9 @@ QGIS Processing Framework.
 Registered algorithms appear under:
   Processing Toolbox → MRRpy_plugin
     ├─ 1. DEM Pre-processing
-    └─ 2. Routing (kinematic / diffusive / dynamic / implicit)
+    ├─ 2. Routing (kinematic / diffusive / dynamic / implicit)
+    ├─ 3. Nepal flood estimates (official methods)     — MRRpy-Nepal
+    └─ 4. Nepal design storm (rain-gauge CSVs)         — MRRpy-Nepal
     (the standalone VSA-OPM stage runs from the main dialog)
 
 Adding new algorithms later
@@ -22,6 +24,7 @@ import os
 from qgis.core import QgsProcessingProvider
 from qgis.PyQt.QtGui import QIcon
 
+from .alg_nepal import NepalDesignStormAlgorithm, NepalFloodEstimatesAlgorithm
 from .alg_process_dem import ProcessDemAlgorithm
 from .alg_router import RoutingAlgorithm
 
@@ -56,4 +59,6 @@ class ProcessingProvider(QgsProcessingProvider):
         return [
             ProcessDemAlgorithm(),
             RoutingAlgorithm(),
+            NepalFloodEstimatesAlgorithm(),
+            NepalDesignStormAlgorithm(),
         ]

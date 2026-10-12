@@ -43,6 +43,11 @@ GLOBAL_AREA = dict(ln_a=0.5477, b=0.6057, p10=0.32, p90=3.90)         # X = A [k
 QBF_PRESETS = {
     "wecs_nepal": ("1.8767 * (A_below(3000) + 1) ^ 0.8783",
                    "WECS/DHM (1990) 2-year flood for Nepal; A_below(3000) = drainage area below 3,000 m"),
+    "dhm2004_nepal": ("2.29 * A_below(3000) ^ 0.86",
+                      "Sharma & Adhikari (DHM 2004) 2-year flood for Nepal; area below 3,000 m"),
+    "specific_q_nepal": ("4.2 * A ^ 0.70",
+                         "WECS (2019) specific-discharge 2-year flood for Nepal (q2 = 4.2·A^-0.30); "
+                         "fitted above 12 km²"),
     "global_area": ("1.73 * A ^ 0.606",
                     "MRRpy global fit on drainage area only (offline); 80 % of gauges within 0.32–3.9×"),
     "global_area_rain": ("1.72e-4 * A ^ 0.640 * P ^ 1.313",

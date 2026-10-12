@@ -34,6 +34,11 @@ Out of scope: `runs/trishuli_*`, `runs/trishuli_avaflow*`, and any
 an unrelated study that happens to share this workspace, not part of the
 `MRRpy` package.
 
+The **MRRpy-Nepal** work (branch `MRRpy-Nepal`) adds `MRRpy/nepal/`: the
+official Nepali flood methods next to the physics model. `NEPAL_PLAN.md` holds
+its method filter, architecture and roadmap — see
+[MRRpy-Nepal](#mrrpy-nepal-mrrpynepal) below.
+
 ## Install & environment
 
 ```bash
@@ -87,7 +92,13 @@ There is no single test runner. Test suites:
 - `tests/NN_*.py` — **standalone scripts**, not pytest. Run individually from
   the repo root, e.g. `python tests/03_test_vsa_opm.py`. They print PASS/FAIL
   per check and double as demos (several emit GIFs/PNGs into `tests/_demo_out/`).
+- `tests/test_nepal_*.py` — **pytest** for `MRRpy.nepal`: every worked example of
+  the Nepal compendium (`test_nepal_methods.py`), frequency fits, DEM-measured
+  descriptors, design storms (depth checked through `PrecipEngine`), monthly
+  flows, an end-to-end physics design flood (`test_nepal_study.py`), the CLI and
+  `NepalForm` (skips without ipywidgets).
 - `MRRpy_plugin/tests/` — **pytest**, no QGIS needed for `test_config_bridge.py`
+  and `test_nepal_options.py`
   (`pytest MRRpy_plugin/tests/test_config_bridge.py -v`); `test_runner.py` needs
   rasters under `output/`. `test_ui.py` drives the real dialog headlessly and
   needs QGIS's Python (skipped elsewhere): on this machine
@@ -223,6 +234,37 @@ Optional routing add-ons (all off by default, config-gated):
   (`fields.npz` + `fields_meta.json`); `MRRpy/plotting.py` turns it into maps
   (`plot_field`), a GIF/MP4 (`animate_fields`) and peak GeoTIFFs
   (`export_peak_maps`).
+
+### MRRpy-Nepal (`MRRpy/nepal/`)
+
+A layer **around** the unchanged physics core — no `Config` knobs of its own
+(only the `CHANNEL_QBF_M3S` presets `dhm2004_nepal` / `specific_q_nepal` were
+added in `core/routing/qbf.py`), so it never shows up in the general wizard/form
+and non-Nepal runs stay byte-identical. Modules:
+`descriptors.py` (A, A3000, A5000, snow, L, S, Lc measured from the
+`process_dem` rasters; typed `CatchmentDescriptors` with documented defaults),
+`methods.py` (the `FLOOD_METHODS` registry: formula functions + `run()` with
+validity checks → status ok/caution/outside/needs input/comparison;
+`estimate_floods` → `FloodEstimates` table + official `envelope`; the `INPUTS`
+catalogue the form/CLI/QGIS read), `frequency.py` (Gumbel/LP-III/GEV-L-moments
++ bootstrap), `guidelines.py` (`AGENCIES` → methods, `STRUCTURES` → return
+periods, `recommend_methods` = compendium §7), `design_storm.py` (Mononobe
+alternating-block hyetograph → one-gauge CSVs for `PRECIP_METHOD='thiessen'`),
+`physics.py` (`run_design_floods`: one `pipeline.stage_routing` run per T into
+`<OUTPUT_DIR>/nepal/design_T<T>/`, never touching the folder's own
+hydrograph.csv/gauges.csv), `flows.py` (MIP 1982, WECS/DHM & MHSP monthly, Q80,
+e-flow, 7Q10), `study.py` (`NepalStudy` settings → `run()` → `NepalResult`;
+YAML via `save`/`load` — a docs YAML block with a `site` key is validated as a
+study), `report.py` (chart + Markdown), `cli.py` (`MRRpy nepal …`, registered in
+`cli/main.py`), `form.py` (`NepalForm`, lazy like `ConfigForm`). QGIS:
+`MRRpy_plugin/processing/alg_nepal.py` (thin) + `nepal_options.py` (pure-Python
+mapping, tested without QGIS). **Coefficients come only from the compendium
+"Nepal Flood Estimation Methods"**; a method whose formula it gives only in part
+(B.D. Richards, PCJ, MIP 2016, WECS low flows) is deferred, not guessed — see
+`NEPAL_PLAN.md` §2.3. When adding a method: register it in `FLOOD_METHODS` (with
+`source` caveats and a `check`), add any new input to `INPUTS`, add its worked
+example to `tests/test_nepal_methods.py`, and document it in
+`docsite/nepal/methods.md`.
 
 ### CPU/GPU backend selection
 

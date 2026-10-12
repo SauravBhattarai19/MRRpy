@@ -19,7 +19,8 @@ nbformat = pytest.importorskip("nbformat")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The notebooks MRRpy ships (not users' own copies or scratch notebooks there).
 NOTEBOOKS = [os.path.join(ROOT, "notebooks", n)
-             for n in ("configure_and_run.ipynb", "pick_dem_bounds.ipynb")]
+             for n in ("configure_and_run.ipynb", "pick_dem_bounds.ipynb",
+                       "nepal_flood_study.ipynb")]
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=os.path.basename)
@@ -56,3 +57,26 @@ def test_configuration_notebook_runs(tmp_path):
     widget_outputs = [o for c in nb.cells for o in c.get("outputs", [])
                       if "application/vnd.jupyter.widget-view+json" in o.get("data", {})]
     assert widget_outputs, "the form did not display as a widget"
+
+
+def test_nepal_notebook_runs(tmp_path):
+    pytest.importorskip("ipywidgets")
+    pytest.importorskip("ipykernel")
+    nbclient = pytest.importorskip("nbclient")
+    src = os.path.join(ROOT, "notebooks", "nepal_flood_study.ipynb")
+    work = tmp_path / "work"
+    work.mkdir()
+    shutil.copy(src, work)
+    nb = nbformat.read(str(work / "nepal_flood_study.ipynb"), as_version=4)
+    client = nbclient.NotebookClient(nb, timeout=300, kernel_name="python3",
+                                     resources={"metadata": {"path": str(work)}})
+    client.execute()
+    text = "".join(o.get("text", "") + str(o.get("data", {}).get("text/plain", ""))
+                   for c in nb.cells if c.cell_type == "code" for o in c.get("outputs", []))
+    assert "WECS/DHM 1990 (HYDEST)" in text                # the comparison table
+    assert "Lower of WECS/DHM and MIP" in text             # monthly flows
+    assert "GEV (L-moments)" in text                       # frequency analysis
+    assert "outside its range" in text                     # Rational above 50 km²
+    widget_outputs = [o for c in nb.cells for o in c.get("outputs", [])
+                      if "application/vnd.jupyter.widget-view+json" in o.get("data", {})]
+    assert widget_outputs, "the Nepal form did not display as a widget"
