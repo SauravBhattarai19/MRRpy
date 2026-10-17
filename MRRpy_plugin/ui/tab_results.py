@@ -12,7 +12,7 @@ Features
 - Peak discharge & timing summary label
 - Flood maps from the saved fields (SAVE_FIELDS): peak-depth/discharge
   GeoTIFFs loaded as layers, and an animation of the flow spreading
-- Flood depth and extent maps (INUNDATION_MAP, HAND): the depth GeoTIFF and
+- Flood depth and extent maps (INUNDATION_MAP): the depth GeoTIFF and
   extent outlines loaded as layers, and the flood animation opened
 """
 
@@ -133,7 +133,7 @@ class TabResults(QWidget):
         root.addWidget(grp_maps)
 
         # ── Flood depth and extent (needs "flood depth and extent maps") ──────
-        grp_flood = QGroupBox("Flood depth and extent (HAND)")
+        grp_flood = QGroupBox("Flood depth and extent")
         v_flood = QVBoxLayout(grp_flood)
         self.flood_hint = QLabel(
             "Turn on “flood depth and extent maps” on the Routing tab before running "
@@ -263,9 +263,16 @@ class TabResults(QWidget):
                 s = json.load(fh)
         except (OSError, KeyError, ValueError):
             return ""
-        return (f"Flood maps on the {s['grid']} grid: {s['flooded_km2']:.2f} km² flooded, "
-                f"deepest {s['max_depth_m']:.2f} m; {s['reaches_above_bank']} of "
-                f"{s['reaches']} river reaches went above their banks.")
+        how = "2D flood simulation" if s.get("method") == "2d" else "quick water levels (HAND)"
+        text = (f"Flood maps by {how} on {s['grid']}: {s['flooded_km2']:.2f} km² under water "
+                f"(rivers included), deepest {s['max_depth_m']:.2f} m")
+        if s.get("max_speed_m_s") is not None:
+            text += f", fastest flow {s['max_speed_m_s']:.1f} m/s"
+        text += "."
+        if s.get("water_against_edge"):
+            text += (" The flood reached the edge of the area, which held it back: "
+                     "make the area larger there.")
+        return text
 
     # ── Button slots ──────────────────────────────────────────────────────────
 

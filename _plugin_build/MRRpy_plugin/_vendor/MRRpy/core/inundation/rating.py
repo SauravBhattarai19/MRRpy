@@ -2,21 +2,25 @@
 """
 rating.py — synthetic rating curves (stage ↔ discharge) for HAND reaches.
 
-Stage y is measured above the bank (the DEM surface at the river cell; the
-model's channel bed lies its bankfull depth D below it).  For reach r:
+Stage y is measured above the river surface in the DEM (the DEM at the river
+cell).  For reach r:
 
     Q(y) = √S · [ K_slot(D + y)  +  (1/L) · Σ_{HAND_i < y} a_i · (y − HAND_i)^(5/3) / n_i ]
 
-* K_slot is the model's own sub-grid channel (``hydraulics.compound_conveyance``
-  with the floodplain width set to zero): slot of width W, walls up to the bank,
-  channel n.
+* K_slot is a channel of width W and channel n (``hydraulics.compound_conveyance``
+  with the floodplain width set to zero) whose bed lies D below the DEM.  The
+  flood maps use D = 0: nothing is cut below the DEM, whose river surface is
+  already the water at the time of the survey, so K_slot is the W-wide strip of
+  the river cell, with channel roughness.  (A bankfull channel below a 30 m DEM
+  counted the river's capacity twice: maps drawn 1–8 m too low at Nakhu,
+  Montpelier and the Pearl, TestCases/flood_zoom_*.)
 * The sum is the floodplain in strip (divided-channel) form: every cell that
   drains to the reach and lies below the water conveys a sheet of width a_i/L
   and depth y − HAND_i with its own Manning's n.  a_i is the cell's plan area
   minus the part the channel itself occupies.
 
-With only the river cells in the sum this is exactly the model's compound
-section (slot + one-cell floodplain); HAND adds the land beside the river.
+With D > 0 and only the river cells in the sum this is exactly the routing's
+compound section (slot + one-cell floodplain); HAND adds the land beside the river.
 """
 
 import numpy as np
@@ -184,8 +188,8 @@ def _stage_rows(Q, y, q):
 
 def stage_from_discharge(Q, y, q):
     """
-    Stage above bank [m] for discharge q: (R,) or (T, R).  At or below the
-    bankfull flow Q[:, 0] the stage is 0 (water stays in the channel).  Above
+    Stage [m] for discharge q: (R,) or (T, R).  At or below Q[:, 0] (the flow
+    at stage 0: zero unless a channel lies below the DEM) the stage is 0.  Above
     the table's top the stage is held at y[-1] and the reach is flagged.
 
     Returns (stage like q, clipped (R,) bool).

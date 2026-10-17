@@ -943,10 +943,16 @@ class ConfigForm:
         m.add(draw)
         m.on_interaction(self._on_map_click)
         self.marker.observe(self._on_marker_move, names="location")
+        self.draw_target = W.ToggleButtons(
+            options=[("Area to download", "DEM_BOUNDS_WGS84"),
+                     ("Area for the flood maps", "INUNDATION_AREA")],
+            value="DEM_BOUNDS_WGS84", description="A rectangle sets:",
+            style={"description_width": "initial"})
         note = _html('<div class="mrrpy-help">Click the map (or drag the marker) to set '
                       "the basin outlet. Draw a rectangle with the square tool to set the "
-                      "area to download.</div>")
-        self.map_box.children = [note, m]
+                      "area chosen here: the area to download, or the area for the flood "
+                      "maps (the box of the 2D flood simulation).</div>")
+        self.map_box.children = [note, self.draw_target, m]
         self.map = m
         return m
 
@@ -966,6 +972,14 @@ class ConfigForm:
             return
         from ..utils.notebook_map import _bounds_from_geojson_feature
         w, s, e, n = _bounds_from_geojson_feature(geo_json)
+        if getattr(self, "draw_target", None) is not None and \
+                self.draw_target.value == "INUNDATION_AREA":
+            self.set("INUNDATION_AREA", tuple(round(x, 5) for x in (w, s, e, n)))
+            msg = "The flood-map area was set from the map."
+            if not self._value("INUNDATION_MAP", False):
+                msg += " Turn on the flood depth and extent maps to use it."
+            self._say(msg)
+            return
         had_file = self.dem_mode.value == "file" and bool(self._value("DEM_PATH"))
         self.dem_mode.value = "download"
         self.set("DEM_BOUNDS_WGS84", tuple(round(x, 5) for x in (w, s, e, n)))

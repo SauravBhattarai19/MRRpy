@@ -65,12 +65,22 @@ _FLOOD_DEM_LABELS = {
     "model_grid": "model grid — the grid the model ran on",
     "file": "file — my own finer DEM (e.g. LiDAR)",
 }
+_FLOOD_METHOD_LABELS = {
+    "hand": "Quick — water levels for every river (HAND)",
+    "2d": "Flood simulation over one area (2D) — more exact, slower",
+}
 
 
 def flood_dem_choices():
     """Ordered INUNDATION_DEM values, as the installed core package defines them."""
     from ..bridge import core_choices
     return core_choices("INUNDATION_DEM", list(_FLOOD_DEM_LABELS))
+
+
+def flood_method_choices():
+    """Ordered INUNDATION_METHOD values, as the installed core package defines them."""
+    from ..bridge import core_choices
+    return core_choices("INUNDATION_METHOD", list(_FLOOD_METHOD_LABELS))
 
 
 def qbf_presets():
@@ -482,19 +492,31 @@ class TabRouting(QWidget):
 
         root.addWidget(grp)
 
-    # ── Flood maps (HAND) ──────────────────────────────────────────────────────
+    # ── Flood maps ─────────────────────────────────────────────────────────────
 
     def _build_flood_group(self, root):
-        grp = QGroupBox("Flood Depth and Extent Maps (HAND)")
+        grp = QGroupBox("Flood Depth and Extent Maps")
         form = self._flood_form = QFormLayout(grp)
 
         self.flood_maps = QCheckBox("Make flood depth and extent maps from the river flow")
         self.flood_maps.setToolTip(
-            "Spreads each river's flow sideways over the land beside it that lies\n"
-            "below the water (Height Above Nearest Drainage), and writes\n"
-            "inundation/flood_depth_max.tif, flood_extent_max.tif/.geojson and an\n"
-            "animation. The routing itself does not change.")
+            "Spreads the river flow over the land beside the rivers, on the real\n"
+            "ground, and writes inundation/flood_depth_max.tif,\n"
+            "flood_extent_max.tif/.geojson and an animation. The routing itself\n"
+            "does not change.")
         form.addRow(self.flood_maps)
+
+        self.flood_method = QComboBox()
+        for name in flood_method_choices():
+            self.flood_method.addItem(_FLOOD_METHOD_LABELS.get(name, name), name)
+        self.flood_method.setToolTip(
+            "Quick: each stretch of river gets one water level, spread over the land\n"
+            "below it — seconds, for every river.\n"
+            "Flood simulation (2D): the water moves over the ground of one area with\n"
+            "the routed rivers flowing in, so it spreads, ponds and backs up as it\n"
+            "really does — closer to measured flood levels in every test, but takes\n"
+            "minutes. Set the area below to the town or valley you care about.")
+        form.addRow("How to spread the water:", self.flood_method)
 
         self.flood_dem = QComboBox()
         for name in flood_dem_choices():
@@ -515,7 +537,9 @@ class TabRouting(QWidget):
         self.flood_area.setPlaceholderText("west, south, east, north — empty: the whole model area")
         self.flood_area.setToolTip(
             "Only map this box (degrees), e.g. a town. The flow still comes from the\n"
-            "whole basin; with a finer DEM only the box and 3 km around it are used.")
+            "whole basin; with a finer DEM only the box and 3 km around it are used.\n"
+            "For the 2D simulation, put the box around the place you care about with\n"
+            "the river running through it.")
         form.addRow("Map only this area:", self.flood_area)
 
         self.flood_animation = QCheckBox("Also write an animation (GIF) of the largest flood")
@@ -707,7 +731,7 @@ class TabRouting(QWidget):
         self._implicit_cpu_note.setVisible(implicit and self._rb_gpu.isChecked())
 
         flood = self.flood_maps.isChecked()
-        for w in (self.flood_dem, self.flood_area, self.flood_animation):
+        for w in (self.flood_method, self.flood_dem, self.flood_area, self.flood_animation):
             _set_row_visible(self._flood_form, w, flood)
         _set_row_visible(self._flood_form, self.flood_dem_path,
                          flood and self.flood_dem.currentData() == "file")
@@ -827,6 +851,8 @@ class TabRouting(QWidget):
         self.mass_balance.setChecked(bool(getattr(cfg, "MASS_BALANCE_REPORT", True)))
         self.save_fields.setChecked(bool(getattr(cfg, "SAVE_FIELDS", False)))
         self.flood_maps.setChecked(bool(getattr(cfg, "INUNDATION_MAP", False)))
+        i = self.flood_method.findData(str(getattr(cfg, "INUNDATION_METHOD", "hand") or "hand"))
+        self.flood_method.setCurrentIndex(max(i, 0))
         i = self.flood_dem.findData(str(getattr(cfg, "INUNDATION_DEM", "auto") or "auto"))
         self.flood_dem.setCurrentIndex(max(i, 0))
         self.flood_dem_path.setFilePath(getattr(cfg, "INUNDATION_DEM_PATH", None) or "")
@@ -907,6 +933,7 @@ class TabRouting(QWidget):
         cfg.MASS_BALANCE_REPORT = self.mass_balance.isChecked()
         cfg.SAVE_FIELDS = self.save_fields.isChecked()
         cfg.INUNDATION_MAP = self.flood_maps.isChecked()
+        cfg.INUNDATION_METHOD = self.flood_method.currentData() or "hand"
         cfg.INUNDATION_DEM = self.flood_dem.currentData() or "auto"
         cfg.INUNDATION_DEM_PATH = self.flood_dem_path.filePath() or None
         cfg.INUNDATION_AREA = self._parse_area(self.flood_area.text())

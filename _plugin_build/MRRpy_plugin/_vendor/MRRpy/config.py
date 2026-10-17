@@ -71,6 +71,7 @@ _ENUM_CHOICES = {
     "CHANNEL_GEOMETRY":      ["order", "area", "discharge"],
     "MODEL_AREA":            ["watershed", "whole_dem"],
     "INUNDATION_DEM":        ["auto", "model_grid", "file"] + list(_DEM_CATALOG),
+    "INUNDATION_METHOD":     ["hand", "2d"],
 }
 
 # Fixed-choice options that may also be None (None = "use the default rule").
@@ -512,12 +513,16 @@ class Config:
     FIELD_STRIDE: int = 1            # record every Nth OUTPUT_INTERVAL (memory control)
     FIELD_OUTPUT_DIR = None          # None → {OUTPUT_DIR}/fields/  (resolved at runtime)
 
-    # ── Flood depth and extent maps (HAND) ───────────────────────────────────
-    # Spread each river reach's routed flow sideways over the land that drains
-    # to it and lies below the water level (Height Above Nearest Drainage with a
-    # rating curve per reach) and write flood depth / extent maps, an animation
-    # and tables to {OUTPUT_DIR}/inundation/.  Routing results are unchanged.
+    # ── Flood depth and extent maps ──────────────────────────────────────────
+    # Spread the routed river flow over the land beside the rivers and write
+    # flood depth / extent maps, an animation and tables to
+    # {OUTPUT_DIR}/inundation/.  Routing results are unchanged.
     INUNDATION_MAP: bool = False
+    # 'hand': each river reach's flow → a water level (rating curve) spread over
+    # the land below it (Height Above Nearest Drainage); quick, whole network.
+    # '2d': a 2D flood simulation over INUNDATION_AREA with the routed rivers
+    # flowing in; slower, water spreads and backs up as on the ground.
+    INUNDATION_METHOD: str = "hand"
     INUNDATION_AREA = None           # (west, south, east, north) degrees; None → whole model area
     # Elevation data for the maps: 'auto' (the run's Earth Engine DEM at its native
     # resolution when the model grid is coarser, else the model grid) | 'model_grid'
@@ -526,8 +531,6 @@ class Config:
     INUNDATION_DEM_PATH = None       # GeoTIFF used when INUNDATION_DEM='file'
     INUNDATION_DEM_SCALE_M = None    # [m] download resolution; None → the dataset's native
     INUNDATION_ANIMATION: bool = True     # flood_animation.gif of the largest flood
-    INUNDATION_REACH_LENGTH_M: float = 1000.0   # advanced: river reach length [m]
-    INUNDATION_BACKWATER: bool = True     # advanced: big rivers back up into side streams
 
     # ═════════════════════════════════════════════════════════════════════════
     # 10. COMPUTE BACKEND
@@ -940,9 +943,6 @@ class Config:
             if self.INUNDATION_DEM_SCALE_M is not None and not float(self.INUNDATION_DEM_SCALE_M) > 0:
                 errors.append(f"INUNDATION_DEM_SCALE_M must be > 0 or None "
                               f"(got {self.INUNDATION_DEM_SCALE_M}).")
-            if not float(self.INUNDATION_REACH_LENGTH_M) > 0:
-                errors.append(f"INUNDATION_REACH_LENGTH_M must be > 0 "
-                              f"(got {self.INUNDATION_REACH_LENGTH_M}).")
 
         if errors:
             raise ValueError(

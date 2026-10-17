@@ -65,9 +65,6 @@ def build_snapshot(cfg, grid_data):
 
     width = cpu("width_1d").astype(np.float64)
     W = np.where(chan, width, 0.0)                     # channel narrower than the cell
-    bank = grid_data.get("bank_1d")
-    D = gpu_utils.to_cpu(bank).astype(np.float64) if bank is not None else np.zeros(n)
-    D = np.where(chan, D, 0.0)
 
     z_raw = _original_dem(cfg, grid_data, z)
 
@@ -78,7 +75,6 @@ def build_snapshot(cfg, grid_data):
         transform=[t.a, t.b, t.c, t.d, t.e, t.f],
         crs=routing_grid_crs(cfg), cell_size=cell_size, cell_area=cell_area,
         a_channel_km2=float(channel_threshold_cells(cfg, grid_data)) * cell_area / 1e6,
-        has_slot=bank is not None,
         model_area=str(getattr(cfg, "MODEL_AREA", "watershed")),
         output_interval_s=float(getattr(cfg, "OUTPUT_INTERVAL_SECONDS", None)
                                 or cfg.TIME_STEP_SECONDS),
@@ -89,7 +85,6 @@ def build_snapshot(cfg, grid_data):
         ds=ds, z=z, z_raw=z_raw, dist=dist.astype(np.float32), area_km2=fa * cell_area / 1e6,
         slope_reach=s_reach.astype(np.float32), n_fp=n_fp.astype(np.float32),
         n_ch=n_1d.astype(np.float32), river=river, W=W.astype(np.float32),
-        D=D.astype(np.float32),
     )
     return arrays, meta
 

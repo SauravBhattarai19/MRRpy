@@ -49,14 +49,14 @@ _MAX_PIXELS_PER_TILE = 3_500_000
 
 
 def _download_one(img, geometry, target_crs_epsg, scale_m, output_path):
-    import urllib.request
+    from ._http import fetch
     url = img.clip(geometry).getDownloadURL({
         'region': geometry,
         'crs': target_crs_epsg,
         'scale': scale_m,
         'format': 'GEO_TIFF',
     })
-    urllib.request.urlretrieve(url, output_path)
+    fetch(url, output_path)
 
 
 def download_dem(bbox_wgs84, target_crs_epsg, output_path, scale_m=None,

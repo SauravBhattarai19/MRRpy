@@ -1012,6 +1012,8 @@ def run_time_loop(grid_data, cfg):
         if bc_rate_1d is not None:
             mb_bc += bc_rate_1d.sum() * dt                    # upstream BC inflow [m³]
         _out_vol_dev += Q_out_vol_1d[outlet_pos]              # outlet outflow volume this step [m³]
+        if peak_rec is not None:
+            peak_rec.add_input(rain_vol, bc_rate_1d, dt)      # read-only: local inflow of rivers
 
         # ── Advance simulation time and accumulate step statistics ───────────
         t_seconds    += dt

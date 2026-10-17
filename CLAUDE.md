@@ -164,33 +164,47 @@ own threading/stdout. Stages:
 - `routing` — `core/routing/router.py`: `initialise_grid` → `run_time_loop` →
   `save_hydrograph`.
 - `vsa_opm` — `core/opm.py::run_opm`, the standalone OPM runner.
-- `inundation` — `core/inundation/` (HAND flood depth/extent maps). Runs at the
+- `inundation` — `core/inundation/` (flood depth/extent maps, HAND or 2D). Runs at the
   end of `routing` when `INUNDATION_MAP` is on; on its own it redraws the maps
   from `{OUTPUT_DIR}/inundation/network.npz` without re-routing.
 
 ### Flood maps (`core/inundation/`)
 
 Post-processing of the routed discharge; routing must stay byte-identical with
-`INUNDATION_MAP` on (the recorder only reads `Q_out_vol_1d`). `recorder.py`
+`INUNDATION_MAP` on (the recorder only reads `Q_out_vol_1d` / `rain_vol`). `recorder.py`
 (`PeakDischargeRecorder`, hooked into `run_time_loop` like `FieldRecorder`) keeps
-the per-cell peak of the interval-mean Q (= `hydrograph.csv`'s quantity) and the
-river-cell Q series; `snapshot.py` saves them with the static network.
-`network.py` (nearest drain/HAND, reaches split at confluences into equal pieces;
-grid-agnostic: flat `ds` + a downstream-first `order`), `rating.py` (synthetic
-rating curve = the model's own `compound_conveyance` slot + HAND floodplain strips;
-identical to the model's section when only river cells are present), `mapping.py`
-(`FloodModel`: backwater levels, stages, depth, outputs; `SavedFlood` for plots) and
-`finegrid.py` (the maps are drawn on the run's own original DEM `reprojected_dem.tif`
-or a finer `INUNDATION_DEM`, NOT on the routing network: flow paths by least-cost
-search `network.least_cost_d8` on the original DEM — a filled DEM turned the
-Kathmandu valley floor into flats crossed by straight-line rivers — and HAND =
-original elevation above the river bed lowered only (`river_bed_profile`). Q is
-passed to each map river from the routed river nearby with about the same drainage
-area; water entering the area from outside is added before accumulation; unmatched
-river cells inherit only from downstream — never upstream, because cells along a
-cropped DEM's edge collect flow along the edge). The routing network itself is only
-the fallback when `reprojected_dem.tif` is missing. Tests: `tests/test_inundation.py`;
-science check: `TestCases/inundation_khokana/`.
+the per-cell peak of the interval-mean Q (= `hydrograph.csv`'s quantity), the
+river-cell Q series and the river cells' local inflow series (side cells' outflow +
+rain on them + BC/baseflow, for the 2D); `snapshot.py` saves them with the static network.
+**The maps lie on the DEM as it is: no channel below it** (a bankfull slot below a
+30 m DEM drew floods 1–8 m too low at three sites, `TestCases/flood_zoom_*`); only the
+river line is cleared of bridges/DEM bumps. `INUNDATION_METHOD` picks `hand` or `2d`.
+`network.py` (nearest drain/HAND, reaches split at confluences into equal pieces,
+river-bed grading; grid-agnostic: flat `ds` + a downstream-first `order`), `rating.py`
+(synthetic rating curve = a W-wide channel strip (D = 0) + HAND floodplain strips),
+`mapping.py` (`FloodModel`: backwater levels, stages, depth, outputs; `SavedFlood` for
+plots, also reads 2D depth frames), `model2d.py` + `solver2d.py` (the 2D: box on the
+map grid, graded one-cell river path — never a W-wide strip or a channel below the DEM,
+both put water metres too low — routed rivers entering at the box edge, local inflow on
+the river cells, normal-depth outflow wherever the ground slopes out of the box and across
+the valley floor beside river exits — walls only where rivers flow in — run around the
+largest flood after a spin-up; local-inertial θ = 1 — θ < 1 doubled depths in one-cell
+zig-zag rivers — and α = 0.5 — 0.7 blew up the Pearl once the run was stopped to save
+frames — whole time loop in numba) and `finegrid.py` (the maps are drawn on the run's
+own original DEM `reprojected_dem.tif` or a finer `INUNDATION_DEM`, NOT on the routing
+network: flow paths by least-cost search `network.least_cost_d8` on the original DEM —
+a filled DEM turned the Kathmandu valley floor into flats crossed by straight-line
+rivers — and HAND = original elevation above the river bed lowered only
+(`river_bed_profile`). Q is passed to each map river from the routed river nearby with
+about the same drainage area; water entering a cut-out DEM from outside is added before
+accumulation at the lowest edge ground near the routed crossing, and edges inside the
+basin are outlets only where routed water leaves (else the valley floor behind a DEM
+dam drained backwards out of a river entry); unmatched river cells inherit only from
+downstream — never upstream, because cells along a cropped DEM's edge collect flow
+along the edge). The routing network itself is only the fallback when
+`reprojected_dem.tif` is missing. Tests: `tests/test_inundation.py`,
+`tests/test_flood2d.py`; science checks: `TestCases/inundation_khokana/`,
+`TestCases/flood_zoom_nakhu/`, `TestCases/flood_zoom_us/`.
 
 ### Runoff generation (`core/runoff/`)
 

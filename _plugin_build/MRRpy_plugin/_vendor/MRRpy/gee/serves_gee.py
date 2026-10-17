@@ -142,9 +142,9 @@ def _download_aligned_image(img, dem_path, geometry, output_path, n_bands=1,
     """
     import math
     import tempfile
-    import urllib.request
     import rasterio
     from rasterio.merge import merge as rio_merge
+    from ._http import fetch
 
     with rasterio.open(dem_path) as dem:
         crs = str(dem.crs)
@@ -165,7 +165,7 @@ def _download_aligned_image(img, dem_path, geometry, output_path, n_bands=1,
             'crs': crs, 'crs_transform': crs_transform,
             'dimensions': [width, height], 'format': 'GEO_TIFF',
         })
-        urllib.request.urlretrieve(url, output_path)
+        fetch(url, output_path)
         return output_path
 
     logger.info("Request too large for one GEE download (~%.1fM px) — "
@@ -191,7 +191,7 @@ def _download_aligned_image(img, dem_path, geometry, output_path, n_bands=1,
                     'crs': crs, 'crs_transform': tile_transform,
                     'dimensions': [w, h], 'format': 'GEO_TIFF',
                 })
-                urllib.request.urlretrieve(url, tile_path)
+                fetch(url, tile_path)
                 tile_paths.append(tile_path)
                 logger.info("  tile %d/%d downloaded (%dx%d)", len(tile_paths), nx * ny, w, h)
 

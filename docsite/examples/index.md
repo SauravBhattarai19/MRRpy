@@ -24,7 +24,8 @@ runs with MRRpy 0.2.0 on a 90 m ALOS DEM. On your own DEM they will differ.
 | [9 Roughness and river channels](roughness-channels.md) | roughness by elevation; channel size from the 2-year flood | `MANNINGS_N_*`, `CHANNEL_QBF_M3S` | no (optional) |
 | [10 The whole DEM and flood maps](whole-dem.md) | every DEM cell, maps and animations | `MODEL_AREA`, `SAVE_FIELDS` | no |
 | [11 Many runs from Python](batch-runs.md) | sweeps and comparison tables | Python loops | no |
-| [12 Flood depth and extent maps](flood-maps.md) | how far rivers spread: depth, extent, animation, at 30 m | `INUNDATION_MAP`, `INUNDATION_DEM` | yes (or your own fine DEM) |
+| [12 Flood depth and extent maps](flood-maps.md) | how far rivers spread: quick maps for the basin, a 2D flood simulation for one valley, at 30 m | `INUNDATION_MAP`, `INUNDATION_METHOD`, `INUNDATION_DEM` | yes (or your own fine DEM) |
+| [13 A flood map for your town (2D)](flood-2d-town.md) | from satellite rain to a 2D flood map of one town; how big an area, how long, five places | `INUNDATION_METHOD: 2d`, `INUNDATION_AREA` | yes |
 | [Case study: Nepal (Trishuli)](nepal-case-study.md) | a large Himalayan basin, satellite storm and an outburst flood | many | yes |
 
 !!! tip "Before you start"

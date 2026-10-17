@@ -153,6 +153,48 @@ def _inherit(order, ds, drains, src):
     return src
 
 
+def _blocked_edges(valid, ftr, ctr, ccs, meta, c_rows, c_cols, c_ds, out_c, is_river_c,
+                   r_river, ax_, ay_):
+    """Edge cells of a fine DEM cut out of the modelled area that may not be
+    outlets: those inside the modelled basin, except near where its routed
+    water leaves the DEM for good (within 1.5 model cells; ``r_river`` for a
+    river, which may run a little off the routed one)."""
+    from scipy.ndimage import binary_erosion
+    from scipy.spatial import cKDTree
+    # Water that leaves only to come back (a routed river running just outside
+    # the edge) does not leave.
+    back = np.zeros(c_rows.size, dtype=bool)
+    for i in N.downstream_first_order(c_ds):
+        d = c_ds[i]
+        if out_c[i] and d >= 0:
+            back[i] = (not out_c[d]) or back[d]
+    dsx = np.maximum(c_ds, 0)
+    ex = np.flatnonzero(~out_c & ((c_ds < 0) | (out_c[dsx] & ~back[dsx])))
+    d_ex = np.where(c_ds[ex] >= 0, c_ds[ex], ex)
+    ex_x, ex_y = 0.5 * (ax_[ex] + ax_[d_ex]), 0.5 * (ay_[ex] + ay_[d_ex])
+
+    ring = valid & ~binary_erosion(valid, structure=np.ones((3, 3)), border_value=0)
+    rr, cc = np.nonzero(ring)
+    x, y = ftr * (cc + 0.5, rr + 0.5)
+    # in the modelled basin: a routed cell at the place
+    lut = np.zeros((int(meta["nrows"]), int(meta["ncols"])), dtype=bool)
+    lut[c_rows, c_cols] = True
+    ccol, crow = ~ctr * (np.asarray(x), np.asarray(y))
+    crow, ccol = np.floor(crow).astype(np.int64), np.floor(ccol).astype(np.int64)
+    ok = (crow >= 0) & (crow < lut.shape[0]) & (ccol >= 0) & (ccol < lut.shape[1])
+    in_basin = np.zeros(rr.size, dtype=bool)
+    in_basin[ok] = lut[crow[ok], ccol[ok]]
+    leaves = np.zeros(rr.size, dtype=bool)
+    if ex.size:
+        tree = cKDTree(np.column_stack([np.asarray(x), np.asarray(y)]))
+        for k, px, py in zip(ex, ex_x, ex_y):
+            leaves[tree.query_ball_point((px, py), r=r_river if is_river_c[k] else 1.5 * ccs)] = True
+    no_outlet = np.zeros(valid.shape, dtype=bool)
+    block = in_basin & ~leaves
+    no_outlet[rr[block], cc[block]] = True
+    return no_outlet
+
+
 def fine_flood_grid(cfg, arrays, meta, log=print):
     """FloodGrid on the finer DEM, or (None, reason) to keep the model grid."""
     kind, what, scale, reason = resolve_inundation_dem(cfg, meta)
@@ -200,8 +242,7 @@ def dem_flood_grid(cfg, arrays, meta, dem_path, label, reason, log=print, finer=
     import rasterio
     from affine import Affine
     from scipy.spatial import cKDTree
-    from ..routing.hydraulics import compound_conveyance
-    from ..routing.surface import bankfull_depth_continuity, reach_slope
+    from ..routing.surface import reach_slope
 
     with rasterio.open(dem_path) as src:
         dem = src.read(1).astype(np.float64)
@@ -210,12 +251,44 @@ def dem_flood_grid(cfg, arrays, meta, dem_path, label, reason, log=print, finer=
     cs = float(abs(ftr.a))
     if finer and cs >= 0.9 * float(meta["cell_size"]):
         return None, f"the finer DEM ({cs:g} m) is not finer than the model grid"
+    valid = np.isfinite(dem) & (dem != nd)
+    H, Wd = dem.shape
+
+    # Routed cells (coarse), and those beyond the fine DEM's edge that drain
+    # into it: there water enters the DEM.
+    ctr = Affine(*meta["transform"])
+    ccs = float(meta["cell_size"])
+    ri = arrays["river_idx"].astype(np.int64)
+    c_rows, c_cols = arrays["s_rows"].astype(np.int64), arrays["s_cols"].astype(np.int64)
+    cx, cy = ctr * (c_cols[ri] + 0.5, c_rows[ri] + 0.5)
+    c_area = arrays["area_km2"][ri].astype(np.float64)
+    x_lo, y_hi = ftr * (0, 0)
+    x_hi, y_lo = ftr * (Wd, H)
+    ax_, ay_ = ctr * (c_cols + 0.5, c_rows + 0.5)
+    out_c = (ax_ < x_lo) | (ax_ > x_hi) | (ay_ < y_lo) | (ay_ > y_hi)
+    c_ds_all = arrays["ds"].astype(np.int64)
+    ent = np.flatnonzero(out_c & (c_ds_all >= 0))
+    ent = ent[~out_c[c_ds_all[ent]]]
+    is_river_c = np.zeros(c_rows.size, dtype=bool)
+    is_river_c[ri] = True
+    # the midpoint of each crossing: the routed cell outside and the one inside
+    ent_x = 0.5 * (ax_[ent] + ax_[c_ds_all[ent]])
+    ent_y = 0.5 * (ay_[ent] + ay_[c_ds_all[ent]])
+    r_search = max(3.0 * ccs, 10.0 * cs)          # rivers: where to look for the real one
+
     # Flow paths by least-cost search on the original DEM: they follow the real
     # channels (filling would turn a valley floor behind a bridge or a DEM dam
-    # into a flat that D8 crosses in straight lines, far from the river).
-    valid = np.isfinite(dem) & (dem != nd)
-    d8 = N.least_cost_d8(dem, valid)
-    H, Wd = dem.shape
+    # into a flat that D8 crosses in straight lines, far from the river).  On a
+    # DEM cut out of a larger area, water of the modelled basin may leave only
+    # near where the routed water leaves: otherwise a low point where a river
+    # flows in drains the land behind a DEM dam backwards (the Kathmandu valley
+    # floor behind the Chobhar gorge, in FABDEM).  Edges outside the basin stay
+    # free.
+    no_outlet = None
+    if ent.size:
+        no_outlet = _blocked_edges(valid, ftr, ctr, ccs, meta, c_rows, c_cols, c_ds_all, out_c,
+                                   is_river_c, r_search, ax_, ay_)
+    d8 = N.least_cost_d8(dem, valid, no_outlet)
     ds_full, dist_full = N.downstream_from_d8(d8, valid, cs)
     idx = np.flatnonzero(valid.ravel())
     pos = np.full(H * Wd, -1, dtype=np.int64)
@@ -232,45 +305,30 @@ def dem_flood_grid(cfg, arrays, meta, dem_path, label, reason, log=print, finer=
     km2 = cs * cs / 1e6
     a_loc = N.upstream_area(order, ds, km2)
 
-    # Routed river cells (coarse)
-    ctr = Affine(*meta["transform"])
-    ccs = float(meta["cell_size"])
-    ri = arrays["river_idx"].astype(np.int64)
-    c_rows, c_cols = arrays["s_rows"].astype(np.int64), arrays["s_cols"].astype(np.int64)
-    cx, cy = ctr * (c_cols[ri] + 0.5, c_rows[ri] + 0.5)
-    c_area = arrays["area_km2"][ri].astype(np.float64)
-
-    def fine_pos(x, y):
-        col = np.floor((np.asarray(x) - ftr.c) / ftr.a).astype(np.int64)
-        row = np.floor((np.asarray(y) - ftr.f) / ftr.e).astype(np.int64)
-        ok = (row >= 0) & (row < H) & (col >= 0) & (col < Wd)
-        p = np.full(np.shape(x), -1, dtype=np.int64)
-        p[ok] = pos[row[ok] * Wd + col[ok]]
-        return p
-
     # Water entering from outside the fine DEM: every routed cell beyond its
-    # edge that drains into it adds its drainage area where it enters (rivers
-    # onto the fine river nearby, hillslopes at the entry point).
+    # edge that drains into it adds the area it drains from outside the DEM
+    # (land the routed river crossed inside before, leaving and coming back
+    # round a meander, is counted already) where it enters.  A river enters at
+    # the lowest ground along the fine DEM's edge near where the routed river
+    # crosses it (the valley bottom: the routed 90 m river can run a few cells
+    # off the real one, and right at the edge every fine cell drains only a
+    # sliver, so the drained area cannot tell them apart); hillslopes at the
+    # nearest fine cell.
     extra = np.zeros(idx.size)
-    x_lo, y_hi = ftr * (0, 0)
-    x_hi, y_lo = ftr * (Wd, H)
-    ax_, ay_ = ctr * (c_cols + 0.5, c_rows + 0.5)
-    out_c = (ax_ < x_lo) | (ax_ > x_hi) | (ay_ < y_lo) | (ay_ > y_hi)
-    c_ds_all = arrays["ds"].astype(np.int64)
-    ent = np.flatnonzero(out_c & (c_ds_all >= 0))
-    ent = ent[~out_c[c_ds_all[ent]]]
     n_ent_river = 0
     if ent.size:
-        is_river_c = np.zeros(c_rows.size, dtype=bool)
-        is_river_c[ri] = True
-        dx, dy = ax_[c_ds_all[ent]], ay_[c_ds_all[ent]]
+        from scipy.ndimage import binary_erosion
         ftree = cKDTree(np.column_stack(ftr * (cols + 0.5, rows + 0.5)))
-        a_all = arrays["area_km2"].astype(np.float64)
-        for k, x, y in zip(ent, dx, dy):
+        edge = (valid & ~binary_erosion(valid, iterations=3, border_value=0)).ravel()[idx]
+        a_all = N.accumulate_within(N.downstream_first_order(c_ds_all), c_ds_all,
+                                    np.full(c_rows.size, float(meta["cell_area"]) / 1e6), out_c)
+        for k, x, y in zip(ent, ent_x, ent_y):
             if is_river_c[k]:
-                cand = ftree.query_ball_point((x, y), r=2.0 * ccs)
-                if cand:
-                    extra[cand[int(np.argmax(a_loc[cand]))]] += a_all[k]
+                cand = np.asarray(ftree.query_ball_point((x, y), r=r_search), dtype=np.int64)
+                if cand.size:
+                    on_edge = cand[edge[cand]]
+                    cand = on_edge if on_edge.size else cand
+                    extra[cand[int(np.argmin(z_raw[cand]))]] += a_all[k]
                     n_ent_river += 1
             else:
                 dist_k, j = ftree.query((x, y), distance_upper_bound=1.5 * ccs)
@@ -302,28 +360,16 @@ def dem_flood_grid(cfg, arrays, meta, dem_path, label, reason, log=print, finer=
     drains = keep
     scale_f = np.where(keep, a_tot / c_area[np.maximum(src, 0)], 0.0)
 
-    # Channel on the fine grid: same width and n, depth re-solved so the slot
-    # still carries the routed cell's bankfull flow (scaled by area).
+    # Channel on the fine grid: the routed river's width and roughness (no
+    # channel below the DEM: rating.py).
     s_floor = max(float(getattr(cfg, "MIN_SLOPE", 1e-4)), 1e-5)
     slope_loc = np.where(ds >= 0, (z - z[np.maximum(ds, 0)]) / dist, s_floor)
     s_reach = reach_slope(dict(ds_idx=ds, dem_1d=z, dist_1d=dist, cell_size=cs,
                                faccum_1d=a_tot, slope_1d=np.maximum(slope_loc, s_floor)),
                           getattr(cfg, "CHANNEL_SLOPE_REACH_M", 1000.0), s_floor)
-    Wc = arrays["W"][ri].astype(np.float64)
-    Dc = arrays["D"][ri].astype(np.float64)
-    nc = arrays["n_ch"][ri].astype(np.float64)
-    Sc = arrays["slope_reach"][ri].astype(np.float64)
-    Cb, _ = compound_conveyance(Dc, nc, Wc, np.ones(ri.size, dtype=bool), Dc, Wc, np)
-    q_bank_c = np.sqrt(Sc) * Cb
     m = np.maximum(src, 0)
-    W = np.where(keep, Wc[m], 0.0)
-    n_ch = np.where(keep, nc[m], float(cfg.MANNINGS_N))
-    D = np.zeros(idx.size)
-    need = keep & (W > 0) & (q_bank_c[m] > 0)
-    if need.any() and meta.get("has_slot", True):
-        D[need] = bankfull_depth_continuity(q_bank_c[m][need] * scale_f[need], W[need],
-                                            s_reach[need], n_ch[need])
-        D[need] = np.maximum(D[need], float(getattr(cfg, "CHANNEL_MIN_DEPTH_M", 0.1)))
+    W = np.where(keep, arrays["W"][ri].astype(np.float64)[m], 0.0)
+    n_ch = np.where(keep, arrays["n_ch"][ri].astype(np.float64)[m], float(cfg.MANNINGS_N))
 
     # Floodplain roughness and the modelled footprint, from the routing grid.
     from rasterio.warp import Resampling, reproject
@@ -369,6 +415,6 @@ def dem_flood_grid(cfg, arrays, meta, dem_path, label, reason, log=print, finer=
         label=label, fine=finer, nrows=H, ncols=Wd, transform=ftr, crs=meta["crs"],
         cell_size=cs, rows=rows.astype(np.int64), cols=cols.astype(np.int64), ds=ds,
         order=order, z=z, z_raw=z_raw, dist=dist, area_km2=a_tot, slope_reach=s_reach, n_fp=n_fp,
-        river=drains, W=W, D=D, n_ch=n_ch, src=np.where(keep, src, -1), scale=scale_f,
+        river=drains, W=W, n_ch=n_ch, src=np.where(keep, src, -1), scale=scale_f,
         inside=inside, match=match)
     return grid, reason

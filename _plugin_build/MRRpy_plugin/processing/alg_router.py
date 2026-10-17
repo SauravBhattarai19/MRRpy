@@ -17,7 +17,10 @@ Inputs (key ones — all config.py parameters are exposed)
   WATERSHED_TIF   : watershed mask raster (or the whole-DEM mask)
   MODEL_AREA      : watershed | whole_dem (how the rasters above were made)
   SAVE_FIELDS     : save depth/velocity/discharge maps over time (fields/)
-  INUNDATION_MAP  : flood depth and extent maps from the river flow (HAND, inundation/)
+  INUNDATION_MAP  : flood depth and extent maps from the river flow (inundation/)
+  INUNDATION_METHOD : how to spread the water — quick water levels for every river
+                    (HAND) or a 2D flood simulation over one area
+  INUNDATION_AREA : west, south, east, north (degrees) — the area to map / simulate
   PRECIP_METHOD   : uniform | thiessen | idw | imerg_thiessen | imerg_idw
   RUNOFF_SOURCE   : none | coefficient | raster | scs_cn | physical
   ROUTING_SCHEME  : kinematic | diffusive | muskingum | dynamic | diffusive_implicit
@@ -60,7 +63,10 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
     MODEL_AREA = "MODEL_AREA"
     SAVE_FIELDS = "SAVE_FIELDS"
     INUNDATION_MAP = "INUNDATION_MAP"
+    INUNDATION_METHOD = "INUNDATION_METHOD"
+    INUNDATION_AREA = "INUNDATION_AREA"
     _AREA_OPTIONS = ["watershed", "whole_dem"]
+    _FLOOD_METHODS = ["hand", "2d"]
 
     # Routing parameters
     MANNINGS_N = "MANNINGS_N"
@@ -187,8 +193,19 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
         ))
         self.addParameter(QgsProcessingParameterBoolean(
             self.INUNDATION_MAP,
-            "Flood depth and extent maps from the river flow (HAND)",
+            "Flood depth and extent maps from the river flow",
             defaultValue=False
+        ))
+        self.addParameter(QgsProcessingParameterEnum(
+            self.INUNDATION_METHOD, "Flood maps: how to spread the water",
+            options=["Quick water levels for every river (HAND)",
+                     "Flood simulation over one area (2D) — more exact, slower"],
+            defaultValue=0
+        ))
+        self.addParameter(QgsProcessingParameterString(
+            self.INUNDATION_AREA,
+            "Flood maps: area (west, south, east, north in degrees; empty = whole model area)",
+            defaultValue="", optional=True
         ))
 
         # ── Routing parameters ────────────────────────────────────────────────
@@ -470,6 +487,14 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsEnum(parameters, self.MODEL_AREA, context)]
         cfg.SAVE_FIELDS = self.parameterAsBool(parameters, self.SAVE_FIELDS, context)
         cfg.INUNDATION_MAP = self.parameterAsBool(parameters, self.INUNDATION_MAP, context)
+        cfg.INUNDATION_METHOD = self._FLOOD_METHODS[
+            self.parameterAsEnum(parameters, self.INUNDATION_METHOD, context)]
+        _area = (self.parameterAsString(parameters, self.INUNDATION_AREA, context) or "").strip()
+        if _area:
+            try:
+                cfg.INUNDATION_AREA = tuple(float(v) for v in _area.replace(";", ",").split(","))
+            except ValueError:
+                cfg.INUNDATION_AREA = _area      # Config.validate() explains what is wrong
 
         cfg.MANNINGS_N = self.parameterAsDouble(parameters, self.MANNINGS_N, context)
         cfg.TIME_STEP_SECONDS = self.parameterAsDouble(parameters, self.TIME_STEP, context)

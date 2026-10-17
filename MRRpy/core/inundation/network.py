@@ -78,6 +78,34 @@ def river_bed_profile(order, ds, is_drain, z):
                         np.asarray(is_drain, dtype=np.bool_), np.asarray(z, dtype=np.float64))
 
 
+@_njit(cache=True)
+def _grade(order, ds, dist, is_drain, bed, s_ref):
+    out = bed.copy()
+    for k in range(order.shape[0]):                       # outlets first
+        i = order[k]
+        d = ds[i]
+        if d >= 0 and is_drain[i] and is_drain[d]:
+            cap = out[d] + s_ref[i] * dist[i]
+            if out[i] > cap:
+                out[i] = cap
+    return out
+
+
+def graded_river_bed(order, ds, dist, is_drain, z, slope_reach, factor=1.5, s_floor=5e-5):
+    """``river_bed_profile`` with its steps graded away, for 2D flow.  Cutting
+    a DEM dam leaves a flat bed and then a sudden drop, and DEMs have steps of
+    1–3 m along rivers (water flattening, noise); in a 2D model each acts as a
+    weir.  Going upstream from the outlet, no river cell may stand more than
+    S·distance above the river cell below it, S = *factor* × its reach slope
+    (at least *s_floor*): a step becomes a ramp of that slope.  Lowers only;
+    steep reaches keep their steepness.  Other cells keep *z*."""
+    bed = river_bed_profile(order, ds, is_drain, z)
+    s_ref = np.maximum(factor * np.asarray(slope_reach, dtype=np.float64), s_floor)
+    return _grade(np.asarray(order, dtype=np.int64), np.asarray(ds, dtype=np.int64),
+                  np.asarray(dist, dtype=np.float64), np.asarray(is_drain, dtype=np.bool_),
+                  bed, s_ref)
+
+
 # ── Reaches ──────────────────────────────────────────────────────────────────
 @_njit(cache=True)
 def _segment(order, ds, is_drain, dist, max_len):
@@ -173,7 +201,7 @@ _TOWARD = np.array([4, 8, 16, 32, 64, 128, 1, 2], dtype=np.uint8)  # code from t
 
 
 @_njit(cache=True)
-def _least_cost_d8(z, valid, nrows, ncols, DR, DC, TOWARD):
+def _least_cost_d8(z, valid, no_outlet, nrows, ncols, DR, DC, TOWARD):
     n = nrows * ncols
     d8 = np.zeros(n, dtype=np.uint8)
     done = np.zeros(n, dtype=np.bool_)
@@ -181,7 +209,7 @@ def _least_cost_d8(z, valid, nrows, ncols, DR, DC, TOWARD):
     heap.pop()
     seq = np.int64(0)
     for i in range(n):                            # outlets: the edge and next to no-data
-        if not valid[i]:
+        if not valid[i] or no_outlet[i]:
             continue
         r, c = i // ncols, i % ncols
         edge = r == 0 or c == 0 or r == nrows - 1 or c == ncols - 1
@@ -210,7 +238,7 @@ def _least_cost_d8(z, valid, nrows, ncols, DR, DC, TOWARD):
     return d8
 
 
-def least_cost_d8(dem, valid):
+def least_cost_d8(dem, valid, no_outlet=None):
     """
     D8 flow directions (pysheds/pyflwdir codes, 0 = outlet) by least-cost
     search (Metz, Mitasova & Harmon 2011; GRASS r.watershed): starting from the
@@ -218,10 +246,22 @@ def least_cost_d8(dem, valid):
     reached from.  Flow stays in the real channels and crosses a bridge or a
     DEM dam at its lowest point, instead of filling the valley floor behind it
     into a flat that D8 would cross in straight lines.
+
+    *no_outlet* (same shape, optional) marks edge cells where water may not
+    leave, e.g. where rivers flow into a DEM cut out of a larger area: there a
+    low entry point would otherwise drain the land behind a DEM dam backwards.
     """
     dem = np.asarray(dem, dtype=np.float64)
     nrows, ncols = dem.shape
-    d8 = _least_cost_d8(np.where(valid, dem, np.inf).ravel(), np.asarray(valid).ravel(),
+    valid = np.asarray(valid, dtype=np.bool_)
+    block = np.zeros(dem.shape, dtype=np.bool_)
+    if no_outlet is not None:
+        from scipy.ndimage import binary_erosion
+        block = np.asarray(no_outlet, dtype=np.bool_) & valid
+        edge = valid & ~binary_erosion(valid, structure=np.ones((3, 3)), border_value=0)
+        if not (edge & ~block).any():            # every edge blocked: all may drain
+            block[:] = False
+    d8 = _least_cost_d8(np.where(valid, dem, np.inf).ravel(), valid.ravel(), block.ravel(),
                         nrows, ncols, _DR, _DC, _TOWARD)
     return d8.reshape(dem.shape)
 
@@ -289,6 +329,26 @@ def downstream_first_order(ds):
     """Cells ordered downstream-first (breadth-first from the cells whose
     water leaves the domain).  Cells caught in a loop are left out."""
     return _bfs_order(np.asarray(ds, dtype=np.int64))
+
+
+@_njit(cache=True)
+def _accumulate_within(order, ds, weight, within):
+    acc = weight.copy()
+    for k in range(order.shape[0] - 1, -1, -1):           # headwaters first
+        i = order[k]
+        d = ds[i]
+        if d >= 0 and within[i] and within[d]:
+            acc[d] += acc[i]
+    return acc
+
+
+def accumulate_within(order, ds, weight, within):
+    """Like ``upstream_area`` with per-cell weights, but only along links that
+    stay inside the *within* cells: what drains to each cell without passing
+    through any other cell."""
+    return _accumulate_within(np.asarray(order, dtype=np.int64), np.asarray(ds, dtype=np.int64),
+                              np.asarray(weight, dtype=np.float64),
+                              np.asarray(within, dtype=np.bool_))
 
 
 def upstream_area(order, ds, cell_area_km2, extra_km2=None):

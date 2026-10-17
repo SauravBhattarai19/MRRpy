@@ -54,30 +54,66 @@ The maps stay in memory until the run ends: about *(number of output times) ×
 
 The routing moves water from cell to cell along one flow path, so water above
 the banks stays in the river cell: the depth maps of 6.2 show a one-cell-wide
-ribbon, not how far a flood spreads. With `INUNDATION_MAP` on, MRRpy draws
-**flood depth and extent maps** from the routed river flow with the **HAND
-method** (Height Above Nearest Drainage), the method behind the flood maps of
-the US National Water Model:
+ribbon, not how far a flood spreads. With `INUNDATION_MAP` on, MRRpy spreads
+the routed river flow over the land beside the rivers and draws **flood depth
+and extent maps**. The routing itself does not change.
+
+The maps are drawn **on the real ground**: the DEM as it is. No channel is cut
+below it, because a DEM's river surface is already the water that was in the
+river when the DEM was made. (Cutting the model's bankfull channel below a 30 m
+DEM counted the river's room twice and drew floods 1–8 m too low at every test
+site.) The only change is along the river line itself: bridges and small DEM
+bumps across it are cleared so the water can run. The river therefore shows as
+water at any flow, not only in a flood.
+
+`INUNDATION_METHOD` chooses how the water is spread:
+
+**`hand` — quick water levels for every river.** The HAND method (Height Above
+Nearest Drainage), the method behind the flood maps of the US National Water
+Model:
 
 1. Every cell is linked to the river cell its water reaches first, and gets its
    **height above that river cell**. Flow paths are traced on the original DEM
    by a least-cost search, which keeps rivers in their real channels; filling
    the DEM instead would turn a valley floor behind a bridge into a flat that
-   flow crosses in straight lines. Heights are measured on the original DEM
-   above the river bed.
-2. Rivers are cut into reaches about `INUNDATION_REACH_LENGTH_M` long. Each reach
-   gets a **rating curve** (water level against flow) from the land that drains
-   to it: the model's own river channel below the banks
-   ([5.5](channels.md)), plus every cell below the water level, each with its own
-   roughness.
+   flow crosses in straight lines.
+2. Rivers are cut into reaches about 1 km long. Each reach gets a **rating
+   curve** (water level against flow) from the land that drains to it, every
+   cell below the water level with its own roughness.
 3. The reach's routed flow gives its water level. Every cell lower than that is
-   flooded: **depth = water level − height above the river**.
-4. With `INUNDATION_BACKWATER`, the big rivers are mapped again on their own, so
-   a high main river also floods the mouths of the streams that join it.
+   flooded: **depth = water level − height above the river**. The big rivers are
+   mapped again on their own, so a high main river also floods the mouths of
+   the streams that join it.
 
-Up to the bankfull flow, the flood the channel is sized for (about the 2-year
-flood), water stays in the channel and nothing is flooded. The routing itself
-does not change.
+It takes seconds for a whole basin, but each reach gets one level for a steady
+flow: water held back by a narrow gorge or a bridge downstream is not seen, and
+floodplain storage and timing are not modelled.
+
+**`2d` — a flood simulation over one area.** Inside `INUNDATION_AREA` the water
+is moved over the ground in two dimensions (the local-inertial equations of
+Bates et al. 2010, as in LISFLOOD-FP), every few seconds, with the routed rivers
+flowing in:
+
+1. Every river that enters the area brings its routed flow across the edge,
+   and the land inside the area adds the water the routing passed into its
+   rivers there.
+2. The water spreads, ponds behind narrow places and backs up into side
+   valleys as it does on the ground. It leaves wherever the ground slopes out
+   of the area, and across the valley floor beside every river that leaves
+   it. Where rivers flow in, the edge holds the water like a wall: if a big
+   flood backs up to it, the log says where, so you can make the area larger
+   there.
+3. MRRpy picks the period around the largest flood entering the area and fills
+   the rivers with the flow at its start first.
+
+In tests against measured flood levels (high-water marks at Montpelier,
+Vermont, July 2023; a river gauge on the Pearl River at Jackson, Mississippi,
+February 2020) and satellite flood traces (Nakhu and Bagmati, Kathmandu,
+September 2024), `2d` was closer than `hand` everywhere: with LiDAR it put the
+water level within 0.2–0.4 m. It needs more time: on a 32-core workstation a
+50 km² valley at 30 m ran a day of flood in 6 seconds, and the 520 km² Pearl
+River box (575,000 cells of 30 m) 15 days of flood in 5 minutes; expect a few
+times longer on a laptop. Use it for the town or valley you care about; [Example 13](../examples/flood-2d-town.md) has the steps, how big to make the area and measured times at five places.
 
 **Finer maps.** The maps can be drawn on a finer DEM than the model ran on: the
 flow of each routed river cell is passed to the fine river nearby that drains
@@ -85,7 +121,9 @@ about the same area. `INUNDATION_DEM: auto` does this by itself when the run
 downloaded its DEM from Earth Engine at a coarser size (e.g. FABDEM averaged to
 90 m → flood maps at FABDEM's 30 m). Choose `file` for your own DEM (e.g. LiDAR)
 or name a dataset to download. Without Earth Engine, `auto` keeps the model grid
-and says why.
+and says why. The DEM sets how good the map is: in the tests a LiDAR DEM put
+the water within 0.2–0.4 m, and FABDEM within 0.7–2 m (its big rivers' water
+surface can sit metres too low).
 
 **One area.** `INUNDATION_AREA` limits the maps to a box, such as a town or a
 valley. The flow still comes from the whole basin. With a finer DEM only the box
@@ -93,7 +131,8 @@ and 3 km around it are downloaded and processed.
 
 ```yaml
 INUNDATION_MAP: true
-INUNDATION_AREA: [85.26, 27.63, 85.36, 27.72]   # optional: west, south, east, north
+INUNDATION_METHOD: 2d                            # or hand
+INUNDATION_AREA: [85.276, 27.595, 85.325, 27.683] # west, south, east, north
 INUNDATION_DEM: auto                             # model_grid | file | fabdem | …
 ```
 
@@ -101,18 +140,21 @@ The maps are written to `inundation/` in the results folder:
 
 | File | Contents |
 |---|---|
-| `flood_depth_max.tif` | the deepest water each place reached (m) |
-| `flood_extent_max.tif`, `flood_extent_max.geojson` | where it flooded (raster 1/0, and outlines with their area in km²) |
+| `flood_depth_max.tif` | the deepest water each place reached (m), rivers included |
+| `flood_extent_max.tif`, `flood_extent_max.geojson` | where there was water (raster 1/0, and outlines with their area in km²) |
 | `flood_animation.gif` | the largest flood spreading and draining, with the hydrograph (`INUNDATION_ANIMATION`) |
 | `flood_time_of_max_hours.tif`, `flood_first_wet_hours.tif`, `flood_duration_hours.tif` | when the water was deepest, when it first passed 10 cm, and for how many hours |
-| `hand.tif` | height of every cell above its nearest river (m) |
-| `reaches.csv`, `reaches.geojson` | each reach: length, slope, channel, bankfull flow, peak flow, water level above the banks, flooded area |
-| `rating_curves.csv` | each reach's water level against flow and flooded area |
-| `inundation_summary.json` | the grid used and why, flooded area, deepest water, and how the flow was passed to a finer DEM |
+| `inundation_summary.json` | the method and grid used, area under water, deepest water, how the flow was passed to a finer DEM; for `2d` also the period simulated, the water balance and any place the flood reached the edge |
+| `hand.tif` (`hand`) | height of every cell above its nearest river (m) |
+| `reaches.csv`, `reaches.geojson` (`hand`) | each reach: length, slope, channel width, peak flow, water level above the DEM's river surface, flooded area |
+| `rating_curves.csv` (`hand`) | each reach's water level against flow and flooded area |
+| `flood_velocity_max.tif` (`2d`) | the fastest flow at each place (m/s), where the water was at least 10 cm deep |
+| `inflows.csv` (`2d`) | each river flowing into the area (where, drainage area, peak flow) and the local inflow |
 | `network.npz`, `flood_model.npz` | the data to redraw the maps |
 
-To redraw the maps (another area, another DEM) without routing again, run the
-`inundation` stage on its own (see [6.6](#66-running)). In Python:
+To redraw the maps (another area, another DEM, the other method) without
+routing again, run the `inundation` stage on its own (see [6.6](#66-running)).
+In Python:
 
 ```python
 from MRRpy import plot_inundation, animate_inundation
@@ -122,15 +164,16 @@ animate_inundation(out, start_hours=20, end_hours=60, out_path="flood.gif")
 ```
 
 !!! warning "What the flood maps leave out"
-    Each reach is mapped with a steady flow, so floodplain storage and timing
-    within a reach are not modelled, and water held back by a narrow gorge or
-    bridge downstream is not seen: just above one, floods are drawn too shallow. Embankments, walls, culverts and bridges
-    count only if the DEM shows them, and very flat land can be flooded too
-    widely. The map is only as good as the DEM: in cities use a bare-earth DEM
-    such as FABDEM or LiDAR. The maps show river flooding only, not rain ponding
-    away from rivers.
+    Embankments, levees, walls, culverts and bridges count only if the DEM shows
+    them: a levee narrower than a DEM cell does not, and the land behind it is
+    drawn flooded. The map is only as good as the DEM: in cities use a
+    bare-earth DEM such as FABDEM, or LiDAR. `hand` draws floods too shallow
+    just above a narrow gorge or bridge (use `2d` there). The maps show river
+    flooding only, not rain ponding away from rivers. Comparing with a
+    satellite image? Optical satellites (Sentinel-2, Landsat) cannot see water
+    under trees, so a correct map can show more water than they do.
 
-<!-- settings: INUNDATION_MAP INUNDATION_AREA INUNDATION_DEM INUNDATION_DEM_PATH INUNDATION_DEM_SCALE_M INUNDATION_ANIMATION INUNDATION_REACH_LENGTH_M INUNDATION_BACKWATER -->
+<!-- settings: INUNDATION_MAP INUNDATION_METHOD INUNDATION_AREA INUNDATION_DEM INUNDATION_DEM_PATH INUNDATION_DEM_SCALE_M INUNDATION_ANIMATION -->
 
 ## 6.4 Computer: CPU or GPU
 

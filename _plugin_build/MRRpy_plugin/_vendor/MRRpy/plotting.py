@@ -835,11 +835,12 @@ def animate_inundation(source, out_path=None, *, start_hours=None, end_hours=Non
     with the flooded area outlined, the time in the title, and the outlet
     hydrograph with a moving time marker.
 
-    By default it shows the largest flood of the run: from when the flooded
-    area first passes 5 % of its maximum (minus 6 h) to when it falls below
-    that again (plus 12 h), in at most ``max_frames`` frames.
+    By default it shows the largest flood of the run: from when the area under
+    water first rises 5 % of the way from its smallest to its largest (minus
+    6 h) to when it falls back below that (plus 12 h), in at most
+    ``max_frames`` frames.
 
-    Returns the path written, or None when no river rose above its banks.
+    Returns the path written, or None when the water never spread.
     """
     import matplotlib.animation as animation
     from matplotlib.colors import Normalize
@@ -852,10 +853,11 @@ def animate_inundation(source, out_path=None, *, start_hours=None, end_hours=Non
         log("  Flood maps     |  no flows over time were saved, so there is no animation.")
         return None
     fl = sf.flooded_area_series()
+    fl = fl - fl.min() if fl.size else fl      # rivers carry water all the time: the flood is the rise
     if start_hours is None and end_hours is None:
         if not fl.max() > 0:
-            log("  Flood maps     |  no river rose above its banks in this run, so there is "
-                "no flood animation.")
+            log("  Flood maps     |  the water never spread beyond its lowest extent in this "
+                "run, so there is no flood animation.")
             return None
         i_max = int(np.argmax(fl))
         thr = 0.05 * fl[i_max]

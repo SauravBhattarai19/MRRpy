@@ -846,12 +846,23 @@ PARAMS = [
       optional=True, none_label="a 'fields' folder inside the results folder",
       when=(("SAVE_FIELDS", On()),), example="maps/"),
     P("INUNDATION_MAP", "outputs", "Flood depth and extent maps",
-      "Spread each river's flow sideways over the land beside it that lies below "
-      "the water (the HAND method), and write maps of flood depth and extent. "
-      "The routing itself does not change.", "bool"),
+      "Spread the river flow over the land beside the rivers, on the real ground, "
+      "and write maps of flood depth and extent. The routing itself does not change.",
+      "bool"),
+    P("INUNDATION_METHOD", "outputs", "How to spread the water",
+      "hand is quick and maps every river: each stretch of river gets one water "
+      "level, spread over the land below it. 2d simulates the water moving over "
+      "the ground of one area, with the routed rivers flowing in: slower, but water "
+      "spreads, ponds and backs up as it really does. It was closer to measured "
+      "flood levels in every test. Use it for the town or valley you care about "
+      "(set the area below).", "choice", when=(_FLOOD,),
+      choice_labels={"hand": "hand — quick water levels for every river",
+                     "2d": "2d — flood simulation over one area (more exact, slower)"}),
     P("INUNDATION_AREA", "outputs", "Area for the flood maps",
       "The box to map, in longitude/latitude degrees, e.g. a town or a valley. "
-      "The flow still comes from the whole basin.", "bbox",
+      "The flow still comes from the whole basin. For the 2D simulation, put the "
+      "box around the place you care about with the river running through it; "
+      "rivers flow in and out across its edges.", "bbox",
       unit="west, south, east, north", optional=True, none_label="the whole modelled area",
       when=(_FLOOD,), example=(85.25, 27.62, 85.35, 27.72)),
     P("INUNDATION_DEM", "outputs", "Elevation data for the flood maps",
@@ -876,13 +887,6 @@ PARAMS = [
     P("INUNDATION_ANIMATION", "outputs", "Flood animation (GIF)",
       "Also write an animation of the largest flood spreading and draining, with "
       "the hydrograph beside it.", "bool", when=(_FLOOD,)),
-    P("INUNDATION_REACH_LENGTH_M", "outputs", "River reach length for flood maps",
-      "Rivers are cut into reaches about this long; each gets its own "
-      "level-versus-flow curve.", "float", unit="m", level="advanced", min=0,
-      min_exclusive=True, when=(_FLOOD,), example=500.0),
-    P("INUNDATION_BACKWATER", "outputs", "Big rivers back up into side streams",
-      "Map the main rivers again on their own, so a high main river also floods the "
-      "mouths of the streams that join it.", "bool", level="advanced", when=(_FLOOD,)),
     P("MASS_BALANCE_REPORT", "outputs", "Water-balance report",
       "Check that no water is lost or created, and write mass_balance.csv.",
       "bool", level="advanced"),

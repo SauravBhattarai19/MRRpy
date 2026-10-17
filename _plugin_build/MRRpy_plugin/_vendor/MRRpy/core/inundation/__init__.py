@@ -1,13 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Flood depth and extent maps from the routed discharge (HAND method).
+Flood depth and extent maps from the routed discharge.
 
-A run with ``INUNDATION_MAP`` on records the discharge of every river cell
-(recorder.py) and saves the river network (snapshot.py); ``make_flood_maps``
-then turns each reach's flow into a water level with a synthetic rating curve
-(rating.py) and spreads it over the land below it (network.py, mapping.py),
-on the run's original DEM or a finer one with least-cost flow paths
-(finegrid.py).
+A run with ``INUNDATION_MAP`` on records the discharge of every river cell and
+the water entering each river cell from its side (recorder.py) and saves the
+river network (snapshot.py).  ``make_flood_maps`` then draws the maps on the
+run's original DEM or a finer one with least-cost flow paths (finegrid.py),
+on the ground as it is (no channel cut below the DEM), by one of two methods
+(``INUNDATION_METHOD``):
+
+* ``hand`` — each reach's flow becomes a water level with a synthetic rating
+  curve (rating.py) that is spread over the land below it (network.py,
+  mapping.py).  Quick, for the whole river network.
+* ``2d`` — the water is moved in two dimensions over one area, with the
+  routed rivers flowing in (model2d.py, solver2d.py).  Slower, more exact:
+  water spreads, ponds and backs up as it does on the ground.
 """
 
 import os
@@ -40,15 +47,16 @@ def make_flood_maps(cfg, log=print):
         if grid is None:
             log(f"  Flood maps     |  using the routing network ({why})")
             grid = routing_flood_grid(arrays, meta)
-    model = FloodModel(grid, arrays, meta,
-                       reach_len_m=float(getattr(cfg, "INUNDATION_REACH_LENGTH_M", 1000.0)),
-                       backwater=bool(getattr(cfg, "INUNDATION_BACKWATER", True)))
     out_dir = os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "inundation")
-    paths = write_outputs(model, out_dir, getattr(cfg, "INUNDATION_AREA", None), log=log)
+    area = getattr(cfg, "INUNDATION_AREA", None)
+    if str(getattr(cfg, "INUNDATION_METHOD", "hand") or "hand") == "2d":
+        from .model2d import make_2d_flood_maps
+        paths = make_2d_flood_maps(cfg, arrays, meta, grid, out_dir, log=log)
+    else:
+        paths = write_outputs(FloodModel(grid, arrays, meta), out_dir, area, log=log)
     if getattr(cfg, "INUNDATION_ANIMATION", True):
         from ...plotting import animate_inundation
-        gif = animate_inundation(paths["flood_model"], area=getattr(cfg, "INUNDATION_AREA", None),
-                                 log=log)
+        gif = animate_inundation(paths["flood_model"], area=area, log=log)
         if gif:
             paths["flood_animation"] = gif
     paths["inundation_dir"] = out_dir

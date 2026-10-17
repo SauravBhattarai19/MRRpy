@@ -8,11 +8,13 @@ every cell that drains to the reach and lies below it:
 
     depth = stage − HAND          where HAND < stage
 
-Main stems are mapped again on their own (drainage area ×10, ×100, …) and the
-deepest water wins, so a big river's flood backs up into the mouths of side
-streams.  The grid is the run's original DEM or a finer one, with least-cost
-flow paths and discharge taken from the matching routed river cells
-(finegrid.py), or — when that DEM is missing — the routing network itself.
+The ground is the DEM as it is: no channel is cut below it (rating.py), so the
+river itself shows as water at any flow.  Main stems are mapped again on their
+own (drainage area ×10, ×100, …) and the deepest water wins, so a big river's
+flood backs up into the mouths of side streams.  The grid is the run's original
+DEM or a finer one, with least-cost flow paths and discharge taken from the
+matching routed river cells (finegrid.py), or — when that DEM is missing — the
+routing network itself.
 """
 
 import json
@@ -31,6 +33,7 @@ except Exception:                                 # pragma: no cover
 
 WET_M = 0.01          # [m] shallower water is not drawn
 DURATION_M = 0.1      # [m] depth counted for first-wet time and duration
+REACH_LENGTH_M = 1000.0   # [m] river reach length (results barely depend on it)
 _CHUNK = 2048         # time records processed at once
 
 
@@ -40,9 +43,9 @@ class FloodGrid:
     (rows, cols), downstream index ``ds`` and a downstream-first ``order``,
     elevation never rising downstream ``z`` (slopes) and original elevation
     ``z_raw`` (heights), flow length ``dist``, drainage area ``area_km2``, reach
-    slope, floodplain n, river flag, and on river cells the channel (W, D,
-    n_ch) and where the discharge comes from: routed river ``src`` (index into
-    the run's river cells) times ``scale`` (drainage-area ratio).
+    slope, floodplain n, river flag, and on river cells the channel width and
+    roughness (W, n_ch) and where the discharge comes from: routed river ``src``
+    (index into the run's river cells) times ``scale`` (drainage-area ratio).
     ``inside`` marks the cells the maps are written for.
     """
 
@@ -74,7 +77,7 @@ def routing_flood_grid(arrays, meta):
         area_km2=arrays["area_km2"].astype(np.float64),
         slope_reach=arrays["slope_reach"].astype(np.float64),
         n_fp=arrays["n_fp"].astype(np.float64), river=river,
-        W=arrays["W"].astype(np.float64), D=arrays["D"].astype(np.float64),
+        W=arrays["W"].astype(np.float64),
         n_ch=arrays["n_ch"].astype(np.float64), src=src, scale=np.ones(n),
         inside=np.ones(n, dtype=bool), match=None)
 
@@ -105,7 +108,7 @@ class Level:
         mean = lambda v: np.bincount(rc, weights=v[di], minlength=R) / cnt
         self.L = L
         self.S = mean(g.slope_reach)
-        self.W, self.D, self.n_ch = mean(g.W), mean(g.D), mean(g.n_ch)
+        self.W, self.n_ch = mean(g.W), mean(g.n_ch)
         self.area_km2 = np.zeros(R)
         np.maximum.at(self.area_km2, rc, g.area_km2[di])
 
@@ -124,7 +127,7 @@ class Level:
                                g.cell_area, g.cell_size, R)
         self.y, self.Q, self.A = rating_curves_fitting(
             self.q_peak, self.cell_reach, self.hand, a_fp, g.n_fp, g.cell_area,
-            L, self.S, self.W, self.D, self.n_ch)
+            L, self.S, self.W, np.zeros(R), self.n_ch)          # nothing below the DEM
         self.stage_peak, self.clipped = stage_from_discharge(self.Q, self.y, self.q_peak)
         self.stage_series = None
 
@@ -164,7 +167,7 @@ def _cell_flow(grid, cells, river_values, scaled=True):
 class FloodModel:
     """HAND flood mapping of one run on one grid (see module docstring)."""
 
-    def __init__(self, grid, arrays, meta, reach_len_m=1000.0, backwater=True):
+    def __init__(self, grid, arrays, meta, reach_len_m=REACH_LENGTH_M, backwater=True):
         self.grid = grid
         self.meta = meta
         river_idx = arrays["river_idx"]
@@ -327,22 +330,22 @@ def _write_tif(path, arr, grid, win, dtype="float32", nodata=-9999.0):
     return path
 
 
-def write_outputs(model, out_dir, area_bbox=None, log=print):
-    """Write the maps, tables and summary; returns {name: path}."""
+def write_flood_maps(g, out_dir, area_bbox, depth, tmax, first, dur):
+    """The maps both methods write — deepest water, extent (raster and
+    outlines), time of the deepest water, first time deeper than 10 cm and hours
+    deeper than 10 cm — for the cells of *g* (a FloodGrid or anything with
+    rows, cols, inside, transform, crs, cell_size).
+
+    Returns ({name: path}, window, (n,) mask of the cells in the area, (n,) wet)."""
     import geopandas as gpd
-    import pandas as pd
     import rasterio.features
     from rasterio.windows import Window, transform as win_transform
-    from shapely.geometry import LineString, shape
+    from shapely.geometry import shape
 
-    g = model.grid
     os.makedirs(out_dir, exist_ok=True)
     win, sel = _area_window(g, area_bbox)
     out = {}
-    depth, tmax = model.depth_peak()
     wet = depth >= WET_M
-    first, dur = model.first_wet_and_duration()
-
     p = lambda name: os.path.join(out_dir, name)
     out["flood_depth_max"] = _write_tif(p("flood_depth_max.tif"),
                                         _to_grid(np.where(wet, depth, np.nan), g, sel, win), g, win)
@@ -350,14 +353,13 @@ def write_outputs(model, out_dir, area_bbox=None, log=print):
     out["flood_extent_max"] = _write_tif(p("flood_extent_max.tif"), ext, g, win,
                                          dtype="uint8", nodata=255)
     out["flood_time_of_max_hours"] = _write_tif(p("flood_time_of_max_hours.tif"),
-                                                _to_grid(tmax / 3600.0, g, sel, win), g, win)
+                                                _to_grid(np.where(wet, tmax, np.nan) / 3600.0,
+                                                         g, sel, win), g, win)
     out["flood_first_wet_hours"] = _write_tif(p("flood_first_wet_hours.tif"),
                                               _to_grid(first / 3600.0, g, sel, win), g, win)
     out["flood_duration_hours"] = _write_tif(p("flood_duration_hours.tif"),
                                              _to_grid(np.where(dur > 0, dur, np.nan), g, sel, win),
                                              g, win)
-    out["hand"] = _write_tif(p("hand.tif"), _to_grid(model.levels[0].hand, g, sel, win), g, win)
-
     # Extent polygons
     r0, r1, c0, c1 = win
     tr = win_transform(Window(c0, r0, c1 - c0, r1 - r0), g.transform)
@@ -373,20 +375,37 @@ def write_outputs(model, out_dir, area_bbox=None, log=print):
     else:
         with open(out["flood_extent_geojson"], "w") as f:
             json.dump({"type": "FeatureCollection", "features": []}, f)
+    return out, win, sel, wet
 
-    # Reach table, rating curves, reach lines
+
+def write_outputs(model, out_dir, area_bbox=None, log=print):
+    """Write the maps, tables and summary; returns {name: path}."""
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import LineString
+
+    g = model.grid
+    depth, tmax = model.depth_peak()
+    first, dur = model.first_wet_and_duration()
+    out, win, sel, wet = write_flood_maps(g, out_dir, area_bbox, depth, tmax, first, dur)
+    p = lambda name: os.path.join(out_dir, name)
+    for stale in ("flood_velocity_max.tif", "inflows.csv"):   # left by an earlier 2D run
+        if os.path.exists(p(stale)):
+            os.remove(p(stale))
+    out["hand"] = _write_tif(p("hand.tif"), _to_grid(model.levels[0].hand, g, sel, win), g, win)
+
+    # Reach table, rating curves, reach lines.  Stages are heights of the water
+    # above the river surface in the DEM.
     rows, curves, lines, attrs = [], [], [], []
     xs, ys = g.transform * (g.cols + 0.5, g.rows + 0.5)
     for k, lev in enumerate(model.levels):
         fl = lev.flooded_km2(lev.stage_peak)[0]
-        q_bank = lev.Q[:, 0]
         for r in range(lev.n_reach):
             rows.append(dict(level=k, reach=r, threshold_km2=lev.threshold_km2,
                              length_m=lev.L[r], slope=lev.S[r], channel_width_m=lev.W[r],
-                             bankfull_depth_m=lev.D[r], n_channel=lev.n_ch[r],
-                             drainage_km2=lev.area_km2[r], q_bankfull_m3s=q_bank[r],
+                             n_channel=lev.n_ch[r], drainage_km2=lev.area_km2[r],
                              q_peak_m3s=lev.q_peak[r], t_peak_hours=lev.t_peak_s[r] / 3600.0,
-                             stage_above_bank_m=lev.stage_peak[r], flooded_km2=fl[r],
+                             stage_m=lev.stage_peak[r], flooded_km2=fl[r],
                              beyond_table=bool(lev.clipped[r])))
         step = max(1, int(round(0.25 / (lev.y[1] - lev.y[0]))))
         for r in range(lev.n_reach):
@@ -399,11 +418,11 @@ def write_outputs(model, out_dir, area_bbox=None, log=print):
             if c.size >= 2:
                 lines.append(LineString(np.column_stack([xs[c], ys[c]])))
                 attrs.append(dict(level=k, reach=r, q_peak_m3s=float(lev.q_peak[r]),
-                                  stage_above_bank_m=float(lev.stage_peak[r])))
+                                  stage_m=float(lev.stage_peak[r])))
     out["reaches_csv"] = p("reaches.csv")
     pd.DataFrame(rows).to_csv(out["reaches_csv"], index=False, float_format="%.4g")
     out["rating_curves_csv"] = p("rating_curves.csv")
-    pd.DataFrame(curves, columns=["level", "reach", "stage_above_bank_m", "q_m3s",
+    pd.DataFrame(curves, columns=["level", "reach", "stage_m", "q_m3s",
                                   "flooded_km2"]).to_csv(out["rating_curves_csv"], index=False,
                                                          float_format="%.4g")
     out["reaches_geojson"] = p("reaches.geojson")
@@ -418,11 +437,10 @@ def write_outputs(model, out_dir, area_bbox=None, log=print):
     in_area = sel & wet
     lev0 = model.levels[0]
     summ = dict(
-        grid=g.label, cell_size_m=g.cell_size,
+        method="hand", grid=g.label, cell_size_m=g.cell_size,
         flooded_km2=float(in_area.sum() * g.cell_area / 1e6),
         max_depth_m=float(depth[in_area].max()) if in_area.any() else 0.0,
         reaches=int(lev0.n_reach),
-        reaches_above_bank=int((lev0.stage_peak > 0).sum()),
         reaches_beyond_table=int(sum(int(l.clipped.sum()) for l in model.levels)),
         levels_km2=[l.threshold_km2 for l in model.levels],
         area_bbox=list(area_bbox) if area_bbox else None,
@@ -431,9 +449,8 @@ def write_outputs(model, out_dir, area_bbox=None, log=print):
     out["summary_json"] = p("inundation_summary.json")
     with open(out["summary_json"], "w") as f:
         json.dump(summ, f, indent=2)
-    log(f"  Flood maps     |  {summ['grid']}: {summ['flooded_km2']:.2f} km² flooded, deepest "
-        f"{summ['max_depth_m']:.2f} m; {summ['reaches_above_bank']} of {summ['reaches']} river "
-        f"reaches went above their banks.")
+    log(f"  Flood maps     |  {summ['grid']}: {summ['flooded_km2']:.2f} km² under water (rivers "
+        f"included), deepest {summ['max_depth_m']:.2f} m; {summ['reaches']} river reaches.")
     if summ["reaches_beyond_table"]:
         log(f"  [WARN] {summ['reaches_beyond_table']} reach(es) carried more water than a "
             f"100 m-deep valley holds; their depth is capped (see reaches.csv, beyond_table).")
@@ -465,6 +482,8 @@ class SavedFlood:
         """Depth (n,) at the peak (i None) or at saved record i."""
         if i is None:
             return self.a["depth_max"].astype(np.float64)
+        if "frames" in self.a:                          # 2D: the depth itself was saved
+            return self.a["frames"][i].astype(np.float64)
         depth = np.zeros(self.a["z"].size)
         for k in range(int(self.meta["n_levels"])):
             cr = self.a[f"l{k}_cell_reach"]
@@ -474,6 +493,10 @@ class SavedFlood:
         return depth
 
     def flooded_area_series(self):
+        if "frames" in self.a:
+            inside = self.a["inside"]
+            cell_km2 = float(self.meta["cell_size"]) ** 2 / 1e6
+            return np.array([float(((f >= WET_M) & inside).sum()) for f in self.a["frames"]]) * cell_km2
         if "l0_A" not in self.a or not len(self.times_s):
             return np.zeros(len(self.times_s))
         y, A, S = self.a["l0_y"], self.a["l0_A"], self.a["l0_stage_series"]

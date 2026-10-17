@@ -2,14 +2,18 @@
 """
 tests/test_inundation.py
 ========================
-Flood depth and extent maps (HAND + synthetic rating curves, MRRpy/core/inundation):
+Flood depth and extent maps (MRRpy/core/inundation):
 
 * the network helpers on hand-built networks (exact answers);
 * the rating curve equals the model's own compound channel section when the
   floodplain is only the river cells, and matches the analytic V-valley;
 * full runs: the recorded peak equals the hydrograph peak for every tested
   scheme, routing is unchanged by the recorder, the 'inundation' stage
-  redraws the same maps, a finer DEM and a map area work, 'auto' falls back.
+  redraws the same maps, a finer DEM and a map area work, 'auto' falls back;
+  the maps lie on the DEM as it is (no channel below it);
+* the 2D flood simulation (INUNDATION_METHOD: 2d): its maps, water balance,
+  rivers entering a smaller area with their routed flow, the local inflow
+  equal to the routed water, and the switch between methods.
 
 Run:  pytest tests/test_inundation.py -v
 """
@@ -79,6 +83,18 @@ def test_reaches_break_at_confluences_into_equal_pieces():
     for r in range(len(length)):                      # contiguous: the outlet is the last cell
         cells = np.flatnonzero(reach == r)
         assert outlet[r] == cells.max()
+
+
+def test_accumulate_within_counts_a_meander_once():
+    """A routed river outside a cut-out DEM (cells 0, 1), inside (2), outside
+    again round a meander (3, 4), inside (5): the two entering cells (1 and 4)
+    bring only the land outside since the river was last inside — 2 + 2, not
+    2 + 5."""
+    ds = np.array([1, 2, 3, 4, 5, -1])
+    outside = np.array([1, 1, 0, 1, 1, 0], bool)
+    acc = N.accumulate_within(N.downstream_first_order(ds), ds, np.ones(6), outside)
+    assert acc[1] == 2.0 and acc[4] == 2.0
+    assert N.upstream_area(N.downstream_first_order(ds), ds, 1.0)[4] == 5.0
 
 
 def test_level_thresholds():
@@ -380,3 +396,190 @@ def test_whole_dem_mode(tmp_path):
     with rasterio.open(out["hand"]) as r:
         hand = r.read(1, masked=True)
     assert hand.count() > 0 and float(hand.min()) >= 0.0
+
+
+# ── On the DEM as it is ──────────────────────────────────────────────────────
+def test_maps_lie_on_the_dem(valley):
+    """No channel below the DEM: a stage of 0 carries no flow, so every river
+    reach with flow is under water at its peak, and the routed water entering
+    the rivers from their side is all the water the outlet passed."""
+    _tmp, _dem, cfg, out = valley
+    from MRRpy.core.inundation.mapping import FloodModel, routing_flood_grid
+    from MRRpy.core.inundation.snapshot import load_snapshot, snapshot_path
+    arrays, meta = load_snapshot(snapshot_path(cfg))
+    model = FloodModel(routing_flood_grid(arrays, meta), arrays, meta)
+    for lev in model.levels:
+        assert np.all(lev.Q[:, 0] == 0.0)
+    depth = model.depth_peak()[0]
+    flowing = model.grid.river & (arrays["q_peak"] > 1e-6)
+    assert flowing.any() and np.all(depth[flowing] > 0)
+    # local inflow: everything the outlet passed entered a river cell from its side
+    dt = float(meta["output_interval_s"])
+    v_side = float(arrays["lat_series"].sum()) * dt
+    v_out = float(pd.read_csv(out["hydrograph_csv"])["Q_m3s"].sum()) * dt
+    assert v_out <= v_side <= 1.2 * v_out
+
+
+# ── 2D flood simulation ──────────────────────────────────────────────────────
+@pytest.fixture(scope="module")
+def valley2d(valley):
+    """The valley run copied, HAND maps redrawn there, then the 2D maps."""
+    import shutil
+    tmp, dem, cfg, _out = valley
+    shutil.copytree(cfg.OUTPUT_DIR, str(tmp / "kin2d"), dirs_exist_ok=True)
+    hand = run_pipeline(_cfg(tmp, dem, "kin2d"), stages=["inundation"], on_log=_quiet)
+    s_hand = json.load(open(hand["summary_json"]))
+    cfg2 = _cfg(tmp, dem, "kin2d", INUNDATION_METHOD="2d")
+    out = run_pipeline(cfg2, stages=["inundation"], on_log=_quiet)
+    return tmp, dem, cfg2, out, s_hand
+
+
+def test_2d_maps_written(valley2d):
+    tmp, _dem, cfg, out, s_hand = valley2d
+    for key in ("flood_depth_max", "flood_extent_max", "flood_extent_geojson",
+                "flood_time_of_max_hours", "flood_first_wet_hours", "flood_duration_hours",
+                "flood_velocity_max", "inflows_csv", "summary_json", "flood_model"):
+        assert os.path.isfile(out[key]), key
+    s = json.load(open(out["summary_json"]))
+    assert s["method"] == "2d"
+    assert abs(s["water_balance_error"]) < 1e-9
+    assert s["water_in_hm3"] > 0 and s["water_out_hm3"] > 0
+    assert not s["water_against_edge"]
+    # the same flows spread over the same ground: about the area HAND draws
+    assert s["max_depth_m"] > 0.2
+    assert 0.4 * s_hand["flooded_km2"] < s["flooded_km2"] < 2.5 * s_hand["flooded_km2"]
+    for stale in ("hand.tif", "reaches.csv", "rating_curves.csv"):       # from the HAND maps
+        assert not os.path.exists(os.path.join(cfg.OUTPUT_DIR, "inundation", stale))
+    with rasterio.open(out["flood_depth_max"]) as r:
+        d = r.read(1, masked=True)
+    assert abs(float(d.max()) - s["max_depth_m"]) < 1e-4
+    with rasterio.open(out["flood_velocity_max"]) as r:
+        v = r.read(1, masked=True)
+    assert 0 < float(v.max()) < 10.0
+    from MRRpy import animate_inundation, plot_inundation
+    plot_inundation(out["flood_model"], time=1.5)
+    gif = animate_inundation(out["flood_model"], out_path=str(tmp / "flood2d.gif"), log=_quiet)
+    from PIL import Image
+    assert Image.open(gif).n_frames > 5
+
+
+def test_2d_redraw_is_identical(valley2d):
+    _tmp, _dem, cfg, out, _s = valley2d
+    with rasterio.open(out["flood_depth_max"]) as r:
+        before = r.read(1)
+    again = run_pipeline(cfg, stages=["inundation"], on_log=_quiet)
+    with rasterio.open(again["flood_depth_max"]) as r:
+        np.testing.assert_array_equal(r.read(1), before)
+
+
+def _box_lonlat(row0, row1, col0, col1):
+    """(west, south, east, north) of model-grid rows/cols [row0, row1) × [col0, col1)."""
+    from pyproj import Transformer
+    top = 3060000 + _NR * _CELL
+    tr = Transformer.from_crs(32645, 4326, always_xy=True)
+    w, s = tr.transform(330000 + col0 * _CELL + 1, top - row1 * _CELL + 1)
+    e, n = tr.transform(330000 + col1 * _CELL - 1, top - row0 * _CELL - 1)
+    return w, s, e, n
+
+
+def test_2d_area_with_a_river_flowing_in(valley2d):
+    """A box across the lower valley: the river (which starts at row 16) enters
+    at its top edge with the routed flow of the river cell just above it
+    (scaled by the ratio of the drainage areas on the two flow-path grids), and
+    leaves at the bottom edge."""
+    tmp, dem, _cfg2, _out, _s = valley2d
+    from pyproj import Transformer
+    from MRRpy.core.inundation.snapshot import load_snapshot, snapshot_path
+    cfg = _cfg(tmp, dem, "kin2d", INUNDATION_METHOD="2d", INUNDATION_AREA=_box_lonlat(25, 50, 5, 36))
+    logs = []
+    out = run_pipeline(cfg, stages=["inundation"], on_log=logs.append)
+    s = json.load(open(out["summary_json"]))
+    assert s["rivers_entering"] == 1 and s["outflow_edge_cells"] > 0
+    assert abs(s["water_balance_error"]) < 1e-9 and s["water_out_hm3"] > 0
+    with rasterio.open(out["flood_depth_max"]) as r:
+        assert r.width <= 33 and r.height <= 27            # the box, give or take a cell
+    inflows = pd.read_csv(out["inflows_csv"])
+    river = inflows[inflows["kind"].str.startswith("river")].iloc[0]
+    x, y = Transformer.from_crs(4326, 32645, always_xy=True).transform(river["lon"], river["lat"])
+    row = int((3060000 + _NR * _CELL - y) // _CELL) - 1       # the routed cell above the entry
+    col = int((x - 330000) // _CELL)
+    arrays, _meta = load_snapshot(snapshot_path(cfg))
+    k = np.flatnonzero((arrays["s_rows"] == row) & (arrays["s_cols"] == col))
+    assert k.size == 1
+    ratio = river["drainage_km2"] / float(arrays["area_km2"][k[0]])
+    assert abs(ratio - 1) < 0.15
+    np.testing.assert_allclose(river["peak_m3s"], float(arrays["q_peak"][k[0]]) * ratio, rtol=0.01)
+    assert any("2D simulation" in m for m in logs)
+
+
+def test_2d_needs_the_local_inflow(valley2d):
+    """Flood-map data saved without the local inflow → a clear message."""
+    import shutil
+    tmp, dem, _cfg2, _out, _s = valley2d
+    shutil.copytree(str(tmp / "kin2d"), str(tmp / "old"), dirs_exist_ok=True)
+    path = os.path.join(str(tmp / "old"), "inundation", "network.npz")
+    with np.load(path) as d:
+        kept = {k: d[k] for k in d.files if k != "lat_series"}
+    np.savez_compressed(path, **kept)
+    cfg = _cfg(tmp, dem, "old", INUNDATION_METHOD="2d")
+    with pytest.raises(RuntimeError, match="Route the run again"):
+        run_pipeline(cfg, stages=["inundation"], on_log=_quiet)
+    # HAND maps still work from it, and clear the 2D-only files
+    out = run_pipeline(_cfg(tmp, dem, "old"), stages=["inundation"], on_log=_quiet)
+    assert json.load(open(out["summary_json"]))["method"] == "hand"
+    for stale in ("flood_velocity_max.tif", "inflows.csv"):
+        assert not os.path.exists(os.path.join(str(tmp / "old"), "inundation", stale))
+
+
+# ── A finer DEM cut out of the basin ─────────────────────────────────────────
+def _dam_valley_dem(path, cell, nr=150, nc=41, cell_model=90.0):
+    """A 13.5 km valley falling 0.2 % with a 15 m DEM dam across its floor at
+    row 135 (of the 90 m grid), at resolution *cell*."""
+    from rasterio.transform import from_origin
+    f = int(round(cell_model / cell))
+    r, c = np.mgrid[0:nr * f, 0:nc * f]
+    yrow = (r + 0.5) / f - 0.5
+    lat = np.abs((c + 0.5) / f - 0.5 - (nc - 1) / 2) * cell_model
+    dem = ((nr - 1 - yrow) * cell_model * 0.002
+           + np.where(lat < 300, lat * 0.01, 3 + (lat - 300) * 0.15) + 100)
+    dam = (yrow > 134.5) & (yrow < 135.5)
+    dem = np.where(dam, np.maximum(dem, 100 + (nr - 1 - 135) * cell_model * 0.002 + 15.0), dem)
+    prof = dict(driver="GTiff", height=dem.shape[0], width=dem.shape[1], count=1,
+                dtype="float32", crs="EPSG:32645", nodata=-9999.0,
+                transform=from_origin(330000, 3060000 + nr * cell_model, cell, cell))
+    with rasterio.open(path, "w", **prof) as dst:
+        dst.write(dem.astype("float32"), 1)
+    return path
+
+
+def test_cut_out_dem_drains_through_the_dam(tmp_path):
+    """The finer DEM covers only the area + 3 km, so the river enters it from
+    upstream; a 15 m DEM dam lies across the valley inside the area.  Water
+    must still run down the valley (over the dam), not back out of the upper
+    edge where the river comes in, so the river in the area carries its
+    routed flow."""
+    from pyproj import Transformer
+    nr, nc = 150, 41
+    dem = _dam_valley_dem(str(tmp_path / "dem90.tif"), 90.0)
+    dem30 = _dam_valley_dem(str(tmp_path / "dem30.tif"), 30.0)
+    tr = Transformer.from_crs(32645, 4326, always_xy=True)
+    top = 3060000 + nr * 90.0
+    w, s = tr.transform(330000 + 5 * 90.0, top - 140 * 90.0)
+    e, n = tr.transform(330000 + 36 * 90.0, top - 115 * 90.0)
+    cfg = _cfg(tmp_path, dem, "dam", MODEL_AREA="whole_dem", OUTPUT_POINT=None,
+               CHANNEL_MIN_AREA_KM2=1.0, INUNDATION_DEM="file", INUNDATION_DEM_PATH=dem30,
+               INUNDATION_AREA=(w, s, e, n), TOTAL_SIMULATION_TIME_HOURS=4.0)
+    out = run_pipeline(cfg, on_log=_quiet)
+    t = json.load(open(out["summary_json"]))["discharge_transfer"]
+    assert t["entering_rivers"] >= 1
+    assert t["with_routed_flow"] == t["river_cells_in_area"] > 0
+    assert abs(t["area_ratio_median"] - 1.0) < 0.1
+    cfg.INUNDATION_METHOD = "2d"
+    out = run_pipeline(cfg, stages=["inundation"], on_log=_quiet)
+    s2 = json.load(open(out["summary_json"]))
+    assert s2["rivers_entering"] == 1 and abs(s2["water_balance_error"]) < 1e-9
+    river = pd.read_csv(out["inflows_csv"]).iloc[0]
+    from MRRpy.core.inundation.snapshot import load_snapshot, snapshot_path
+    arrays, _meta = load_snapshot(snapshot_path(cfg))
+    a_routed = float(arrays["area_km2"][arrays["river_idx"]].max())
+    assert 0.5 * a_routed < river["drainage_km2"] < a_routed      # the valley above the area
