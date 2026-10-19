@@ -89,9 +89,8 @@ Thumbs.db
 # GIS
 
 # Claude
-#   CLAUDE.md is intentionally TRACKED (shared project guidance for
-#   collaborators and coding agents); only the local session/agent dirs
-#   (.claude/, .codex, .agents) stay ignored above.
+#   CLAUDE.md is local guidance for coding agents, kept out of the repo.
+CLAUDE.md
 
 # Plugin build artifacts
 #   MRRpy/              = the pip-installable core package (tracked source)
@@ -141,3 +140,6 @@ hydroatlas_outlet.json
 
 # Example data files the documentation links to
 !docsite/assets/data/*.csv
+
+# Files written by running notebooks/configure_and_run.ipynb
+notebooks/*.yaml
