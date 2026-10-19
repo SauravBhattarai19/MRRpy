@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: "If you use MRRpy, please cite it using the metadata below."
+type: software
+title: "MRRpy: A modular Python model for distributed rainfall–runoff generation and flood routing"
+abstract: >-
+  MRRpy (Multi-Mechanism Runoff and Routing) is an open-source Python package
+  for distributed, event-scale rainfall–runoff simulation and channel flood
+  routing. From a DEM it delineates a D8 drainage network, generates runoff by
+  interchangeable methods (runoff coefficient, SCS Curve Number, or a
+  process-based combination of variable-source-area saturation-excess,
+  Green–Ampt infiltration-excess and impervious runoff), and routes it with
+  kinematic-wave, Muskingum–Cunge or semi-implicit diffusive-wave schemes,
+  driven by one configuration through a Python API, CLI, Jupyter form or QGIS
+  plugin, with optional Google Earth Engine forcing and GPU acceleration.
+authors:
+  - family-names: Bhattarai
+    given-names: Saurav
+    orcid: "https://orcid.org/0009-0006-2627-8563"
+    affiliation: "Department of Civil and Environmental Engineering, Jackson State University, Jackson, MS, USA"
+  - family-names: Pradhan
+    given-names: Nawa Raj
+    orcid: "https://orcid.org/0000-0001-5210-0896"
+    affiliation: "Coastal and Hydraulics Laboratory, U.S. Army Engineer Research and Development Center, Vicksburg, MS, USA"
+  - family-names: Talchabhadel
+    given-names: Rocky
+    orcid: "https://orcid.org/0000-0003-0526-7663"
+    affiliation: "Department of Civil and Environmental Engineering, Jackson State University, Jackson, MS, USA"
+version: 0.3.0
+date-released: "2026-10-05"
+license: MIT
+repository-code: "https://github.com/SauravBhattarai19/MRRpy"
+url: "https://mrrpy.readthedocs.io"
+keywords:
+  - hydrology
+  - rainfall-runoff
+  - flood routing
+  - kinematic wave
+  - Muskingum-Cunge
+  - diffusive wave
+  - variable source area
+  - Green-Ampt
+  - Google Earth Engine
+  - QGIS
+  - Python
