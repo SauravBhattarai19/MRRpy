@@ -96,16 +96,18 @@ libraries for D8 terrain analysis but stop at flow directions and
 delineation; `MRRpy` uses either and continues through runoff, routing, and
 diagnostics. Landlab [@barnhart2020] is a general Earth-surface-dynamics
 framework from whose components a comparable model could be assembled, with
-more effort. GSSHA [@downer2004] is a mature,
-physically based distributed hydrologic model under continued development
-[@pradhan2019water; @pradhan2024], and LISFLOOD-FP [@bates2010;
-@dealmeida2012] solves two-dimensional floodplain flow; neither is designed
-for adding and swapping runoff or routing methods from Python. We are not aware of an open tool that lets
-a user combine any rainfall source, runoff method, and routing scheme on the
-same grid, add a new method that immediately works with all the others, and
-check every combination for mass conservation. `MRRpy` is built for exactly
-that; for detailed two-dimensional floodplain hydraulics, a dedicated
-inundation model remains the right tool.
+more effort. GSSHA [@downer2004] is a mature, physically based distributed
+hydrologic model under continued development [@pradhan2019water;
+@pradhan2024], while LISFLOOD-FP [@bates2010; @dealmeida2012] provides
+advanced floodplain hydraulic modeling capabilities. Complementing these
+established modeling systems, `MRRpy` emphasizes a modular Python-based
+architecture that facilitates the integration, interchange, and evaluation of
+runoff-generation and routing methods through standardized interfaces. We are
+not aware of an open tool that lets a user combine any rainfall source, runoff
+method, and routing scheme on the same grid, add a new method that immediately
+works with all the others, and check every combination for mass conservation;
+for detailed two-dimensional floodplain hydraulics, a dedicated inundation
+model remains the right tool.
 
 # Software design
 
