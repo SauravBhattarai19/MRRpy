@@ -7,7 +7,8 @@ Implements Variable Source Area (VSA) saturation-excess runoff, Green-Ampt
 infiltration-excess and impervious urban shedding (the Pradhan & Ogden 2010
 "One-Parameter Model"), feeding explicit grid-based kinematic / diffusive-wave /
 Muskingum–Cunge channel routing.  Optional Google Earth Engine forcing (IMERG
-rainfall, SERVES deficit, SoilGrids, LULC/LCZ).
+rainfall, SERVES deficit, SoilGrids, LULC/LCZ), and Open-Meteo weather-model
+rain (past storms or forecasts, no account).
 
 Subpackages
 -----------

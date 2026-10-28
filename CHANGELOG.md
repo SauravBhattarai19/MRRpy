@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Open-Meteo weather-model rain: `PRECIP_METHOD: openmeteo_thiessen` (code 5)
+  or `openmeteo_idw` (code 6). Rain from the world's weather models (ECMWF,
+  GFS, ICON, HRRR, …) and reanalyses (ERA5) for **a past storm or a forecast
+  up to 16 days ahead**, from the storm start `EVENT_START_UTC` for the
+  simulation length. It needs internet but no account or Earth Engine. Each
+  model cell over the basin becomes a rain gauge at its centre, like the
+  IMERG pixels. `OPENMETEO_SOURCE` (`auto` picks the forecast or the
+  historical archive from the date), `OPENMETEO_MODEL`, `OPENMETEO_MINUTELY_15`,
+  `OPENMETEO_POINT_SPACING_M`, `OPENMETEO_BBOX_BUFFER_M` and
+  `PRECIP_OPENMETEO_FORCE_DOWNLOAD` tune it; the rain is cached in
+  `<results>/openmeteo/` and downloaded again when the request changes.
+- `OPENMETEO_SOURCE: single_run` with `OPENMETEO_RUN`: replay one model run as
+  it was issued (ECMWF IFS from March 2024), for forecast hindcasts with no
+  look-ahead.
+- The manual lists the Open-Meteo models that give rain (global, regional and
+  historical), what `best_match` uses, and the names that return no rain.
+- A "real or forecast storm with weather-model rain" starting point in the
+  wizard and the notebook form; Open-Meteo panels in the QGIS plugin and its
+  Processing algorithm.
+
+### Tests
+- `tests/test_openmeteo.py`: API choice by date, the query grid, merging
+  points into model cells, the time convention, trimming past the forecast
+  horizon, single model runs, the cache, error messages, and full routed runs (against a fake
+  server; `MRRPY_LIVE_OPENMETEO=1` also calls the real API).
+
 ## 0.3.0
 
 **Results change for Green-Ampt runs longer than one storm.** Set

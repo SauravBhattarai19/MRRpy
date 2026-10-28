@@ -500,7 +500,8 @@ def test_choice_groups_cover_every_choice_once(name):
 def test_rain_groups():
     groups = {k: ms for k, _l, ms in S.param("PRECIP_METHOD").choice_groups}
     assert groups == {"storm": ["uniform"], "gauges": ["thiessen", "idw"],
-                      "imerg": ["imerg_thiessen", "imerg_idw"]}
+                      "imerg": ["imerg_thiessen", "imerg_idw"],
+                      "openmeteo": ["openmeteo_thiessen", "openmeteo_idw"]}
 
 
 @pytest.mark.parametrize("name", PARAM_IDS)

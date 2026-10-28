@@ -15,6 +15,7 @@ need to touch them.
 | `ROUTING_DEM_PATH`, `ROUTING_FLOW_DIR_PATH`, `ROUTING_FLOW_ACCUM_PATH`, `ROUTING_WATERSHED_MASK_PATH`, `WATERSHED_GEOJSON` | the terrain files in the results folder, which routing reads |
 | `HYDROGRAPH_CSV`, `MASS_BALANCE_CSV` | the output files in the results folder |
 | `PRECIP_IMERG_DIR` | where downloaded IMERG rain is cached (`<results>/imerg/`) |
+| `PRECIP_OPENMETEO_DIR` | where downloaded Open-Meteo rain is cached (`<results>/openmeteo/`) |
 | `SERVES_TARGET_DATE` | old name, not used: `EVENT_START_UTC` sets the date |
 | `MAX_DEPTH_M` | display only, not used by the model |
 

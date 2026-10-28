@@ -268,6 +268,9 @@ _SD_GEE = ("VSA_SD_SOURCE", In("gee"))
 _SOIL = (_SAT, _INF)                                    # use as when_any
 _SOIL_GEE = (_SAT + (_SD_GEE,), _INF + (_SD_GEE,))      # use as when_any
 _IMERG = ("PRECIP_METHOD", In("imerg_thiessen", "imerg_idw"))
+_OPENMETEO = ("PRECIP_METHOD", In("openmeteo_thiessen", "openmeteo_idw"))
+_DATED_RAIN = ("PRECIP_METHOD", In("imerg_thiessen", "imerg_idw",          # need a storm date
+                                   "openmeteo_thiessen", "openmeteo_idw"))
 _GAUGES = ("PRECIP_METHOD", In("thiessen", "idw"))
 _NO_DEM = ("DEM_PATH", Blank())
 _CHANNELS = ("CHANNEL_ROUTING", On())
@@ -363,12 +366,18 @@ PARAMS = [
           "idw": "idw — your rain-gauge records, distance-weighted",
           "imerg_thiessen": "imerg_thiessen — NASA IMERG satellite rain, nearest pixel (Earth Engine)",
           "imerg_idw": "imerg_idw — NASA IMERG satellite rain, distance-weighted (Earth Engine)",
+          "openmeteo_thiessen": "openmeteo_thiessen — Open-Meteo weather-model rain, forecast "
+                                "or past, nearest grid point (internet, no account)",
+          "openmeteo_idw": "openmeteo_idw — Open-Meteo weather-model rain, forecast or past, "
+                           "distance-weighted (internet, no account)",
       },
       choice_groups=[
           ("storm", "Design storm — the same rain everywhere (no data needed)", ["uniform"]),
           ("gauges", "Rain gauges — your own CSV records", ["thiessen", "idw"]),
           ("imerg", "Satellite — NASA IMERG (Google Earth Engine)",
            ["imerg_thiessen", "imerg_idw"]),
+          ("openmeteo", "Weather models — Open-Meteo forecast or past weather "
+           "(internet, no account)", ["openmeteo_thiessen", "openmeteo_idw"]),
       ],
       group_title="Spread the rain between points by",
       sub_labels={
@@ -376,6 +385,8 @@ PARAMS = [
           "idw": "IDW — a distance-weighted average of the gauges",
           "imerg_thiessen": "Thiessen — each cell takes its nearest satellite pixel",
           "imerg_idw": "IDW — a distance-weighted average of the pixels",
+          "openmeteo_thiessen": "Thiessen — each cell takes its nearest model grid point",
+          "openmeteo_idw": "IDW — a distance-weighted average of the grid points",
       }),
     P("RAIN_INTENSITY_MM_HR", "rain", "Rain intensity",
       "Constant rain rate of the design storm. Use 0 to route an inflow "
@@ -395,15 +406,16 @@ PARAMS = [
     P("PRECIP_IDW_POWER", "rain", "Distance-weighting power",
       "How quickly a gauge's influence fades with distance (2 is standard).",
       "float", level="advanced", min=0,
-      when=(("PRECIP_METHOD", In("idw", "imerg_idw")),), example=3.0),
+      when=(("PRECIP_METHOD", In("idw", "imerg_idw", "openmeteo_idw")),), example=3.0),
     P("PRECIP_EXCLUDE_OUTSIDE_STATIONS", "rain", "Ignore gauges outside the basin",
       "Use only gauges that lie inside the delineated watershed.", "bool",
       level="advanced", when=(_GAUGES,)),
     P("EVENT_START_UTC", "rain", "Storm start (UTC)",
-      "When the event starts, as 'YYYY-MM-DD HH:MM' in UTC. Sets the satellite "
-      "rain window and the date of the satellite soil-moisture map.",
+      "When the event starts, as 'YYYY-MM-DD HH:MM' in UTC. Sets the window of "
+      "satellite or weather-model rain (for Open-Meteo it may lie in the next "
+      "16 days, for a forecast) and the date of the satellite soil-moisture map.",
       "datetime", optional=True, none_label="not set",
-      when_any=((_IMERG,),) + tuple(g + (_SD_GEE,) for g in _SOIL),
+      when_any=((_DATED_RAIN,),) + tuple(g + (_SD_GEE,) for g in _SOIL),
       example="2024-09-27 00:00"),
     P("IMERG_UTC_OFFSET_HOURS", "rain", "Local time offset from UTC",
       "Hours to add to UTC to get local time (Nepal = 5.75). Used for the "
@@ -429,6 +441,56 @@ PARAMS = [
     P("IMERG_BBOX_BUFFER_M", "rain", "Margin around the basin for IMERG",
       "Extra distance around the basin when selecting satellite pixels.",
       "float", unit="m", level="advanced", min=0, when=(_IMERG,), example=20000.0),
+    P("OPENMETEO_SOURCE", "rain", "Open-Meteo archive",
+      "Which Open-Meteo archive to read. 'auto' takes the forecast for storms from "
+      "the last three months on (future ones too, up to 16 days ahead) and the "
+      "historical archive for older storms. 'single_run' replays one past model "
+      "run as it was issued, for a true forecast hindcast.", "choice", level="advanced",
+      when=(_OPENMETEO,),
+      choice_labels={
+          "auto": "auto — pick from the storm date (recommended)",
+          "forecast": "forecast — the last 3 months and up to 16 days ahead",
+          "historical": "historical — reanalysis (ERA5 …) and analyses, 1940 to a few days ago",
+          "historical_forecast": "historical_forecast — archived high-resolution "
+                                 "model runs, since about 2021",
+          "single_run": "single_run — one model run as issued (a forecast hindcast), "
+                        "since 2024",
+      }),
+    P("OPENMETEO_MODEL", "rain", "Open-Meteo weather model",
+      "The model whose rain to use, by its Open-Meteo name. 'best_match' is "
+      "Open-Meteo's fixed rule, not a fit to observations: for each hour it takes "
+      "the finest-grid model that covers the place, and it works everywhere. "
+      "Others include ecmwf_ifs, gfs_seamless, icon_seamless, "
+      "ukmo_seamless, jma_seamless and era5 (historical); the MRRpy manual lists "
+      "the ones that give rain.",
+      "text", level="advanced", when=(_OPENMETEO,), example="ecmwf_ifs025"),
+    P("OPENMETEO_RUN", "rain", "Model run to replay (UTC)",
+      "For a single model run: when the run was issued, 'YYYY-MM-DD HH:MM' in UTC "
+      "(ECMWF IFS runs at 00, 06, 12 and 18). It must not be after the storm "
+      "start; the gap between the two is the forecast lead time.", "datetime",
+      level="advanced", optional=True, none_label="the storm start",
+      when=(_OPENMETEO, ("OPENMETEO_SOURCE", In("single_run"))),
+      example="2024-09-25 00:00"),
+    P("OPENMETEO_MINUTELY_15", "rain", "Open-Meteo rain every 15 minutes",
+      "Read rain every 15 minutes instead of every hour. Only Central Europe and "
+      "North America have true 15-minute model rain; elsewhere each hour is "
+      "spread evenly. Not available from the historical archive.", "bool",
+      level="advanced", when=(_OPENMETEO,)),
+    P("OPENMETEO_POINT_SPACING_M", "rain", "Open-Meteo sampling distance",
+      "Distance between the points where rain is requested. Each point is served "
+      "by the model cell it falls in and points in the same cell merge, so a "
+      "spacing below the model's cell size samples every cell. It is widened "
+      "automatically if more than 400 points would be needed.", "float", unit="m",
+      level="advanced", min=0, min_exclusive=True, when=(_OPENMETEO,),
+      example=2500.0),
+    P("OPENMETEO_BBOX_BUFFER_M", "rain", "Margin around the basin for Open-Meteo",
+      "Extra distance around the basin when requesting rain, so cells near its "
+      "edge have model points on every side.", "float", unit="m",
+      level="advanced", min=0, when=(_OPENMETEO,), example=20000.0),
+    P("PRECIP_OPENMETEO_FORCE_DOWNLOAD", "rain", "Download Open-Meteo again",
+      "Ignore Open-Meteo rain cached in the results folder and download it again, "
+      "for example to get the latest forecast. A changed date, model or archive "
+      "downloads again anyway.", "bool", level="advanced", when=(_OPENMETEO,)),
     P("RAIN_SNOW_ELEV_LOW", "rain", "All rain below elevation",
       "Snow partition: at or below this elevation all precipitation is rain. "
       "Set it with the 'all snow above' elevation; set both equal for a sharp "
@@ -870,6 +932,7 @@ NOT_ASKED = {
     "ROUTING_WATERSHED_MASK_PATH": "derived from OUTPUT_DIR",
     "WATERSHED_GEOJSON": "derived from OUTPUT_DIR",
     "PRECIP_IMERG_DIR": "derived from OUTPUT_DIR",
+    "PRECIP_OPENMETEO_DIR": "derived from OUTPUT_DIR",
     "HYDROGRAPH_CSV": "derived from OUTPUT_DIR",
     "MASS_BALANCE_CSV": "derived from OUTPUT_DIR",
     "SERVES_TARGET_DATE": "legacy, not read by the model (EVENT_START_UTC sets the date)",
@@ -896,6 +959,11 @@ STARTING_POINTS = [
     StartingPoint("satellite_event",
                   "A real storm with satellite rainfall (NASA IMERG, needs Earth Engine)",
                   {"PRECIP_METHOD": "imerg_thiessen"}),
+    StartingPoint("weather_model_event",
+                  "A real or forecast storm with weather-model rain (Open-Meteo, "
+                  "internet, no account)",
+                  {"PRECIP_METHOD": "openmeteo_thiessen"},
+                  focus=("EVENT_START_UTC",)),
     StartingPoint("gauge_event",
                   "A real storm with my rain-gauge records",
                   {"PRECIP_METHOD": "thiessen"}),

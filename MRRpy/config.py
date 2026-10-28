@@ -50,7 +50,10 @@ def _data_path(filename):
 # saved YAML/JSON and logging stay human-readable.  Order is API — appending is
 # safe, reordering renumbers the codes.
 _ENUM_CHOICES = {
-    "PRECIP_METHOD":         ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw"],
+    "PRECIP_METHOD":         ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw",
+                              "openmeteo_thiessen", "openmeteo_idw"],
+    "OPENMETEO_SOURCE":      ["auto", "forecast", "historical", "historical_forecast",
+                              "single_run"],
     "RUNOFF_SOURCE":         ["none", "coefficient", "raster", "scs_cn", "physical"],
     "RUNOFF_CN_SOURCE":      ["scalar", "gee", "raster"],
     "RUNOFF_CN_AMC":         ["i", "ii", "iii"],
@@ -189,7 +192,7 @@ class Config:
     DEM_LAKE_MASK = None
 
     # EVENT_START_UTC: "YYYY-MM-DD HH:MM" UTC — single source of truth for the
-    # event date (SERVES antecedent query + IMERG download window).
+    # event date (SERVES antecedent query + IMERG / Open-Meteo download window).
     EVENT_START_UTC = None
     TOTAL_SIMULATION_TIME_HOURS: float = 96.0
     IMERG_UTC_OFFSET_HOURS: float = 5.75           # NPT = UTC+5:45
@@ -218,6 +221,7 @@ class Config:
     RAIN_DURATION_HOURS: float = 3.0
 
     # 'uniform' | 'thiessen' | 'idw' | 'imerg_thiessen' | 'imerg_idw'
+    # | 'openmeteo_thiessen' | 'openmeteo_idw'
     PRECIP_METHOD: str = "uniform"
     PRECIP_GAUGE_FILE: str = ""
     PRECIP_TIMESERIES_FILE: str = ""
@@ -232,6 +236,20 @@ class Config:
     IMERG_BAND: str = "precipitation"
     PRECIP_IMERG_FORCE_DOWNLOAD: bool = False
     IMERG_BBOX_BUFFER_M: float = 11132.0
+
+    # Open-Meteo source (used when PRECIP_METHOD='openmeteo_thiessen'/'openmeteo_idw').
+    # Weather-model rain over HTTP, no account; window = EVENT_START_UTC … +
+    # TOTAL_SIMULATION_TIME_HOURS (UTC).  See MRRpy/core/precip/openmeteo.py.
+    # 'auto' → forecast API for recent/future storms, historical archive before.
+    # 'auto'|'forecast'|'historical'|'historical_forecast'|'single_run'
+    OPENMETEO_SOURCE: str = "auto"
+    OPENMETEO_MODEL: str = "best_match"
+    OPENMETEO_RUN = None               # single_run: issue time (UTC); None → EVENT_START_UTC
+    OPENMETEO_MINUTELY_15: bool = False      # 15-min data (not in the historical archive)
+    OPENMETEO_POINT_SPACING_M: float = 5000.0
+    OPENMETEO_BBOX_BUFFER_M: float = 10000.0
+    PRECIP_OPENMETEO_DIR: str = "output/openmeteo/"
+    PRECIP_OPENMETEO_FORCE_DOWNLOAD: bool = False
 
     # Rain/snow elevation partition (event models): above the freezing level,
     # precip falls as snow and does NOT run off during the event.  Effective
@@ -573,6 +591,7 @@ class Config:
         self.ROUTING_WATERSHED_MASK_PATH = os.path.join(d, "watershed.tif")
         self.WATERSHED_GEOJSON = os.path.join(d, "watershed.geojson")
         self.PRECIP_IMERG_DIR = os.path.join(d, "imerg/")
+        self.PRECIP_OPENMETEO_DIR = os.path.join(d, "openmeteo/")
         self.HYDROGRAPH_CSV = os.path.join(d, "hydrograph.csv")
         self.MASS_BALANCE_CSV = os.path.join(d, "mass_balance.csv")
 
@@ -803,6 +822,36 @@ class Config:
                 errors.append("IMERG precipitation needs GEE_PROJECT (or the GEE_PROJECT env var).")
             if not (self.EVENT_START_UTC or self.IMERG_START_LOCAL):
                 errors.append("IMERG precipitation needs EVENT_START_UTC (or IMERG_START_LOCAL).")
+
+        # Open-Meteo needs only the event date (no account); the historical
+        # archive is hourly, so 15-minute data must come from another API.
+        if self.PRECIP_METHOD in ("openmeteo_thiessen", "openmeteo_idw"):
+            if not self.EVENT_START_UTC:
+                errors.append("Open-Meteo precipitation needs EVENT_START_UTC (the storm start, UTC).")
+            if self.OPENMETEO_MINUTELY_15 and self.OPENMETEO_SOURCE == "historical":
+                errors.append(
+                    "OPENMETEO_MINUTELY_15 is not available from OPENMETEO_SOURCE="
+                    "'historical' (hourly only); use 'historical_forecast' or 'auto'.")
+            if self.OPENMETEO_SOURCE == "single_run":
+                if self.OPENMETEO_MODEL == "best_match":
+                    errors.append(
+                        "OPENMETEO_SOURCE='single_run' needs a specific OPENMETEO_MODEL "
+                        "(e.g. ecmwf_ifs), not 'best_match'.")
+                try:
+                    from datetime import datetime as _dt
+                    _late = bool(self.OPENMETEO_RUN and self.EVENT_START_UTC) and (
+                        _dt.fromisoformat(str(self.OPENMETEO_RUN).strip())
+                        > _dt.fromisoformat(str(self.EVENT_START_UTC).strip()))
+                except ValueError:
+                    _late = False
+                    errors.append(f"OPENMETEO_RUN is not a date: '{self.OPENMETEO_RUN}'.")
+                if _late:
+                    errors.append(
+                        "OPENMETEO_RUN must not be after EVENT_START_UTC: a model run "
+                        "only forecasts rain after it was issued.")
+            if not self.OPENMETEO_POINT_SPACING_M or self.OPENMETEO_POINT_SPACING_M <= 0:
+                errors.append(
+                    f"OPENMETEO_POINT_SPACING_M must be > 0 (got {self.OPENMETEO_POINT_SPACING_M}).")
 
         if self.RUNOFF_SOURCE == "physical":
             mechs = self.RUNOFF_MECHANISMS
