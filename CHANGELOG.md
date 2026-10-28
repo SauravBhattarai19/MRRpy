@@ -12,6 +12,8 @@
   the runoff settings, the river sizes, the roughness, or the soil (e.g. a
   missing Ksat raster that fell back to the plain value). With both settings
   off, results are unchanged.
+- `make_flood_maps(cfg, out_dir=, cache_dir=)`: several flood areas from one
+  routed run, each with its own folder and DEM cache.
 - The SERVES soil parameters a run fetches from Earth Engine are saved in the
   results folder (`serves_params_<date>_<band>.json`) and reused by later runs
   that ask for the same ones, so a rerun no longer needs Earth Engine for them.

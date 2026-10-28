@@ -22,8 +22,15 @@ import os
 from .snapshot import load_snapshot, snapshot_path
 
 
-def make_flood_maps(cfg, log=print):
-    """Flood maps for a routed run → {name: path} (the 'inundation' stage)."""
+def make_flood_maps(cfg, log=print, out_dir=None, cache_dir=None):
+    """
+    Flood maps for a routed run → {name: path} (the 'inundation' stage).
+
+    The maps go to *out_dir* (default ``{OUTPUT_DIR}/inundation``) and the DEM cut
+    out for them is kept in *cache_dir* (default the same folder), so several
+    areas can be drawn one after another from the same routed run, each with its
+    own ``INUNDATION_AREA``, folder and cache.
+    """
     from .finegrid import fine_flood_grid, model_dem_grid
     from .mapping import FloodModel, routing_flood_grid, write_outputs
 
@@ -35,7 +42,7 @@ def make_flood_maps(cfg, log=print):
                                        meta["ncols"], Affine(*meta["transform"]),
                                        arrays["s_rows"], arrays["s_cols"], arrays["z"])
     choice = str(getattr(cfg, "INUNDATION_DEM", "auto") or "auto")
-    grid, reason = fine_flood_grid(cfg, arrays, meta, log=log)
+    grid, reason = fine_flood_grid(cfg, arrays, meta, log=log, cache_dir=cache_dir)
     if grid is None:
         if choice not in ("auto", "model_grid"):
             raise RuntimeError(f"Flood maps: INUNDATION_DEM '{choice}' could not be used — "
@@ -43,11 +50,11 @@ def make_flood_maps(cfg, log=print):
         log(f"  Flood maps     |  model grid, {meta['cell_size']:g} m ({reason})")
         # The run's own original DEM with least-cost flow paths; the routing
         # network itself only when that DEM is not in the results folder.
-        grid, why = model_dem_grid(cfg, arrays, meta, log=log)
+        grid, why = model_dem_grid(cfg, arrays, meta, log=log, cache_dir=cache_dir)
         if grid is None:
             log(f"  Flood maps     |  using the routing network ({why})")
             grid = routing_flood_grid(arrays, meta)
-    out_dir = os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "inundation")
+    out_dir = out_dir or os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "inundation")
     area = getattr(cfg, "INUNDATION_AREA", None)
     if str(getattr(cfg, "INUNDATION_METHOD", "hand") or "hand") == "2d":
         from .model2d import make_2d_flood_maps
