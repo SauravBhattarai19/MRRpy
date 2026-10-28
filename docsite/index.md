@@ -94,8 +94,9 @@ pip install "MRRpy[notebook]"
 
     ---
 
-    A design storm, your rain gauges (Thiessen or inverse-distance), or NASA
-    IMERG satellite rain for any date since 2000. Optional snow line.
+    A design storm, your rain gauges (Thiessen or inverse-distance), NASA
+    IMERG satellite rain for any date since 2000, or weather-model rain from
+    Open-Meteo, past or forecast. Optional snow line.
     [Chapter 3](manual/precipitation.md)
 
 -   :material-water-percent:{ .lg .middle } __Runoff__

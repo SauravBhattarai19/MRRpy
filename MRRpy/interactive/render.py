@@ -250,6 +250,16 @@ def describe_run(cfg):
         how = "nearest gauge" if m == "thiessen" else "distance-weighted"
         out.append(f"Rain: gauge records ({how}) from "
                    f"{v['PRECIP_TIMESERIES_FILE'] or '(rainfall CSV not set)'}.")
+    elif m.startswith("openmeteo"):
+        start = v["EVENT_START_UTC"] or "(storm start not set)"
+        how = "nearest grid point" if m == "openmeteo_thiessen" else "distance-weighted"
+        src = {"auto": "forecast or past weather by date", "forecast": "forecast",
+               "historical": "historical archive",
+               "historical_forecast": "archived model runs",
+               "single_run": f"the run issued {v['OPENMETEO_RUN'] or start} UTC"
+               }[v["OPENMETEO_SOURCE"]]
+        out.append(f"Rain: Open-Meteo {v['OPENMETEO_MODEL']} weather-model rain "
+                   f"({src}, {how}) from {start} UTC.")
     else:
         start = v["EVENT_START_UTC"] or "(storm start not set)"
         out.append(f"Rain: NASA IMERG satellite rain from {start} UTC.")
@@ -334,8 +344,12 @@ def describe_run(cfg):
         out.append(f"Earth Engine ({state}): needed for " + ", ".join(need) + ".")
     if maybe:
         out.append("Earth Engine (optional): " + ", ".join(maybe) + ".")
+    web = str(v["PRECIP_METHOD"]).startswith("openmeteo")
+    if web:
+        out.append("Internet: needed to download the Open-Meteo rain (free, no account).")
     if not uses:
-        out.append("Runs fully offline (no Earth Engine downloads).")
+        out.append("No Earth Engine downloads." if web
+                   else "Runs fully offline (no Earth Engine downloads).")
     return out
 
 

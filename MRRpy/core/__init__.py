@@ -10,7 +10,8 @@ dem_processing : DEM reprojection, sink filling, D8 flow direction /
 routing        : the routing engine — terrain derivation, per-step
                  hydraulic kernels, surface parameter fields, the
                  kinematic/diffusive-wave router and run reporting.
-precip         : uniform / Thiessen / IDW / IMERG precipitation engines.
+precip         : uniform / Thiessen / IDW / IMERG / Open-Meteo precipitation
+                 engines.
 runoff         : runoff generation — coefficient, raster, SCS-CN and the
                  VSA-OPM mechanics (+ Green-Ampt, impervious) with the
                  soil-parameter resolution.

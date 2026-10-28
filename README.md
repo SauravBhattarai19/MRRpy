@@ -75,6 +75,9 @@ water depth, river flow drawn wider where it is larger, and the hydrograph.*
 - **Satellite forcing** — optional DEM download, IMERG rainfall, GCN250 curve
   numbers, SERVES soil deficit, SoilGrids, HiHydroSoil, LULC/LCZ via Google Earth
   Engine (every option also works offline with your own files).
+- **Weather-model rain and forecasts** — hourly or 15-minute rain from
+  [Open-Meteo](https://open-meteo.com) (ECMWF, GFS, ICON, ERA5, …) for any past
+  storm or a forecast up to 16 days ahead; no account needed.
 - **CPU / GPU** — one code path (NumPy or CuPy), automatic CPU fallback.
 - **Interfaces for every taste** — Python API, a `MRRpy` CLI with a
   question-and-answer `wizard`, a Jupyter form, and a QGIS plugin, all driven

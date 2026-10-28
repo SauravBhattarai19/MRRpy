@@ -22,6 +22,7 @@ Inputs (key ones — all config.py parameters are exposed)
                     (HAND) or a 2D flood simulation over one area
   INUNDATION_AREA : west, south, east, north (degrees) — the area to map / simulate
   PRECIP_METHOD   : uniform | thiessen | idw | imerg_thiessen | imerg_idw
+                    | openmeteo_thiessen | openmeteo_idw
   RUNOFF_SOURCE   : none | coefficient | raster | scs_cn | physical
   ROUTING_SCHEME  : kinematic | diffusive | muskingum | dynamic | diffusive_implicit
   BACKEND         : cpu | gpu
@@ -132,7 +133,8 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
     # Output
     HYDROGRAPH_CSV = "HYDROGRAPH_CSV"
 
-    _PRECIP_OPTIONS = ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw"]
+    _PRECIP_OPTIONS = ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw",
+                       "openmeteo_thiessen", "openmeteo_idw"]
     _RUNOFF_OPTIONS = ["none", "coefficient", "raster", "scs_cn", "physical"]
     _BACKEND_OPTIONS = ["cpu", "gpu"]
     _INFIL_EXCESS_OPTIONS = ["off", "on"]
@@ -410,7 +412,7 @@ class RoutingAlgorithm(QgsProcessingAlgorithm):
             defaultValue="", optional=True
         ))
         self.addParameter(QgsProcessingParameterString(
-            self.EVENT_START_UTC, "Event start UTC 'YYYY-MM-DD HH:MM' (IMERG/SERVES)",
+            self.EVENT_START_UTC, "Event start UTC 'YYYY-MM-DD HH:MM' (IMERG/Open-Meteo/SERVES)",
             defaultValue="", optional=True
         ))
 

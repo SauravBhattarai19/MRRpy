@@ -34,7 +34,7 @@ The form works step by step, laid out like the QGIS plugin, with **Next** and
 |---|---|
 | 1 Terrain | *I have a DEM file* → its path, **or** *Download a DEM* → area (typed or drawn on the map), dataset, resolution; then the basin outlet and the results folder |
 | 2 Coordinate system | the projection in metres (one click uses your outlet's UTM zone) |
-| 3 Precipitation | *Design storm*, *Rain gauges* or *Satellite (IMERG)* first; only then Thiessen or IDW, and the files or storm date that source needs |
+| 3 Precipitation | *Design storm*, *Rain gauges*, *Satellite (IMERG)* or *Weather models (Open-Meteo)* first; only then Thiessen or IDW, and the files or storm date that source needs |
 | 4 Runoff | the runoff method; for *physical*, each ticked process opens its own settings |
 | 5 Routing | the routing method (its settings open underneath), simulation time, ground roughness, river channels, inflows |
 | 6 Outputs and run | gauges, maps, CPU/GPU, then check, save and run |
@@ -106,9 +106,10 @@ change everything afterwards.
 
      0  A design storm on my own DEM (works offline)  (current)
      1  A real storm with satellite rainfall (NASA IMERG, needs Earth Engine)
-     2  A real storm with my rain-gauge records
-     3  Route a known inflow hydrograph downstream (no rain)
-     4  Start from the defaults and choose everything myself
+     2  A real or forecast storm with weather-model rain (Open-Meteo, internet, no account)
+     3  A real storm with my rain-gauge records
+     4  Route a known inflow hydrograph downstream (no rain)
+     5  Start from the defaults and choose everything myself
 Starting point [0 design_storm]:
 ```
 

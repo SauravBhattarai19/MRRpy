@@ -322,6 +322,26 @@ def test_earth_engine_fields_follow_the_options(dialog):
     cfg = Config()
     precip.write_to_config(cfg)
     assert cfg.EVENT_START_UTC                      # required date is always written
+    # Open-Meteo → event date only (no project, no UTC offset)
+    precip.method_combo.setCurrentIndex(precip._METHODS.index("openmeteo_idw"))
+    assert shown(precip._grp_ee, precip) and shown(precip.event_dt, precip)
+    assert not shown(precip.gee_project, precip) and not shown(precip.utc_offset, precip)
+
+
+def test_openmeteo_settings_round_trip(dialog):
+    precip = dialog.tab_precip
+    cfg = Config(PRECIP_METHOD="openmeteo_idw", EVENT_START_UTC="2024-09-27 00:00",
+                 OPENMETEO_SOURCE="single_run", OPENMETEO_MODEL="ecmwf_ifs",
+                 OPENMETEO_RUN="2024-09-25 00:00",
+                 OPENMETEO_MINUTELY_15=True, OPENMETEO_POINT_SPACING_M=2500.0,
+                 PRECIP_IDW_POWER=3.0)
+    precip.apply_config(cfg)
+    out = Config()
+    precip.write_to_config(out)
+    for name in ("PRECIP_METHOD", "EVENT_START_UTC", "OPENMETEO_SOURCE", "OPENMETEO_MODEL",
+                 "OPENMETEO_RUN",
+                 "OPENMETEO_MINUTELY_15", "OPENMETEO_POINT_SPACING_M", "PRECIP_IDW_POWER"):
+        assert getattr(out, name) == getattr(cfg, name), name
 
 
 def test_delineation_links_to_dem_stage(dialog):

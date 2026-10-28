@@ -4,6 +4,8 @@ precip_input.py
 Modular precipitation engine for the kinematic-wave router.
 
 Supported PRECIP_METHOD values:  'uniform' | 'thiessen' | 'idw'
+                                 | 'imerg_thiessen' | 'imerg_idw'
+                                 | 'openmeteo_thiessen' | 'openmeteo_idw'
 
 Internal unit: m/s (rate), converted from mm-depth/interval at load time.
 Spatial weights are precomputed once at initialisation; per-step cost is
@@ -124,11 +126,18 @@ class PrecipEngine:
             from ...gee.imerg_gee import ensure_imerg_data
             gauge_file, ts_file = ensure_imerg_data(cfg)
             self._init_gauge(cfg, grid_data, gauge_file, ts_file)
+        elif self._method in ('openmeteo_thiessen', 'openmeteo_idw'):
+            # Open-Meteo source: weather-model grid cells as pseudo-gauges
+            # (forecast or past weather), downloaded over HTTP — no account.
+            self._weight_method = self._method.split('_', 1)[1]   # 'thiessen'|'idw'
+            from .openmeteo import ensure_openmeteo_data
+            gauge_file, ts_file = ensure_openmeteo_data(cfg)
+            self._init_gauge(cfg, grid_data, gauge_file, ts_file)
         else:
             raise ValueError(
                 f"PRECIP_METHOD='{self._method}' is not recognised. "
                 "Choose 'uniform', 'thiessen', 'idw', 'imerg_thiessen', "
-                "or 'imerg_idw'."
+                "'imerg_idw', 'openmeteo_thiessen' or 'openmeteo_idw'."
             )
 
         print(f"  PrecipEngine    |  method={self._method}"
@@ -195,7 +204,8 @@ class PrecipEngine:
         The weighting scheme is taken from ``self._weight_method`` ('thiessen' or
         'idw'), which is independent of ``self._method`` (so an 'imerg_*' source can
         reuse this path).  ``gauge_file``/``timeseries_file`` are passed explicitly
-        because IMERG reads from a downloaded folder rather than PRECIP_GAUGE_FILE.
+        because IMERG / Open-Meteo read from a downloaded folder rather than
+        PRECIP_GAUGE_FILE.
         """
         gauges_df = pd.read_csv(gauge_file).set_index('gauge_id')
         ts_df     = pd.read_csv(timeseries_file)
