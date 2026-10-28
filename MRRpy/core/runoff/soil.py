@@ -84,14 +84,29 @@ def resolve_sd_params(cfg, cell_size):
         gee_lc_source = 'worldcover'
 
     # Watershed-level SD_max + phi + diagnostics (scalars; no partition).
-    gee_result = compute_opm_params(
-        watershed_geojson_path=geojson, cell_size=cell_size,
-        lookup_csv_path=lut, target_date=target_date,
-        satellite=sat, search_window=window, soil_depth_band=band,
-        project=project,
-        sd_reducer=getattr(cfg, 'VSA_SD_REDUCER', 'mean'),
-        lulc_source=gee_lc_source,
-    )
+    # Kept in the results folder like the deficit raster, so a later run (or a
+    # run without Earth Engine) gets the same values without asking again.
+    reducer = getattr(cfg, 'VSA_SD_REDUCER', 'mean')
+    request = {'target_date': target_date, 'satellite': sat, 'search_window': window,
+               'band': band, 'lookup': os.path.basename(str(lut)), 'reducer': reducer,
+               'lulc_source': gee_lc_source, 'cell_size': float(cell_size),
+               'watershed_mtime': (os.path.getmtime(geojson)
+                                   if os.path.exists(geojson) else None)}
+    cache = os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'),
+                         f'serves_params_{target_date}_{band}.json')
+    gee_result = _read_params_cache(cache, request)
+    if gee_result is None:
+        gee_result = compute_opm_params(
+            watershed_geojson_path=geojson, cell_size=cell_size,
+            lookup_csv_path=lut, target_date=target_date,
+            satellite=sat, search_window=window, soil_depth_band=band,
+            project=project,
+            sd_reducer=reducer,
+            lulc_source=gee_lc_source,
+        )
+        _write_params_cache(cache, request, gee_result)
+    else:
+        print(f"  SERVES params  |  reused {os.path.basename(cache)}")
 
     if gee_result is not None:
         sd_max = gee_result['sd_max']
@@ -370,3 +385,29 @@ def usda_psi_m(sand, clay):
         P['silt'], P['sandy_loam'], P['loamy_sand'], P['sand'],
     ]
     return np.select(conds, psi_cm, default=P['loam']) / 100.0   # cm → m
+
+
+def _read_params_cache(path, request):
+    """Saved SERVES watershed parameters for *request*, or None."""
+    import json
+    try:
+        with open(path) as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return saved.get('result') if saved.get('request') == request else None
+
+
+def _write_params_cache(path, request, result):
+    """Save the SERVES watershed parameters as JSON (never a failure)."""
+    import json
+    if not result:
+        return
+    try:
+        text = json.dumps({'request': request, 'result': result}, indent=1,
+                          default=lambda o: o.item() if hasattr(o, 'item') else str(o))
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write(text)
+    except (OSError, TypeError, ValueError):
+        pass

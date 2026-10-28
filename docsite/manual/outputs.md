@@ -268,6 +268,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
 | `fields/fields.npz`, `fields/fields_meta.json` | maps over time |
 | `max_<var>.tif`, `time_of_max_<var>_hours.tif` | peak maps, from `export_peak_maps` |
 | `inundation/` | flood depth and extent maps ([6.3](#63-flood-depth-and-extent-maps)) |
+| `state/state_<hours>h.npz`, `state/index.csv` | saved model states, when asked for ([6.8](#68-carrying-on-from-a-saved-state)) |
 | `mrrpy_run.log` | the run's log (notebook form) |
 | the terrain files | see [1.3 Results folder](terrain.md#13-results-folder) |
 | downloads | `raw_dem_gee.tif`, `imerg/`, `cn_gcn250_amc*.tif`, `ksat_hihydro_*.tif`, `deficit_serves_*.tif`, … reused by later runs |
@@ -281,3 +282,29 @@ plot_hydrograph(out)       # Q(t) at the outlet, peak marked
 plot_watershed(out)        # the DEM with the basin outline
 plot_mass_balance(out)     # input, outflow, storage, error
 ```
+
+## 6.8 Carrying on from a saved state
+
+Every run starts **dry**, or with the baseflow, and the soil at its starting
+moisture. A run can instead start from the **state** an earlier run saved: the
+water in every river and on every slope, and the soil water of the runoff model.
+The two runs together then give the same flow as one long run. This is how a
+live forecast carries the basin from one update to the next.
+
+- The earlier run saves states at the hours listed in `SAVE_STATE_AT_HOURS`
+  (a Python or YAML list, e.g. `[24, 48]`; each must be an output time). Each
+  goes into `state/state_<hours>h.npz`, and `state/index.csv` lists them with
+  the clock time when `EVENT_START_UTC` is set.
+- The new run names one of them in `RESTART_FROM`. Its rain, inflow
+  hydrographs and storm times count from **its own** start, as in every run, so
+  its rain file begins where the saved state ends.
+
+A state only fits **the same model**. MRRpy refuses one saved on another grid
+(DEM, outlet or resolution), with other runoff settings, with Muskingum–Cunge
+routing for another method or the other way round, or with different river
+sizes, roughness or soil values. The message names what changed. A soil or
+land-cover file that has gone missing is the usual cause, because MRRpy then
+uses the plain setting instead. The kinematic and the two diffusive methods
+can carry on from each other's states. The dynamic method cannot use states yet.
+
+<!-- settings: RESTART_FROM -->

@@ -949,6 +949,12 @@ PARAMS = [
     P("INUNDATION_ANIMATION", "outputs", "Flood animation (GIF)",
       "Also write an animation of the largest flood spreading and draining, with "
       "the hydrograph beside it.", "bool", when=(_FLOOD,)),
+    P("RESTART_FROM", "outputs", "Start from a saved state",
+      "A state file saved by an earlier run on the same grid (in its state "
+      "folder). The run starts with that run's water in the rivers and the soil "
+      "instead of dry. Rain, inflow and storm times still count from this run's "
+      "start.", "file", level="advanced", optional=True, none_label="start dry",
+      example="earlier_run/state/state_00048.00h.npz"),
     P("MASS_BALANCE_REPORT", "outputs", "Water-balance report",
       "Check that no water is lost or created, and write mass_balance.csv.",
       "bool", level="advanced"),
@@ -980,6 +986,8 @@ NOT_ASKED = {
     "MASS_BALANCE_CSV": "derived from OUTPUT_DIR",
     "SERVES_TARGET_DATE": "legacy, not read by the model (EVENT_START_UTC sets the date)",
     "MAX_DEPTH_M": "display-only, not read by the model",
+    "SAVE_STATE_AT_HOURS": "a list of save times set by programs such as the live "
+                           "forecast (MRRpy forecast); documented there",
 }
 
 

@@ -209,9 +209,10 @@ def _lookup_point(cfg, grid_data=None):
     """(lat, lon) where the HydroATLAS lookup is made: OUTPUT_POINT, or — for a
     whole-DEM run, which has no outlet point — the main exit (largest drainage)."""
     if grid_data is not None and grid_data.get("whole_dem"):
+        from ..io_utils import routing_grid_crs
         from .terrain import cell_latlon
         lat, lon = cell_latlon(grid_data["outlet_rc"], grid_data["transform"],
-                               getattr(cfg, "TARGET_CRS_EPSG", None))
+                               routing_grid_crs(cfg))
         return (lat, lon) if lat is not None else None
     return getattr(cfg, "OUTPUT_POINT", None) or None
 

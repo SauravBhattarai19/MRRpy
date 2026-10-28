@@ -43,6 +43,7 @@ import rasterio
 
 from ...utils import gpu_utils
 from ..io_utils import align_raster_to_dem
+from .state import StateMixin
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -64,14 +65,16 @@ def register(name):
 # ═════════════════════════════════════════════════════════════════════════════
 # Mode contract
 # ═════════════════════════════════════════════════════════════════════════════
-class RunoffMode:
+class RunoffMode(StateMixin):
     """
     Base contract every runoff mode satisfies.
 
     Subclasses implement ``get_effective_1d`` and, if stateful, ``update_state``
     and ``is_active``.  ``__init__`` receives the config object and the
     ``grid_data`` dict from ``initialise_grid`` and stores the common grid
-    handles (including ``xp``, the numpy/cupy array module).
+    handles (including ``xp``, the numpy/cupy array module).  A stateful mode
+    also lists its step-to-step attributes in ``state_attrs`` (and its fixed
+    per-cell parameters in ``param_attrs``) so restart files can carry them.
     """
 
     #: registered mode name; set by @register-decorated subclasses.
@@ -140,6 +143,9 @@ class CoefficientMode(RunoffMode):
         sr, sc = _to_np(self._s_rows), _to_np(self._s_cols)
         Cf = np.clip(np.asarray(arr, dtype=np.float64)[sr, sc], 0.0, 1.0)
         self._Cf_1d = self._xp.asarray(Cf)
+
+    def param_attrs(self):
+        return ('_Cf_1d',)
 
     def get_effective_1d(self, t_seconds, rain_1d):
         return rain_1d * self._Cf_1d
@@ -253,6 +259,12 @@ class ScsCnMode(RunoffMode):
         self._Pe_mm_old   = xp.zeros(self._n_cells, dtype=np.float64)
         self._delta_Pe_m  = xp.zeros(self._n_cells, dtype=np.float64)  # [m] this step
         self._scs_rate_ms = xp.zeros(self._n_cells, dtype=np.float64)  # [m/s]
+
+    def state_attrs(self):
+        return ('_cumrain_mm', '_Pe_mm_old', '_delta_Pe_m', '_scs_rate_ms')
+
+    def param_attrs(self):
+        return ('_S_1d', '_Ia_1d')
 
     # ── CN resolution ─────────────────────────────────────────────────────────
     def _resolve_cn(self, cfg):
@@ -393,6 +405,16 @@ class RunoffEngine:
 
     def is_active(self, t_seconds):
         return self._impl.is_active(t_seconds)
+
+    # ── Restart files (core/routing/restart.py) ───────────────────────────────
+    def get_state(self):
+        return self._impl.get_state()
+
+    def set_state(self, state):
+        self._impl.set_state(state)
+
+    def get_params(self):
+        return self._impl.get_params()
 
     def __getattr__(self, name):
         # Only reached for attributes not found normally → forward to the mode

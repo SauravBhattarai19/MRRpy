@@ -550,6 +550,16 @@ class Config:
     INUNDATION_DEM_SCALE_M = None    # [m] download resolution; None → the dataset's native
     INUNDATION_ANIMATION: bool = True     # flood_animation.gif of the largest flood
 
+    # ── Restart: carry on from a saved model state ───────────────────────────
+    # RESTART_FROM: a state file written by an earlier run (SAVE_STATE_AT_HOURS);
+    # the run starts with that run's water and soil instead of dry.  Rain, inflow
+    # and storm times still count from THIS run's start.  None → start dry.
+    RESTART_FROM = None
+    # Hours after the start at which to save the state, e.g. [24, 48]: written to
+    # {OUTPUT_DIR}/state/state_<hours>h.npz.  Each must be a multiple of
+    # OUTPUT_INTERVAL_SECONDS.  None → no state saved.
+    SAVE_STATE_AT_HOURS = None
+
     # ═════════════════════════════════════════════════════════════════════════
     # 10. COMPUTE BACKEND
     # ═════════════════════════════════════════════════════════════════════════
@@ -992,6 +1002,31 @@ class Config:
             if self.INUNDATION_DEM_SCALE_M is not None and not float(self.INUNDATION_DEM_SCALE_M) > 0:
                 errors.append(f"INUNDATION_DEM_SCALE_M must be > 0 or None "
                               f"(got {self.INUNDATION_DEM_SCALE_M}).")
+
+        # Restart files: the dynamic scheme (under development) has no restart,
+        # and saves must land on output times (the steps are clamped there).
+        if self.RESTART_FROM or self.SAVE_STATE_AT_HOURS:
+            if self.ROUTING_SCHEME == "dynamic":
+                errors.append("RESTART_FROM / SAVE_STATE_AT_HOURS do not work with "
+                              "ROUTING_SCHEME='dynamic' yet.")
+        if self.RESTART_FROM and not os.path.isfile(str(self.RESTART_FROM)):
+            errors.append(f"RESTART_FROM file not found: {self.RESTART_FROM!r}")
+        if self.SAVE_STATE_AT_HOURS:
+            try:
+                hours = [float(h) for h in self.SAVE_STATE_AT_HOURS]
+            except (TypeError, ValueError):
+                hours = None
+                errors.append(f"SAVE_STATE_AT_HOURS must be a list of hours "
+                              f"(got {self.SAVE_STATE_AT_HOURS!r}).")
+            interval = float(self.OUTPUT_INTERVAL_SECONDS or self.TIME_STEP_SECONDS)
+            for h in hours or ():
+                k = h * 3600.0 / interval
+                if not 0 < h <= float(self.TOTAL_SIMULATION_TIME_HOURS) + 1e-9:
+                    errors.append(f"SAVE_STATE_AT_HOURS: {h:g} h is outside the run "
+                                  f"(0 – {float(self.TOTAL_SIMULATION_TIME_HOURS):g} h).")
+                elif abs(k - round(k)) > 1e-6:
+                    errors.append(f"SAVE_STATE_AT_HOURS: {h:g} h is not an output time "
+                                  f"(a multiple of OUTPUT_INTERVAL_SECONDS={interval:g} s).")
 
         if errors:
             raise ValueError(

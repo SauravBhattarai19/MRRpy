@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Added
+- **Restart files.** `SAVE_STATE_AT_HOURS` saves the model state (the water in
+  every cell, the Muskingum–Cunge flows, the step size, the runoff model's soil
+  water) at output times, and `RESTART_FROM` starts a run from one. A run split
+  in two gives the same flow as one long run: exactly with fixed steps, to
+  round-off with adaptive steps. A state that does not fit the model is
+  refused, and the message names what changed: the grid, the routing method,
+  the runoff settings, the river sizes, the roughness, or the soil (e.g. a
+  missing Ksat raster that fell back to the plain value). With both settings
+  off, results are unchanged.
+- The SERVES soil parameters a run fetches from Earth Engine are saved in the
+  results folder (`serves_params_<date>_<band>.json`) and reused by later runs
+  that ask for the same ones, so a rerun no longer needs Earth Engine for them.
 - **Flood depth and extent maps.** With `INUNDATION_MAP: true` a run turns the
   routed river flow into flood maps, drawn on the real ground: the DEM as it
   is, with no channel cut below it (a DEM's river surface is already the water
@@ -78,11 +90,17 @@
   Processing algorithm.
 
 ### Fixed
+- Virtual gauges, the whole-DEM exit report, the HydroATLAS lookup point and the
+  saved maps' CRS now use the routing DEM's own CRS (as inflow points already
+  did), not `TARGET_CRS_EPSG`. Nothing changes when the two are the same.
 - Earth Engine downloads (terrain, soils, land cover) no longer hang a run on a
   stalled connection: a connection silent for 5 minutes is dropped and the
   download tried again, then reported.
 
 ### Tests
+- `tests/test_restart.py`: split against continuous runs for kinematic, implicit
+  diffusive and Muskingum–Cunge routing × no runoff, SCS-CN and physical runoff
+  (GA recovery on and off), and refused states.
 - `tests/test_inundation.py`: HAND and reaches on hand-built networks; the
   rating curve equals the model's channel section with no floodplain and the
   analytic V-valley; full runs (peak = hydrograph peak for kinematic,

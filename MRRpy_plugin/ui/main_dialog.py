@@ -650,6 +650,7 @@ def _write_config_py(cfg: Config, path: str):
             "SAVE_FIELDS", "FIELD_VARS", "FIELD_STRIDE", "FIELD_OUTPUT_DIR",
             "INUNDATION_MAP", "INUNDATION_METHOD", "INUNDATION_AREA", "INUNDATION_DEM",
             "INUNDATION_DEM_PATH", "INUNDATION_DEM_SCALE_M", "INUNDATION_ANIMATION",
+            "RESTART_FROM", "SAVE_STATE_AT_HOURS",
         ]),
         ("10. COMPUTE BACKEND", [
             "BACKEND", "GPU_PRECISION",
