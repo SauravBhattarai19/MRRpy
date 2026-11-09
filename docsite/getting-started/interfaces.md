@@ -203,9 +203,10 @@ and **5 · Results**. The [user manual](../manual/index.md#one-setting-five-ways
 says which tab holds each chapter's settings, and every example has a *QGIS
 plugin* tab.
 
-**Install** (any operating system): build the zip from a checkout with
-`./build_windows_plugin.sh`, then in QGIS **Plugins → Manage and Install Plugins →
-Install from ZIP** → `MRRpy_plugin.zip`. The zip includes a copy of MRRpy. The
+**Install** (any operating system): download `MRRpy_plugin.zip` from the
+[latest release](https://github.com/SauravBhattarai19/MRRpy/releases/latest) (or
+build it from a checkout with `./build_windows_plugin.sh`), then in QGIS
+**Plugins → Manage and Install Plugins → Install from ZIP** → `MRRpy_plugin.zip`. The zip includes a copy of MRRpy. The
 first time, the **Dependencies** button installs the Python packages QGIS is
 missing, into QGIS's own Python. Details are in `MRRpy_plugin/README.md`.
 

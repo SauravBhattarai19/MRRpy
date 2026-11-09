@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "MRRpy"
 version = "1.0.0"
-description = "MRRpy (Multi-Mechanism Runoff and Routing): a distributed, physics-based hydrological + hydrodynamic model — DEM preprocessing, gauge/IMERG precipitation, VSA + Green-Ampt + impervious runoff generation, and kinematic/diffusive-wave/Muskingum–Cunge/local-inertial dynamic-wave routing, with optional Google Earth Engine forcing and CPU/GPU backends."
+description = "MRRpy (Multi-Mechanism Runoff and Routing): distributed, physics-based rainfall-runoff, flood routing and flood maps from a DEM and a storm: gauge, NASA IMERG or weather-model rain; SCS-CN, Green-Ampt, VSA and impervious runoff; kinematic, Muskingum-Cunge or semi-implicit diffusive routing; HAND or 2D flood depth maps; optional Google Earth Engine data and NVIDIA GPU."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -15,6 +15,7 @@ authors = [
 keywords = [
     "hydrology", "hydrodynamics", "watershed", "runoff", "flood",
     "routing", "kinematic wave", "diffusive wave", "muskingum-cunge",
+    "flood mapping", "inundation", "HAND", "flood forecasting",
     "VSA", "OPM", "green-ampt", "GIS", "rainfall-runoff", "earth-engine",
 ]
 classifiers = [
