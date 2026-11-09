@@ -4,6 +4,7 @@
 
 /* KaTeX display math centering */
 .katex-display { overflow-x: auto; overflow-y: hidden; }
+.chapter-body td code { overflow-wrap: anywhere; }
 
 /* Prose overrides for chapter pages */
 .chapter-body {
@@ -20,3 +21,6 @@
 .chapter-body code:not(pre code) {
   @apply bg-slate-100 text-slate-800 px-1 py-0.5 rounded text-sm;
 }
+/* typography adds literal backticks around inline code; hide them */
+.chapter-body code::before,
+.chapter-body code::after { content: none; }

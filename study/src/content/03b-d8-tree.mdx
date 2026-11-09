@@ -1,0 +1,152 @@
+# Interlude — The D8 Tree
+
+### How a grid becomes a river network a computer can walk
+
+Every cell in a D8 grid hands its water to exactly one neighbour, the way every person has exactly one mother. Follow those links and you get a family tree. The outlet is the ancestor every cell shares, and the headwaters are the youngest branches. This interlude is about that tree. MRRpy's routing chapters (4–6) all run on it, and each one uses it in a different way.
+
+---
+
+## 3b.1 — From Arrows to a Tree
+
+Chapter 1 gave every cell one D8 arrow. Redraw the same cells with the arrows as branches, and the map becomes a **tree**: outlet at the bottom, headwaters at the top. **Pick a cell** on either side to see its one way down and everything upstream of it.
+
+<GridToTreeWidget />
+
+Nothing was added to the map to make this tree. "One arrow out of every cell" *is* the tree. A cell with two or more arrows coming in is a **confluence** (◇), and a cell the water leaves from is a **root** (▢).
+
+---
+
+## 3b.2 — The Tree on the Terrain
+
+The same tree, drawn on the 3-D surface. Line width is the **Strahler order** from Chapter 2, so the main stem stands out from the headwater twigs.
+
+<Tree3DWidget />
+
+---
+
+## 3b.3 — Why It Is a Tree (and Not Just Any Network)
+
+D8 makes flow direction a **function**: each active cell $i$ has at most one downstream cell $d(i)$,
+
+$$
+d:\ \text{cells} \;\to\; \text{cells} \,\cup\, \{\varnothing\}, \qquad \#\{\text{arrows}\} \;=\; \#\{\text{cells}\} - \#\{\text{roots}\}.
+$$
+
+MRRpy's pit fill (Ch 1 §1.3) gives every cell an arrow toward a cell the fill reached *earlier*, so following the arrows always goes back in time and can never return to where it started. One arrow out and no loops is exactly the definition of a **rooted tree** (a *forest* when there are several outlets), with every edge pointing toward the root.
+
+---
+
+## 3b.4 — From a Map to One Line of Cells
+
+The routing code never looks at the 2-D map. It keeps the active cells in **one list**, sorted so that every cell comes before the cell it drains to, plus one integer array `ds_idx`: the list position of each cell's downstream cell.
+
+<FlattenOrderWidget />
+
+MRRpy sorts by **flow accumulation** (`terrain.topological_order`) rather than by elevation (Ch 1 §1.4). Accumulation always works:
+
+$$
+\text{FA}\bigl(d(i)\bigr) \;\ge\; \text{FA}(i) + 1 \quad\Longrightarrow\quad \texttt{ds\_idx}[i] \;>\; i \quad \text{for every cell.}
+$$
+
+The downstream cell counts everything the upstream cell counts, plus itself. Elevation only gives $z_{d(i)} \le z_i$, and on a flat, "equal" cannot tell upstream from downstream.
+
+---
+
+## 3b.5 — One Tree, Three Walks
+
+All three channel schemes use the same `ds_idx`, but they need it for different reasons. **Shuffle the visiting order** in each tab to see which schemes care.
+
+<ThreeWalksWidget />
+
+| Scheme | One step walks the tree… | Order inside a step | Why |
+|---|---|---|---|
+| Kinematic, diffusive (Ch 4–5) | all cells at once, then `scatter_add` to `ds_idx` | does **not** matter | a sum is the same in any order; confluences need atomic adds on a GPU |
+| Muskingum–Cunge (Ch 4) | one cell at a time, `I2[ds] += O2[i]` | upstream first, **required** | a cell's new outflow needs its new inflow from this same step |
+| Semi-implicit (Ch 6) | fold every cell into its parent, then back-substitute | upstream first, **required** | `ds_idx[i] > i` is an elimination order with no fill-in |
+
+---
+
+## 3b.6 — The Matrix of a Tree
+
+One implicit step couples each cell's new water level only to its own downstream cell, through a conductance $K_{i,d(i)}$ (Ch 6 §6.2):
+
+$$
+M_{ii} = \frac{A_i}{\Delta t} + \sum_{\text{faces of } i} K, \qquad M_{i,d(i)} = M_{d(i),i} = -K_{i,d(i)}, \qquad \text{all other } M_{ij} = 0 .
+$$
+
+Eliminating cell $i$ changes only its parent's row, because the parent is the only neighbour $i$ has further down the list:
+
+$$
+M_{pp} \leftarrow M_{pp} - \frac{M_{ip}^2}{M_{ii}}, \qquad b_p \leftarrow b_p - \frac{M_{ip}\, b_i}{M_{ii}}, \qquad p = d(i).
+$$
+
+Each fold touches one entry, so no new non-zeros appear (zero **fill-in**), and the whole solve is two $O(n)$ passes. A cell that sends water two ways (MFD, D∞) has two neighbours further down. Folding it links them to each other, and that is the fill-in a general sparse solver has to manage.
+
+---
+
+## 3b.7 — Can the Walk Run in Parallel?
+
+The explicit walk is one parallel pass. The tree sweep goes one cell at a time, but cells whose children are all done could be folded together. Grouping by that gives **levels**:
+
+<LevelScheduleWidget />
+
+$$
+\text{level}(i) = \begin{cases} 0 & \text{if nothing flows into } i \\ 1 + \max\limits_{j:\,d(j)=i} \text{level}(j) & \text{otherwise} \end{cases}
+\qquad \#\text{rounds} = \text{longest flow path (in cells)} + 1 .
+$$
+
+---
+
+## 3b.8 — For Grad Students
+
+**Terminology.** A D8 network is a directed acyclic graph (DAG), but a very special one: out-degree $\le 1$ makes it an **in-forest** (anti-arborescence). Every in-forest is a DAG; most DAGs are not in-forests. MFD/D∞ routing (Ch 1 §1.6) gives a general DAG. Explicit routing works on any DAG, because a scatter does not care about the shape, but the zero-fill-in tree elimination needs out-degree $\le 1$. That is why MRRpy's semi-implicit scheme is tied to D8.
+
+**Where the D8 arrows come from in MRRpy.** The default `pyflwdir` engine does not take the steepest $\Delta z/d_k$ of Ch 1. Its priority-flood fill (Wang & Liu 2006) sends each cell to the neighbour the flood reached it from: the lowest cell already reached, with no $\sqrt{2}$ weighting for diagonals. On a flat this drains every cell toward the spill point and never makes a loop, at the cost of some odd-looking paths across flats (see the flat plateau above). The alternative `pysheds` engine uses the steepest-slope rule of Ch 1. The widgets on this page run a port of the `pyflwdir` routine.
+
+**Ties.** NumPy's `argsort` does not promise an order among cells with *equal* accumulation. This never matters, because a cell and its downstream cell can never have equal accumulation.
+
+**Mass conservation.** `scatter_add` moves volumes `Q_out·dt`, not rates, so what leaves one cell arrives downstream exactly, even when $\Delta t$ changes between steps (Ch 4 §4.5).
+
+**Complexity.**
+
+| Step | Algorithm | Cost |
+|---|---|---|
+| Build the tree | fill + D8 (priority queue) | $O(N \log N)$ |
+| Topological order | sort by accumulation | $O(N \log N)$, once per run |
+| `ds_idx` | one lookup per cell | $O(N)$, once per run |
+| Explicit step | elementwise + scatter | $O(N)$ work, one parallel pass |
+| Muskingum–Cunge step | upstream-first sweep | $O(N)$, sequential |
+| Semi-implicit solve | fold + back-substitute | $O(N)$, sequential; $O(\text{levels})$ rounds if level-scheduled |
+
+**Code map.**
+
+| Idea on this page | MRRpy |
+|---|---|
+| D8 arrows and pit fill | `core/dem_processing.py` → `pyflwdir.dem.fill_depressions` |
+| Upstream-first list (`sorted_rows`, `sorted_cols`) | `core/routing/terrain.py::topological_order` |
+| `ds_idx` | `core/routing/terrain.py::build_downstream_map` |
+| Strahler order | `core/routing/terrain.py::compute_strahler_order` |
+| Explicit walk (scatter) | `core/routing/router.py::run_time_loop` + `utils/gpu_utils.py::scatter_add` |
+| Muskingum–Cunge sweep | `core/routing/hydraulics.py::_mc_sweep` |
+| Tree solve | `core/routing/implicit.py::_sweep_solve` |
+| Children list (race-free assembly) | `core/routing/implicit.py::_build_children_csr` |
+| All of it, once per run | `core/routing/router.py::initialise_grid` |
+
+The browser code behind these widgets (`study/src/lib/tree/tree.ts`) is a line-by-line port of these functions. `npm run check-tree` checks it against MRRpy's own output.
+
+---
+
+## Summary
+
+| Concept | Rule | Key point |
+|---|---|---|
+| D8 tree | one arrow out of every cell | arrows = cells − roots; a forest if there are several outlets |
+| Confluence | two or more arrows in | arrows merge, never split |
+| Topological order | sort by flow accumulation, small first | `ds_idx[i] > i` always; elevation fails on flats |
+| `ds_idx` | list position of the downstream cell | the only "map" routing needs |
+| Explicit walk | compute all, then `scatter_add` | order-free; atomic adds at confluences |
+| Muskingum–Cunge walk | upstream-first sweep | order required (needs this step's inflow) |
+| Tree solve | fold leaves into parents, back-substitute | $O(n)$, zero fill-in; needs D8 (not MFD) |
+| Levels | 1 + highest child level | parallel rounds = longest flow path + 1 |
+
+**Chapter 4 →** Kinematic-wave routing: what each cell actually computes when it is visited.

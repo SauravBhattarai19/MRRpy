@@ -18,10 +18,10 @@ export default function Chapter04() {
 
       <div className="not-prose mt-16 pt-8 border-t border-slate-200 flex justify-between">
         <Link
-          href="/chapter/03-rainfall-runoff"
+          href="/chapter/03b-d8-tree"
           className="flex items-center gap-2 rounded-xl border border-slate-200 hover:border-sky-300 text-slate-600 hover:text-sky-600 px-5 py-3 text-sm font-semibold transition-colors"
         >
-          ← Chapter 3 — Rainfall–Runoff
+          ← Interlude — The D8 Tree
         </Link>
         <Link
           href="/chapter/05-diffusive-wave"

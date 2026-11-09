@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "export": "next build && next export"
+    "export": "next build && next export",
+    "check-flood": "node scripts/check_flood_lib.ts",
+    "check-tree": "node scripts/check_tree_lib.ts"
   },
   "dependencies": {
     "@mdx-js/loader": "^3.0.1",

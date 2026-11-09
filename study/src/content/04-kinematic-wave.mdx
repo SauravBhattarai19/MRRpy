@@ -1,8 +1,3 @@
----
-title: "Chapter 4 — Kinematic-Wave Routing"
-chapter: 4
----
-
 # Chapter 4 — Kinematic-Wave Routing
 
 A flood wave arrives at the downstream gauge minutes before the water molecules that triggered it. Grasping why — and how to compute it — is the foundation of every 1-D flood routing model, including the OPM engine this course is built around.
@@ -244,9 +239,9 @@ Four routes, from cheapest-to-bolt-on to most general:
 1. **Local / block time stepping** — hold every cell at $C\approx C_\text{target}$ so the numerical diffusion is uniform and minimal; the flat reaches stop over-damping. Direct cure, GPU-costly (above), needs conservative inter-Δt coupling.
 2. **Higher-order / TVD spatial flux** (Lax–Wendroff, MUSCL + a limiter: minmod / van Leer / superbee) — cancels the leading $O(\Delta x)(1-C)$ diffusion, leaving $O(\Delta x^2)$ error that barely depends on $C$. So even a small-$C$ flat cell stops over-smearing — **while keeping the GPU-friendly global $\Delta t$**. For a GPU code this is usually the best value.
 3. **Muskingum–Cunge — make the numerical diffusion *be* the physics.** Instead of fighting $\alpha$, calibrate it: choose the weighting $X=\tfrac12\!\left(1-\dfrac{Q}{B S_0\,c\,\Delta x}\right)$ so the scheme's numerical diffusivity *equals* the hydraulic diffusivity $D=Q/2BS_0$. Then the "artificial" diffusion is no longer artificial — it is exactly the attenuation a diffusive wave should have. The most physically honest answer.
-4. **Implicit (Preissmann θ)** — unconditionally stable, so $\Delta t$ is chosen for accuracy, not CFL; the fast cell no longer forces a tiny global step. But on OPM's branching DAG the confluences break the cheap bidiagonal solve (Chapter 5 §5.6), it needs a general sparse solver at $10^4$–$10^6$ cells, and OPM's own implicit attempt was removed for divergence.
+4. **Implicit (Preissmann θ)** — unconditionally stable, so $\Delta t$ is chosen for accuracy, not CFL; the fast cell no longer forces a tiny global step. Confluences break the plain bidiagonal/Thomas solve, but a D8 network is a **tree**, so an exact $O(n)$ tree solve with no fill-in still exists (Interlude §3b.6). MRRpy has it as the semi-implicit diffusive scheme (Chapter 6). Its costs are Picard iterations and a sequential sweep, not a general sparse solver.
 
-**Verdict.** Global explicit $\Delta t$ is the right *GPU* call, but it leaves the flat-reach diffusion on the table. The cheapest physics-preserving upgrade that *stays* on the GPU is a higher-order/TVD flux (route 2); the most physically honest is Muskingum–Cunge matched diffusion (route 3); the most general is block/class LTS (route 1) — none of which require the full implicit rewrite of route 4.
+**Verdict.** Global explicit $\Delta t$ is the right *GPU* call, but it leaves the flat-reach diffusion on the table. The cheapest physics-preserving upgrade that *stays* on the GPU is a higher-order/TVD flux (route 2); the most physically honest is Muskingum–Cunge matched diffusion (route 3); the most general is block/class LTS (route 1) — none of which need the implicit tree solve of route 4 (Chapter 6).
 
 ---
 
@@ -312,7 +307,7 @@ Try the four presets — **Mountain Torrent** gives small Courant numbers and sh
 
 **OPM flux limiter derivation** — $Q_\text{out} \leq A\,\Delta x/\Delta t$ is equivalent to capping the effective Courant number at 1 for each cell independently, introducing $O((1-C)\,\Delta x)$ numerical diffusion; the global mass balance closes to floating-point precision.
 
-**GPU vectorisation** — topological sort converts the 2-D routing problem to a 1-D array operation; CuPy `scatter_add` propagates all cell discharges to downstream neighbours in a single vectorised kernel, achieving $\sim\!250$ steps/s on $10^6$ cells.
+**GPU vectorisation** — the topological sort turns the 2-D grid into a 1-D list plus `ds_idx` (Interlude §3b.4); CuPy `scatter_add` propagates all cell discharges to downstream neighbours in a single vectorised kernel, with atomic adds at confluences, achieving $\sim\!250$ steps/s on $10^6$ cells. The visiting order does not matter inside an explicit step; Muskingum–Cunge is different and must sweep upstream-first (Interlude §3b.5).
 
 **Adaptive $\Delta t$ (§4.5 in full)** — OPM uses *global* adaptive stepping, $\Delta t = C_\text{target}\,\Delta x / c_\text{max}$ ($C_\text{target}=0.85$) with a 1.5× growth limiter — recomputed each step from the fastest wet cell. *Local* (per-cell) stepping would hold $C\approx C_\text{target}$ everywhere and kill the flat-reach over-diffusion, but breaks SIMT lockstep; the GPU-tractable middle ground is block/class LTS (power-of-two $\Delta t$ bins). Physics-preserving alternatives without LTS: a TVD/higher-order flux (removes the $O(\Delta x)(1-C)$ term, keeps global $\Delta t$) or Muskingum–Cunge matched diffusion ($D_\text{num}\!\equiv\!D_\text{phys}$).
 

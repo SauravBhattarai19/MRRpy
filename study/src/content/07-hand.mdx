@@ -1,0 +1,225 @@
+# Chapter 7 — HAND: Flood Maps from a Rating Curve
+
+Chapters 4–6 end with a discharge at every river cell. A flood warning needs one more answer: **how far does that water spread, and how deep is it at my house?** This chapter builds MRRpy's quick answer, HAND, for every river of a basin at once. Every widget runs MRRpy's own algorithm, ported to your browser and checked against the package cell by cell.
+
+---
+
+## 7.1 — One Number per Cell
+
+Follow the water from any cell downhill until it reaches a river. How high the cell stands above that river is its **HAND**, the *Height Above the Nearest Drainage*. If the river rises $y$ metres, every cell with HAND below $y$ is under water.
+
+<HandStageWidget />
+
+That is the whole method: one number per cell, one water level per stretch of river. The rest of the chapter answers two questions the widget took for granted. Which ground are the heights measured on, and what level $y$ does a given discharge produce?
+
+---
+
+## 7.2 — The Same Valley in 3-D
+
+The valley floor slopes downstream, so no single flat lake could cover it. Measured from its own river, the floor drops onto one level. Rotate the view and switch between the two.
+
+<Hand3DWidget />
+
+---
+
+## 7.3 — Core Math
+
+Follow the D8 path from cell $i$ to the first river cell it reaches, its **nearest drain** $\delta(i)$. One pass through the cells, outlets first, finds every drain:
+
+$$
+\delta(i) = \begin{cases} i & i \text{ is a river cell}\\ \delta(\mathrm{ds}(i)) & \text{otherwise}\end{cases}
+$$
+
+HAND is measured on the **original** DEM, above the river bed $z^{\text{bed}}$ (§7.5):
+
+$$
+\mathrm{HAND}_i = \max\!\left(z_i - z^{\text{bed}}_{\delta(i)},\ 0\right)
+$$
+
+If reach $r$ stands at stage $y_r$, each cell's depth and water level are
+
+$$
+d_i = \max\!\left(y_{r(i)} - \mathrm{HAND}_i,\ 0\right), \qquad \eta_i = z^{\text{bed}}_{\delta(i)} + y_{r(i)}
+$$
+
+A cell counts as flooded at $d_i \ge 1$ cm. The method rests on four assumptions:
+
+| | Assumption | Consequence |
+|---|---|---|
+| A1 | One flat water level per reach (~1 km) | levels jump between reaches |
+| A2 | Steady, uniform flow (Manning) | nothing downstream can raise a level: no backwater (§7.10) |
+| A3 | Land is connected to water *along flow paths* | a cell floods from the river it drains to, not the one across a ridge (the red ring in §7.1) |
+| A4 | The DEM's river surface is the zero | nothing is dug below it (§7.9) |
+
+---
+
+## 7.4 — Which Ground? Never the Filled DEM
+
+Routing (Chapter 1) fills pits so that water always runs downhill. On a flood map that is a disaster: filling turns the land behind every bridge and DEM "dam" into a flat, and D8 crosses flats in straight lines. Kathmandu's first HAND maps had flood stripes running straight across the city for exactly this reason.
+
+<LeastCostWidget />
+
+MRRpy finds flow paths **without changing any elevation**, using a least-cost search (Metz et al., 2011, as in GRASS `r.watershed`). Start from the outlets and reach cells lowest first; each cell drains to the cell it was reached from. A depression is entered over its lowest rim cell, which is exactly where a real river passes under a bridge. Priority-flood *filling* (Barnes et al., 2014) runs the same search and also raises each cell to the level of the cell it came from. That extra step is what makes the flats.
+
+---
+
+## 7.5 — Clearing the River Path, Never Digging
+
+A DEM's river profile is not smooth: bridges, DEM "dams" in gorges narrower than a cell, and noise make it rise here and there. HAND is measured from a bed made **non-increasing downstream by lowering only** (thalweg conditioning, as in NOAA's HAND workflow). One pass from the headwaters does it:
+
+$$
+z^{\text{bed}}_{\mathrm{ds}(i)} \leftarrow \min\!\left(z^{\text{bed}}_{\mathrm{ds}(i)},\ z^{\text{bed}}_i\right)\quad\text{for every river cell } i
+$$
+
+<CarveBedWidget />
+
+Only the one-cell river path is touched. The land beside it keeps its real elevation, and no channel is cut below the DEM.
+
+---
+
+## 7.6 — A Stage Needs a Stretch of River
+
+A water level belongs to a stretch of river, a **reach**. MRRpy cuts the network at confluences into *links*, then cuts each link into $\lceil L/1000\,\text{m}\rceil$ equal pieces, so no short leftover reach is created. Every cell takes the reach of its nearest drain.
+
+<ReachWidget />
+
+Each reach gets its length $L_r$, mean bed slope $S_r$, mean channel width $W_r$ and roughness $n^{\text{ch}}_r$, and its discharge $Q_r(t)$: the largest routed flow at any of its cells.
+
+---
+
+## 7.7 — The Rating Curve: From Discharge to Stage
+
+What stage $y$ does a reach reach when it carries $Q$? HAND answers from the terrain alone, assuming steady uniform flow. Spread every cell of the reach into a **strip** as long as the reach and $a_i/L$ wide, standing at its HAND. At stage $y$ each strip is a wide channel of depth $y-\mathrm{HAND}_i$. Adding up their Manning conveyances, plus the river strip of width $W$, gives
+
+$$
+\boxed{\;Q_r(y) = \sqrt{S_r}\left[\frac{W_r\,y^{5/3}}{n^{\text{ch}}_r} \;+\; \frac{1}{L_r}\sum_{i:\ \mathrm{HAND}_i<y} \frac{a_i\,(y-\mathrm{HAND}_i)^{5/3}}{n_i}\right]\;}
+$$
+
+<RatingCurveWidget />
+
+MRRpy tabulates $Q_r(y)$ every 5 cm up to 10 m, then every 20 cm, and extends the table to 20, 40, 80 and finally 100 m if a flood needs it. The routed $Q_r(t)$ is turned into $y_r(t)$ by bisection on the table and linear interpolation between brackets. The river strip carries nothing at $y=0$, so any flow at all gives a positive stage, and a river always shows as water.
+
+---
+
+## 7.8 — Levels: Main Rivers Back Up into Side Streams
+
+At a tributary's mouth, D8 sends the nearby land to the tributary, whose small flow gives a low stage. But the main river's water backs up into the mouth. MRRpy repeats the whole computation with only the main stems as drains (drainage area $\ge A_{\text{ch}}\cdot 10^k$) and keeps the deepest water of all levels.
+
+<LevelsWidget />
+
+$$
+d_i = \max_k\, d_i^{(k)}, \qquad \text{level } k:\ \text{drains} = \{\text{river cells with } A \ge A_{\text{ch}}\cdot 10^k\},\quad A_{\text{ch}}\cdot 10^k < \tfrac12 A_{\max}
+$$
+
+This is a spatial maximum, not a backwater computation. At Khokana it changed the flooded area by only 0.5 %, but locally it fills the tributary mouths.
+
+---
+
+## 7.9 — Why There Is No Channel Below the DEM
+
+The routing grid needs a channel: a 90 m cell is far wider than most rivers, so the router gives river cells a slot of width $W$ and bankfull depth $D$. The first MRRpy HAND maps reused that slot *below* the DEM. But the DEM's river cell is already a water surface, so the river was counted twice. Every flow up to bankfull vanished into the slot, and the maps came out about $D$ too low.
+
+<SlotWidget />
+
+| Place | Evidence | With the slot | On the DEM as it is |
+|---|---|---|---|
+| Kathmandu, Sept 2024 | share of observed flood traces covered | 0.25 | **0.54** |
+| Bagmati above the confluence | share of traces covered | 0.09 | **0.76** |
+| Montpelier, July 2023 | high-water marks inside the flood | 45 % | **78 %** |
+| Pearl River, Feb 2020 | Sentinel-2 water covered | 0.28 | **0.49** |
+
+Both HAND and the 2D model (Chapter 8) therefore draw on the ground **as it is**. The routing keeps its channel (`CHANNEL_*` settings) because a 90 m grid needs one; the maps do not, and they offer no channel options.
+
+---
+
+## 7.10 — Where HAND Fails: A Gorge Downstream
+
+Assumption A2 has a price. A reach's level comes from its own slope and section, so a narrowing downstream cannot raise it. Here a 9 km valley narrows to a 90 m gorge, and the same flood is mapped by HAND and by MRRpy's 2D model.
+
+<GorgeWidget />
+
+| Limit | What it means on a map |
+|---|---|
+| No backwater from narrowings | water ponding behind a gorge or bridge is missed (up to 1.2 m above) |
+| Slope sensitivity | stage $\propto S^{-0.3}$: a DEM slope 2× too steep lowers the level ~19 % |
+| No travel time inside the map | each reach takes the routed flow at that moment |
+| Steps between reaches | levels jump at reach boundaries |
+| Connection by flow path | a low ridge can keep land dry that water would cross |
+| Small streams in cities | many false alarms in built-up land (false-alarm ratio 0.86 in the first Kathmandu check) |
+
+Measured against Sentinel-2 flood traces in Kathmandu (September 2024), HAND covered **57 %** of the observed flood and the 2D model **86 %**. HAND is the right tool to screen a whole basin in seconds; Chapter 8 builds the 2D model for the town you care about.
+
+---
+
+## 7.11 — For Graduate Students: Algorithms, Cost and Sensitivity
+
+**Least-cost directions** (`network.least_cost_d8`):
+
+```text
+for every valid edge cell (or next to no-data) that may drain: push (z, seq, cell)
+while the heap is not empty:
+    pop the lowest cell i                 # ties: insertion order
+    for each of the 8 neighbours j not yet reached:
+        mark j reached; d8[j] = direction j → i
+        push (z[j], seq++, j)             # filling would push max(z[j], z[i])
+```
+
+Every cell is pushed and popped once: $O(N\log N)$. Directions are a tree rooted at the outlets, so `ds`, a downstream-first breadth-first `order` and drainage areas follow in $O(N)$.
+
+**Single-pass recurrences.** Nearest drain (outlets first), carve-only bed (headwaters first) and reach segmentation (headwaters first) are each one sweep over `order`. They rely on the property Chapter 6 used for its tree solve: a cell's downstream neighbour is always visited before it, or always after.
+
+**Why strips and not one section?** The NOAA/GeoFlood workflow (Zheng et al., 2018) lumps a reach into one section, $A(y)=V(y)/L$, with one hydraulic radius from the wetted bed area. With a deep river beside a shallow floodplain, a single $R$ under-represents the river and over-represents the floodplain. Strips give every part its own depth, as in a divided-channel computation. For a V-shaped valley with side slope $s_v$ the strips have an exact continuous limit,
+
+$$
+Q(y) = \frac{\sqrt S}{n}\int_0^{y}\frac{2}{s_v}(y-h)^{5/3}\,dh = \frac{\sqrt S}{n}\,\frac{2}{s_v}\,\frac{3}{8}\,y^{8/3},
+$$
+
+which MRRpy's discrete curve matches to 0.4 % at 30 m cells and 0.0 % at 10 m (second tab of the rating-curve widget).
+
+**Slope sensitivity.** For a wide channel $Q \propto y^{5/3}S^{1/2}$, so at fixed $Q$
+
+$$
+y \propto S^{-3/10}, \qquad \frac{\partial \ln y}{\partial \ln S} = -0.3 .
+$$
+
+At the Khokana gauge, HAND's water level rose only 0.65–0.71 times as much as the gauge's own rating between two flows. The 30 m bed slope there (0.0020) is steeper than the routing network's (0.0007); undoing that with the $-0.3$ power, $(0.0020/0.0007)^{0.3} = 1.37$, gives $0.67 \times 1.37 \approx 0.92$, close to the 0.91–0.96 found on the routing network. Removing the slot shifts a curve; it does not change its shape.
+
+**Time products in $O(N\log T)$.** For each reach MRRpy stores the running maximum of $y_r(t)$ and the sorted series. One binary search per cell then gives the first time water exceeds 10 cm ($y_r(t) > \mathrm{HAND}_i + 0.1$) and the hours spent above it, instead of an $O(NT)$ scan.
+
+**How this chapter's code is checked.** `study/scripts/export_ch7.py` runs MRRpy on the synthetic valley, and `study/scripts/check_flood_lib.ts` runs the browser port on the same DEM. They agree on every flow direction, HAND value, reach, rating curve and stage, and on the depth map to 0.05 mm.
+
+---
+
+## 7.12 — Using It in MRRpy
+
+```yaml
+INUNDATION_MAP: true        # record flows during routing, draw maps at the end
+INUNDATION_METHOD: hand     # quick levels for every river (Chapter 8: 2d)
+INUNDATION_DEM: auto        # e.g. FABDEM 30 m for a 90 m run; or file + INUNDATION_DEM_PATH
+```
+
+A run writes `inundation/flood_depth_max.tif`, `flood_extent_max.tif/.geojson`, the time of the deepest water, the first time wet, hours wet, `hand.tif`, `reaches.csv`, `rating_curves.csv` and an animation. `MRRpy run -c run.yaml --stages inundation` redraws the maps with new settings without routing again. The user manual's chapter on outputs and Example 12 have the details.
+
+---
+
+## 7.13 — Chapter Summary
+
+| Concept | One line |
+|---|---|
+| HAND | height of a cell above the river its water drains to: $\max(z_i - z^{\text{bed}}_{\delta(i)}, 0)$ |
+| Flood depth | $d_i = \max(y_{r(i)} - \mathrm{HAND}_i, 0)$, flooded from 1 cm |
+| Ground | the original DEM; flow paths by least-cost search, never a filled DEM |
+| River bed | lowered only, until it never rises downstream; nothing dug below the DEM |
+| Reach | links cut into equal pieces of about 1 km; every cell joins the reach of its drain |
+| Rating curve | strips of width $a_i/L$ at their HAND plus the river strip: $Q_r(y)$ from the terrain alone |
+| Levels | main stems as drains too; keep the deepest water |
+| No slot | a channel below the DEM counts the river twice: maps 1–8 m too low |
+| Limits | no backwater, slope-sensitive ($y \propto S^{-0.3}$), steps between reaches |
+| Cost | $O(N\log N)$ for the directions, $O(N)$ for everything else: seconds for a whole basin |
+
+**Key takeaways:**
+
+1. HAND turns a flood map into one number per cell and one water level per reach; any discharge becomes a map by a table lookup.
+2. Heights must come from the DEM as it is. Filling creates flats that D8 crosses in straight lines, and a channel below the DEM counts the river twice. Both mistakes were made, measured and removed.
+3. The rating curve comes from the terrain itself: strips of floodplain, each at its own depth, plus the river strip.
+4. HAND cannot see backwater. Where a gorge, a bridge or a narrowing holds the water back, the 2D model of Chapter 8 is needed.

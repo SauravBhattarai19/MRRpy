@@ -38,6 +38,20 @@ import VSAMapWidget           from './src/components/runoff/VSAMapWidget';
 import GreenAmptWidget        from './src/components/runoff/GreenAmptWidget';
 import RunoffDecompositionWidget from './src/components/runoff/RunoffDecompositionWidget';
 import PerPolygonVSAWidget    from './src/components/runoff/PerPolygonVSAWidget';
+import HandStageWidget        from './src/components/flood/HandStageWidget';
+import Hand3DWidget           from './src/components/flood/Hand3DWidget';
+import LeastCostWidget        from './src/components/flood/LeastCostWidget';
+import CarveBedWidget         from './src/components/flood/CarveBedWidget';
+import ReachWidget            from './src/components/flood/ReachWidget';
+import RatingCurveWidget      from './src/components/flood/RatingCurveWidget';
+import LevelsWidget           from './src/components/flood/LevelsWidget';
+import SlotWidget             from './src/components/flood/SlotWidget';
+import GorgeWidget            from './src/components/flood/GorgeWidget';
+import GridToTreeWidget       from './src/components/tree/GridToTreeWidget';
+import Tree3DWidget           from './src/components/tree/Tree3DWidget';
+import FlattenOrderWidget     from './src/components/tree/FlattenOrderWidget';
+import ThreeWalksWidget       from './src/components/tree/ThreeWalksWidget';
+import LevelScheduleWidget    from './src/components/tree/LevelScheduleWidget';
 
 export function useMDXComponents(components: MDXComponents): MDXComponents {
   return {
@@ -80,6 +94,20 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     GreenAmptWidget,
     RunoffDecompositionWidget,
     PerPolygonVSAWidget,
+    HandStageWidget,
+    Hand3DWidget,
+    LeastCostWidget,
+    CarveBedWidget,
+    ReachWidget,
+    RatingCurveWidget,
+    LevelsWidget,
+    SlotWidget,
+    GorgeWidget,
+    GridToTreeWidget,
+    Tree3DWidget,
+    FlattenOrderWidget,
+    ThreeWalksWidget,
+    LevelScheduleWidget,
     ...components,
   };
 }

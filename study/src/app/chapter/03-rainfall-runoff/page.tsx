@@ -24,10 +24,10 @@ export default function Chapter03() {
           ← Chapter 2 — Watershed Delineation
         </Link>
         <Link
-          href="/chapter/04-kinematic-wave"
+          href="/chapter/03b-d8-tree"
           className="flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-5 py-3 text-sm font-semibold transition-colors"
         >
-          Chapter 4 — Kinematic-Wave Routing →
+          Interlude — The D8 Tree →
         </Link>
       </div>
     </article>

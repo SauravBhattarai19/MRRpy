@@ -135,6 +135,12 @@ a visible "Model Unstable" warning instead of crashing.
 | Raised (pit-filled) cell | Orange `#fdba74` |
 | Low outlet | Blue `#3b82f6` |
 | Stream channel | Dark navy (high FA) |
+| Flood water depth (Ch 7–9) | light blue `#DCEBF7` → navy `#0B2F5C` (`depthRGB` in `components/flood/ui.tsx`) |
+| Height / HAND under flood maps | dark brown → pale yellow (YlOrBr reversed), never blue |
+| Reaches, links, categories | Okabe–Ito / Tol palette (`QUAL`), always with a text legend |
+
+Flood widgets never carry information by colour alone: wet-only-because-of, hit/miss and
+similar classes also get a pattern or a text label.
 
 ---
 
@@ -167,7 +173,42 @@ study/
 | # | Title | Status |
 |---|-------|--------|
 | 1 | Digital Elevation Models & Flow Direction | ✅ Done |
-| 2 | Watershed Delineation | Planned |
-| 3 | Rainfall–Runoff (VSA + Green-Ampt) | Planned |
-| 4 | Kinematic-Wave & Diffusive-Wave Routing | Planned |
-| 5 | SERVES/GEE Integration & Dynamic Parameters | Planned |
+| 2 | Watershed Delineation | ✅ Done |
+| 3 | Rainfall–Runoff (VSA + Green-Ampt) | ✅ Done |
+| 3b | Interlude: The D8 Tree (grid → tree → `ds_idx` → three walks) | ✅ Done |
+| 4 | Kinematic-Wave Routing | ✅ Done |
+| 5 | Diffusive-Wave Routing | ✅ Done |
+| 6 | Semi-Implicit Diffusive-Wave Routing | ✅ Done |
+| 7 | HAND: Flood Maps from a Rating Curve | ✅ Done |
+| 8 | The 2D Flood Model (local-inertial, live sandbox) | Planned |
+| 9 | From a Basin Run to a Town Flood Map, and How Good It Is | Planned |
+
+---
+
+## FLOOD CHAPTERS (7–9): SAME NUMBERS AS THE PACKAGE
+
+- `src/lib/flood/` is a line-by-line TypeScript port of `MRRpy/core/inundation/`
+  (no relative imports, erasable TypeScript only, so Node runs it directly).
+- `scripts/export_ch7.py` (run with the `mrrpy` env) writes the synthetic DEMs to
+  `src/data/ch7/` and MRRpy's own results to `scripts/fixtures/`;
+  `node scripts/check_flood_lib.ts` (Node ≥ 23) must print only PASS after any
+  change to the port. Data JSON is loaded lazily (`import()`), never bundled into
+  the page.
+- Widgets live in `src/components/flood/` and share `ui.tsx` (frame, sliders,
+  "look for" strip, legends, colour scales, raster canvas) and `useValley.ts`.
+- Flood maps lie on the DEM as it is: never draw a channel below the DEM's
+  river surface in a picture.
+
+---
+
+## D8-TREE INTERLUDE (3b): SAME NUMBERS AS THE PACKAGE
+
+- `src/lib/tree/tree.ts` is a line-by-line port of the D8-tree code MRRpy runs:
+  `pyflwdir.dem.fill_depressions` (D8 + fill), `upstream_area`, `terrain.topological_order`,
+  `build_downstream_map`, `compute_strahler_order`, `hydraulics._mc_sweep`,
+  `implicit._sweep_solve`, `implicit._build_children_csr`. Same rules as `src/lib/flood/`.
+- `scripts/export_ch3b.py` (mrrpy env) writes the presets to `src/data/ch3b/presets.json`
+  and MRRpy's answers to `scripts/fixtures/ch3b_expected.json`; `npm run check-tree`
+  (Node ≥ 23) must print only PASS after any change to the port or the presets.
+- Widgets live in `src/components/tree/` and share `shared.tsx` (grid view, tree view,
+  node shapes: circle = leaf/chain, diamond = confluence, square = root).

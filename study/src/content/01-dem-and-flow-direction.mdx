@@ -1,8 +1,3 @@
----
-title: "Chapter 1 — Digital Elevation Models & Flow Direction"
-chapter: 1
----
-
 # Chapter 1 — DEMs & Flow Direction
 
 Water always flows to the lowest neighbor. A **Digital Elevation Model** (DEM) stores one number per grid cell — the land-surface elevation $z_{i,j}$ — and that single rule drives every river routing, flood model, and watershed analysis on Earth.
@@ -79,7 +74,7 @@ $$
 
 Every cell starts with FA = 1 (itself). Then we must process cells **upstream-first** — if we donate to a downstream cell before all its upstream donors have been counted, the total is wrong.
 
-**Topological order:** on a pit-free DEM, sorting cells by elevation *descending* is a valid topological order, because every upstream cell has higher (or equal) elevation than its downstream neighbour.
+**Topological order:** on a pit-free DEM, sorting cells by elevation *descending* is a valid topological order, because every upstream cell has higher (or equal) elevation than its downstream neighbour. The "or equal" is a catch: on a flat, equal heights cannot say which cell is upstream. MRRpy therefore sorts by **flow accumulation**, smallest first, which never ties along an arrow (see the Interlude after Chapter 3).
 
 <TopoAccumWidget />
 

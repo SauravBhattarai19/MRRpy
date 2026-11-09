@@ -26,6 +26,14 @@ const CHAPTERS = [
     status: 'ready',
   },
   {
+    num: '3b',
+    slug: '03b-d8-tree',
+    title: 'Interlude: The D8 Tree',
+    desc: 'How a grid of flow arrows becomes a tree, why MRRpy sorts cells by flow accumulation into one list with ds_idx, and the three ways its routing schemes walk that tree.',
+    tags: ['D8 tree', 'topological order', 'ds_idx', 'scatter_add', 'tree solve'],
+    status: 'ready',
+  },
+  {
     num: 4,
     slug: '04-kinematic-wave',
     title: 'Kinematic-Wave Routing',
@@ -47,6 +55,14 @@ const CHAPTERS = [
     title: 'Semi-Implicit Diffusive-Wave Routing',
     desc: 'Correcting Chapter 5: a D8 network is a tree, not a general graph, so an exact O(n) implicit solve exists after all — built, verified, and tested on a real Himalayan flood, stable and unstable results both shown.',
     tags: ['implicit', 'HEC-RAS', 'tree solve', 'real watershed'],
+    status: 'ready',
+  },
+  {
+    num: 7,
+    slug: '07-hand',
+    title: 'HAND: Flood Maps from a Rating Curve',
+    desc: 'From discharge to flood depth for every river at once: height above the nearest drainage, least-cost flow paths on the DEM as it is, synthetic rating curves, and where HAND fails.',
+    tags: ['HAND', 'inundation', 'rating curve', 'flood maps'],
     status: 'ready',
   },
 ];

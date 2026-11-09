@@ -1,8 +1,3 @@
----
-title: "Chapter 6 — Semi-Implicit Diffusive-Wave Routing"
-chapter: 6
----
-
 # Chapter 6 — Semi-Implicit Diffusive-Wave Routing
 
 Chapter 5 ended by asking whether OPM should have used an implicit scheme, and — in its original version — talked itself out of it: a D8 watershed has confluences, confluences break the tridiagonal Thomas algorithm, so implicit would need "a general sparse solver," so explicit was the pragmatic choice. That reasoning had a hole in it, and this chapter exists because of it. This is not a hypothetical "here's how you'd do it" chapter — every number below comes from running the actual solver, the same MRRpy code you can `pip install`, against a real 768,000-cell Himalayan watershed during a real 2024 flood event. It includes the parts that went well and the parts that didn't.
@@ -15,7 +10,7 @@ A D8 flow-direction grid looks like a graph with confluences, and confluences lo
 
 <DagVsChannelDiagram />
 
-This is the entire idea of the chapter: linearize the diffusive-wave discharge into a face **conductance**, assemble a tree-structured linear system for the new water-surface elevation, and solve it exactly with a generalized Thomas algorithm — using the *exact same* topological order (`s_rows`/`s_cols` sorted by flow accumulation) Chapter 2 already builds for every OPM run.
+This is the entire idea of the chapter: linearize the diffusive-wave discharge into a face **conductance**, assemble a tree-structured linear system for the new water-surface elevation, and solve it exactly with a generalized Thomas algorithm — using the *exact same* topological order (cells sorted by flow accumulation, `ds_idx[i] > i`) that every MRRpy run already builds (`terrain.topological_order`; the Interlude after Chapter 3 shows how, and animates this fold-and-back-substitute walk step by step).
 
 ---
 

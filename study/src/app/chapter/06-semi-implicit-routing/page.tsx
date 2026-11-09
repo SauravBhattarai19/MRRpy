@@ -23,7 +23,12 @@ export default function Chapter06() {
         >
           ← Chapter 5 — Diffusive-Wave Routing
         </Link>
-        <div />
+        <Link
+          href="/chapter/07-hand"
+          className="flex items-center gap-2 rounded-xl border border-slate-200 hover:border-sky-300 text-slate-600 hover:text-sky-600 px-5 py-3 text-sm font-semibold transition-colors"
+        >
+          Chapter 7 — HAND Flood Maps →
+        </Link>
       </div>
     </article>
   );

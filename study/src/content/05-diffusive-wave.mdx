@@ -1,8 +1,3 @@
----
-title: "Chapter 5 — Diffusive-Wave Routing"
-chapter: 5
----
-
 # Chapter 5 — Diffusive-Wave Routing
 
 Chapter 4 builds the kinematic wave from the Saint-Venant equations and shows it **translating** a flood pulse downstream without ever changing its shape. That assumption — friction balances gravity, full stop — is exactly right on a steep mountain reach and exactly wrong on a flat valley floor. This chapter is entirely about the gap between those two cases: where the kinematic wave actually gives the wrong answer, what extra physics fixes it, how that physics is written into OPM's production router, and what it costs to run all of it under one single, global time step.
@@ -146,7 +141,7 @@ OPM's domain is not a chain. It is a watershed-wide D8 flow-direction graph, ass
 
 <DagVsChannelDiagram />
 
-A confluence breaks the *tridiagonal* structure a plain Thomas algorithm needs: the downstream row in the matrix now has two or more nonzero upstream entries, not one.
+A confluence breaks the *tridiagonal* structure a plain Thomas algorithm needs: the downstream row in the matrix now has two or more nonzero upstream entries, not one. (Whether that matters is the subject of the correction below and of the Interlude §3b.6, where you can watch the elimination on a real D8 tree.)
 
 > **Correction, revised after Chapter 6 was written.** This section originally stopped here and concluded that a confluence forces a "general sparse solver" — expensive, architecturally different from the single-sweep chain case — and that explicit was therefore the only practical choice at OPM's scale. That conclusion was **wrong**, or at least overstated. A D8 flow network is not a general graph: every cell has *exactly one downstream neighbor* (flow direction is a function), which makes the whole watershed a **tree**, not an arbitrary sparse system. A tree still has a perfect elimination ordering — fold every leaf into its unique parent, repeat — so a **generalized Thomas algorithm** (a tree double-sweep, the same idea 1-D river-network models have used for decades) solves it *exactly*, in O(n), with **zero fill-in**. A confluence only means the parent's elimination step sums more than one child's contribution; it does not change the algorithm's cost class. Chapter 6 builds this solver, verifies it against a dense reference, and runs it on a real 768,000-cell Himalayan watershed — a full 96-hour event routes in well under five minutes on a single CPU core.
 
