@@ -26,9 +26,9 @@ Learn the science interactively → [the MRRpy course](https://sauravbhattarai19
 ## Installation
 
 ```bash
-pip install MRRpy            # core (CPU)
-pip install "MRRpy[gpu]"     # + CuPy/CUDA acceleration
-pip install "MRRpy[gee]"     # + Google Earth Engine forcing
+pip install "MRRpy[all]"       # recommended: Earth Engine + Jupyter form + USGS data
+pip install "MRRpy[all,gpu]"   # + NVIDIA GPU acceleration (needs CUDA 12.x)
+pip install MRRpy              # minimal: Python API, CLI, QGIS plugin
 ```
 
 ## Quick example

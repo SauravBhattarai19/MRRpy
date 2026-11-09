@@ -21,7 +21,7 @@ and include, where possible:
 2. What you expected to happen and what actually happened (full traceback).
 3. Your environment: OS, Python version, `MRRpy` version
    (`python -c "import MRRpy; print(MRRpy.__version__)"`), and whether
-   you use the `[gpu]` or `[gee]` extras.
+   you use the `[all]`, `[gpu]` or `[gee]` extras.
 4. A minimal, reproducible example if you can — a small synthetic DEM is often
    enough (see `tests/test_core_science.py` for how to build one in-memory).
 
@@ -38,7 +38,7 @@ would expect on the `Config` object.
    ```bash
    git clone https://github.com/<you>/MRRpy
    cd MRRpy
-   pip install -e ".[gee]"   # add [gpu] only if you have CUDA 12.x
+   pip install -e ".[all]"   # use ".[all,gpu]" only if you have CUDA 12.x
    pip install pytest
    ```
 3. **Make your change.** Please keep the scientific core

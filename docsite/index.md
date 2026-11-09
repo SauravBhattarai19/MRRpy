@@ -42,7 +42,7 @@ Middle: river flow, wider lines for more water. Right: flow leaving the valley.
 ## Try it
 
 ```bash
-pip install "MRRpy[notebook]"
+pip install "MRRpy[all]"
 ```
 
 === "Notebook form"

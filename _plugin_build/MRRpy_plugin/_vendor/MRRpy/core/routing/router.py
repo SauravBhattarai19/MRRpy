@@ -132,7 +132,8 @@ def initialise_grid(cfg):
     if whole_dem:
         _n_exit = int((ds_idx < 0).sum())
         _a_main = float(faccum[outlet_rc]) * cell_size ** 2 / 1e6
-        _lat, _lon = terrain.cell_latlon(outlet_rc, transform, cfg.TARGET_CRS_EPSG)
+        from ..io_utils import routing_grid_crs
+        _lat, _lon = terrain.cell_latlon(outlet_rc, transform, routing_grid_crs(cfg))
         print(f"  Whole DEM      |  {_n_exit:,} exit cells; main exit (largest drainage, "
               f"{_a_main:,.1f} km²) at row={outlet_rc[0]} col={outlet_rc[1]}"
               + (f" ≈ lat {_lat:.5f}, lon {_lon:.5f}" if _lat is not None else "")
@@ -567,6 +568,28 @@ def run_time_loop(grid_data, cfg):
     _whole_dem   = bool(grid_data.get("whole_dem", False))
     _tot_vol_dev = xp.zeros((), dtype=_dtype)   # Σ outflow volume at all exits this interval [m³]
     _last_out_t  = 0.0                          # interval start time [s]
+
+    # ── Restart files (restart.py) ───────────────────────────────────────────
+    # RESTART_FROM replaces the starting water (dry or baseflow) and runoff state
+    # with a saved one; SAVE_STATE_AT_HOURS writes one at those output times.
+    _restart_from = getattr(cfg, 'RESTART_FROM', None)
+    if _restart_from:
+        from .restart import load_state
+        _rs = load_state(_restart_from, grid_data, cfg, scheme)
+        volume_1d = xp.asarray(_rs['volume_1d'], dtype=_dtype)
+        if _mc:
+            Q_out_1d     = xp.asarray(_rs['Q_out_1d'], dtype=_dtype)
+            I_prev_1d    = xp.asarray(_rs['I_prev_1d'], dtype=_dtype)
+            Q_out_vol_1d = xp.asarray(_rs['Q_out_vol_1d'], dtype=_dtype)
+            _dt_prev_mc  = _rs['dt_prev_mc']
+        if adaptive and 'dt_cfl_prev' in _rs:
+            _dt_cfl_prev = _rs['dt_cfl_prev']
+        if _implicit and 'c_max_prev' in _rs:
+            _c_max_prev = _rs['c_max_prev']
+        storage0_m3 = float(volume_1d.sum())           # mass balance from the saved water
+    _save_hours = getattr(cfg, 'SAVE_STATE_AT_HOURS', None) or ()
+    _save_at    = {int(round(float(h) * 3600.0 / _out_interval)) for h in _save_hours}
+    _out_count  = 0                                    # output times passed so far
     t_wall_start = time.time()
 
     while t_seconds < T - _eps:
@@ -1061,6 +1084,18 @@ def run_time_loop(grid_data, cfg):
                     float(mb_horton.item()),
                     float(mb_imperv.item()),
                 ))
+            _out_count += 1
+            if _out_count in _save_at:
+                from .restart import save_state
+                _state = {'volume_1d': volume_1d}
+                if _mc:
+                    _state.update(Q_out_1d=Q_out_1d, I_prev_1d=I_prev_1d,
+                                  Q_out_vol_1d=Q_out_vol_1d, dt_prev_mc=_dt_prev_mc)
+                if adaptive:
+                    _state['dt_cfl_prev'] = _dt_cfl_prev
+                if _implicit:
+                    _state['c_max_prev'] = _c_max_prev
+                save_state(cfg, grid_data, scheme, t_seconds, _state)
             next_output_t += _out_interval
 
         # Progress reporting every 10 % of simulation

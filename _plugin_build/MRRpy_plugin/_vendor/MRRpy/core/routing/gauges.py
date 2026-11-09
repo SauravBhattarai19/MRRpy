@@ -22,6 +22,7 @@ import os
 import numpy as np
 
 from ...utils import gpu_utils
+from ..io_utils import routing_grid_crs
 from .boundary import _resolve_rowcol
 
 _EPS = 1e-12
@@ -46,7 +47,7 @@ class GaugeRecorder:
 
         nrows, ncols = grid_data["nrows"], grid_data["ncols"]
         transform = grid_data["transform"]
-        target_crs = getattr(cfg, "TARGET_CRS_EPSG", None)
+        target_crs = routing_grid_crs(cfg)            # the DEM file's CRS, as boundary.py
         s_rows = gpu_utils.to_cpu(grid_data["s_rows"]).astype(np.int64)
         s_cols = gpu_utils.to_cpu(grid_data["s_cols"]).astype(np.int64)
         faccum = gpu_utils.to_cpu(grid_data["faccum_1d"]).astype(np.float64)

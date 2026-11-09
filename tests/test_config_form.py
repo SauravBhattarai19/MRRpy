@@ -584,7 +584,8 @@ def test_run_the_model_from_the_form(tiny_basin, tmp_path):
     assert "STAGE 2/2: ROUTING" in log
     assert "Reprojecting DEM" in log                       # the model's own print()s
     assert os.path.isfile(f.log_path) and "STAGE 2/2" in open(f.log_path).read()
-    facts, image = f.results_box.children
+    # a warnings box may sit between them (e.g. no Earth Engine → global channel sizes)
+    facts, image = f.results_box.children[0], f.results_box.children[-1]
     assert "Peak flow at the outlet" in facts.value and "Water-balance error" in facts.value
     assert "hydrograph.csv" in facts.value and image.value[:4] == b"\x89PNG"
 

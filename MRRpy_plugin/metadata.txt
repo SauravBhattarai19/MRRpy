@@ -2,7 +2,7 @@
 name=MRRpy_plugin
 qgisMinimumVersion=3.16
 description=QGIS interface to MRRpy, a distributed rainfall–runoff and flood-routing model: DEM preprocessing and watershed delineation, gauge or IMERG satellite rainfall, physical (VSA saturation-excess / Green-Ampt / impervious) or SCS-CN runoff, and kinematic, diffusive, Muskingum–Cunge, dynamic or semi-implicit diffusive routing, with optional GPU (CuPy/CUDA) acceleration.
-version=3.1.0
+version=4.0.0
 author=ORISE / Saurav Bhattarai
 email=saurav.bhattarai.1999@gmail.com
 
@@ -29,7 +29,11 @@ deprecated=False
 server=False
 hasProcessingProvider=yes
 
-changelog=3.1.0
+changelog=4.0.0
+  - Tracks the MRRpy 1.0 core: flood depth and extent maps (HAND or 2D) from the routed flow, with a flood-maps group on the Routing tab and Load Flood Maps / Open Flood Animation on the Results tab
+  - Open-Meteo weather-model rain (past storms or forecasts up to 16 days ahead), no account needed
+  - Virtual gauges and saved maps use the routing DEM's own coordinate system
+  3.1.0
   - Tracks the MRRpy 0.3 core: Green-Ampt soil now dries out between storms (new "Let the soil dry out between storms" checkbox on the Runoff tab, on by default; untick to reproduce 3.0.0 results)
   - Semi-implicit diffusive routing no longer creates water on the first storm after a dry spell (over-draining steps are retried at half the time step)
   3.0.0

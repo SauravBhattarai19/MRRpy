@@ -10,7 +10,7 @@ Pick the way you like to work; all of them make the same run.
 === "Notebook form"
 
     ```bash
-    pip install "MRRpy[notebook]"
+    pip install "MRRpy[all]"
     ```
 
     In Jupyter:

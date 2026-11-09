@@ -2,8 +2,8 @@
 #
 # The canonical dependency list lives in pyproject.toml; prefer
 #   pip install .          (core)
+#   pip install .[all]     (+ Earth Engine, Jupyter form, USGS)
 #   pip install .[gpu]     (+ CuPy/CUDA)
-#   pip install .[gee]     (+ Google Earth Engine)
 # This file is kept for tooling that expects a requirements.txt.
 
 # Core scientific

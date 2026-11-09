@@ -490,6 +490,15 @@ class TabRouting(QWidget):
             "estimate). For a large area, raise the output interval.")
         form.addRow(self.save_fields)
 
+        self.restart_from = QgsFileWidget()
+        self.restart_from.setStorageMode(QgsFileWidget.GetFile)
+        self.restart_from.setFilter("Saved model state (*.npz);;All files (*)")
+        self.restart_from.setToolTip(
+            "A state file saved by an earlier run on the same basin (its state/ folder).\n"
+            "The run then starts with that run's water and soil instead of dry.\n"
+            "Rain and inflow times still count from this run's start.")
+        form.addRow("Start from a saved state (empty = start dry):", self.restart_from)
+
         root.addWidget(grp)
 
     # ── Flood maps ─────────────────────────────────────────────────────────────
@@ -850,6 +859,7 @@ class TabRouting(QWidget):
 
         self.mass_balance.setChecked(bool(getattr(cfg, "MASS_BALANCE_REPORT", True)))
         self.save_fields.setChecked(bool(getattr(cfg, "SAVE_FIELDS", False)))
+        self.restart_from.setFilePath(getattr(cfg, "RESTART_FROM", None) or "")
         self.flood_maps.setChecked(bool(getattr(cfg, "INUNDATION_MAP", False)))
         i = self.flood_method.findData(str(getattr(cfg, "INUNDATION_METHOD", "hand") or "hand"))
         self.flood_method.setCurrentIndex(max(i, 0))
@@ -932,6 +942,7 @@ class TabRouting(QWidget):
 
         cfg.MASS_BALANCE_REPORT = self.mass_balance.isChecked()
         cfg.SAVE_FIELDS = self.save_fields.isChecked()
+        cfg.RESTART_FROM = self.restart_from.filePath() or None
         cfg.INUNDATION_MAP = self.flood_maps.isChecked()
         cfg.INUNDATION_METHOD = self.flood_method.currentData() or "hand"
         cfg.INUNDATION_DEM = self.flood_dem.currentData() or "auto"

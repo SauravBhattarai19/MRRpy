@@ -195,12 +195,17 @@ def _blocked_edges(valid, ftr, ctr, ccs, meta, c_rows, c_cols, c_ds, out_c, is_r
     return no_outlet
 
 
-def fine_flood_grid(cfg, arrays, meta, log=print):
+def _cache_root(cfg, cache_dir):
+    """Where the cut-out DEMs are kept: *cache_dir*, else OUTPUT_DIR/inundation."""
+    return cache_dir or os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "inundation")
+
+
+def fine_flood_grid(cfg, arrays, meta, log=print, cache_dir=None):
     """FloodGrid on the finer DEM, or (None, reason) to keep the model grid."""
     kind, what, scale, reason = resolve_inundation_dem(cfg, meta)
     if kind == "model":
         return None, reason
-    fine_dir = os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "inundation", "fine")
+    fine_dir = os.path.join(_cache_root(cfg, cache_dir), "fine")
     ext = _extent(cfg, arrays, meta)
     try:
         dem_path = _fine_dem(cfg, meta, kind, what, scale, ext, fine_dir, log)
@@ -210,7 +215,7 @@ def fine_flood_grid(cfg, arrays, meta, log=print):
     return dem_flood_grid(cfg, arrays, meta, dem_path, label, reason, log, finer=True)
 
 
-def model_dem_grid(cfg, arrays, meta, log=print):
+def model_dem_grid(cfg, arrays, meta, log=print, cache_dir=None):
     """FloodGrid on the run's own original DEM (reprojected_dem.tif, the
     model's cells) with least-cost flow paths, or (None, reason)."""
     import rasterio
@@ -219,7 +224,7 @@ def model_dem_grid(cfg, arrays, meta, log=print):
     if not os.path.isfile(src_path):
         return None, "no reprojected_dem.tif in the results folder"
     ext = _extent(cfg, arrays, meta)
-    out_dir = os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "inundation", "model_dem")
+    out_dir = os.path.join(_cache_root(cfg, cache_dir), "model_dem")
     os.makedirs(out_dir, exist_ok=True)
     crop = os.path.join(out_dir, "dem_area.tif")
     with rasterio.open(src_path) as src:

@@ -1,12 +1,28 @@
 # Installation
 
-MRRpy is a pure-Python package (Python 3.9+). Install it from PyPI:
+MRRpy is a pure-Python package (Python 3.9+). For most people, install it
+from PyPI with every optional feature that works on any computer (Earth Engine,
+the Jupyter form and USGS data):
+
+```bash
+pip install "MRRpy[all]"
+```
+
+If you have an NVIDIA GPU with CUDA 12.x, add GPU acceleration as well:
+
+```bash
+pip install "MRRpy[all,gpu]"
+```
+
+For a minimal install (Python API, command line and QGIS plugin only):
 
 ```bash
 pip install MRRpy
 ```
 
-## Optional extras
+## Optional extras, one at a time
+
+`[all]` is the same as `[gee,notebook,usgs]`. You can also pick extras on their own:
 
 === "GPU"
 
@@ -38,12 +54,20 @@ pip install MRRpy
     pip install "MRRpy[notebook]"
     ```
 
+=== "USGS data"
+
+    Adds `dataretrieval` to download observed USGS streamflow for comparison.
+
+    ```bash
+    pip install "MRRpy[usgs]"
+    ```
+
 === "From source"
 
     ```bash
     git clone https://github.com/SauravBhattarai19/MRRpy
     cd MRRpy
-    pip install .            # or pip install -e . for a live checkout
+    pip install ".[all]"     # or pip install -e ".[all]" for a live checkout
     ```
 
 ## Verify

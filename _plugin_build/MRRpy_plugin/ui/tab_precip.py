@@ -11,16 +11,18 @@ Methods
   idw             Inverse Distance Weighting (CSV gauges)
   imerg_thiessen  NASA GPM IMERG V07 from GEE, Thiessen weighting
   imerg_idw       same IMERG source, IDW weighting
+  openmeteo_thiessen  Open-Meteo weather-model rain (forecast or past), Thiessen
+  openmeteo_idw       same Open-Meteo source, IDW weighting
 
-The IMERG event window is derived from the "Event start (UTC)" set on the
-DEM & Watershed tab plus the simulation duration on the Routing tab, so the
-IMERG panel here only carries the weighting/download knobs.
+The IMERG / Open-Meteo event window is derived from the "Event start (UTC)" in
+the event section of this tab plus the simulation duration on the Routing tab,
+so their panels here only carry the source/weighting/download knobs.
 """
 
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QFormLayout, QGroupBox, QComboBox,
     QDoubleSpinBox, QLabel, QCheckBox,
-    QLineEdit, QDateTimeEdit,
+    QLineEdit, QDateTimeEdit, QSpinBox,
 )
 from qgis.PyQt.QtCore import QDateTime
 from qgis.gui import QgsFileWidget
@@ -29,19 +31,31 @@ from qgis.gui import QgsFileWidget
 class TabPrecip(QWidget):
     """Precipitation engine configuration tab."""
 
-    _METHODS = ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw"]
+    _METHODS = ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw",
+                "openmeteo_thiessen", "openmeteo_idw"]
     _METHOD_LABELS = [
         "Uniform (constant rate)",
         "Thiessen polygons (gauge CSV)",
         "Inverse Distance Weighting — IDW (gauge CSV)",
         "IMERG V07 satellite — Thiessen (Earth Engine)",
         "IMERG V07 satellite — IDW (Earth Engine)",
+        "Open-Meteo weather models, forecast or past — Thiessen (internet)",
+        "Open-Meteo weather models, forecast or past — IDW (internet)",
+    ]
+    _OM_SOURCES = ["auto", "forecast", "historical", "historical_forecast", "single_run"]
+    _OM_SOURCE_LABELS = [
+        "Automatic from the event date",
+        "Forecast (last 3 months … 16 days ahead)",
+        "Historical archive (ERA5 …, 1940 → a few days ago)",
+        "Historical forecasts (archived model runs, ~2021 →)",
+        "One model run as issued (forecast hindcast, 2024 →)",
     ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._ext_gee_project = False   # set by the dialog from the other tabs
         self._ext_gee_event = False
+        self._om = {}                   # Open-Meteo widgets, per method
         self._build_ui()
 
     # ── UI construction ───────────────────────────────────────────────────────
@@ -80,6 +94,8 @@ class TabPrecip(QWidget):
             self._build_gauge_panel("idw"),
             self._build_imerg_panel("imerg_thiessen"),
             self._build_imerg_panel("imerg_idw"),
+            self._build_openmeteo_panel("openmeteo_thiessen"),
+            self._build_openmeteo_panel("openmeteo_idw"),
         ]
         for w in self._panels:
             root.addWidget(w)
@@ -154,16 +170,23 @@ class TabPrecip(QWidget):
         self._apply_ee_disclosure()
 
     def _apply_ee_disclosure(self):
-        """Show the Earth Engine fields only when a selected option uses them."""
-        imerg = self.get_method().startswith("imerg")
+        """Show the Earth Engine fields only when a selected option uses them.
+
+        Open-Meteo needs the event date but no Earth Engine project, so the
+        group is retitled and the project row hidden when only the date matters.
+        """
+        method = self.get_method()
+        imerg = method.startswith("imerg")
         need_project = imerg or self._ext_gee_project
-        need_event = imerg or self._ext_gee_event
+        need_event = imerg or method.startswith("openmeteo") or self._ext_gee_event
         self._grp_ee.setVisible(need_project or need_event)
+        self._grp_ee.setTitle("Earth Engine" if need_project else "Event")
         # When a date is needed it is simply required — no opt-in checkbox.
         if need_event:
             self.use_event.setChecked(True)
         self.use_event.setVisible(False)
-        for w, on in ((self.event_dt, need_event), (self.utc_offset, imerg)):
+        for w, on in ((self.gee_project, need_project), (self.event_dt, need_event),
+                      (self.utc_offset, imerg)):
             w.setVisible(on)
             lbl = self._ee_form.labelForField(w)
             if lbl is not None:
@@ -297,6 +320,86 @@ class TabPrecip(QWidget):
 
         return w
 
+    def _build_openmeteo_panel(self, method):
+        w = QGroupBox("Open-Meteo Weather-Model Rainfall (forecast or past weather)")
+        form = QFormLayout(w)
+
+        note = QLabel(
+            "Downloads weather-model rain (ECMWF, GFS, ICON, ERA5, …) from\n"
+            "open-meteo.com — internet only, no account.  Each model cell over\n"
+            "the watershed becomes a pseudo-gauge.  The window is the event start\n"
+            "(set in the Event section below) … +simulation duration; a start\n"
+            "today or in the next days gives the latest forecast (≤ 16 days).\n"
+            "Data: Open-Meteo.com, CC BY 4.0."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+
+        source = QComboBox()
+        source.addItems(self._OM_SOURCE_LABELS)
+        source.setToolTip(
+            "Which Open-Meteo archive to read.  Automatic: the forecast API for\n"
+            "events from the last 3 months on, the historical archive before.")
+        form.addRow("Data source:", source)
+
+        model = QLineEdit("best_match")
+        model.setToolTip(
+            "Open-Meteo model name (see open-meteo.com/en/docs).  best_match is a\n"
+            "fixed rule, not a fit to observations: each hour it takes the finest-\n"
+            "grid model covering the place.  Others: ecmwf_ifs, gfs_seamless,\n"
+            "icon_seamless (forecast); era5, ecmwf_ifs (historical).")
+        form.addRow("Weather model:", model)
+
+        run = QLineEdit()
+        run.setPlaceholderText("YYYY-MM-DD HH:MM  (blank = event start)")
+        run.setToolTip(
+            "Only for 'One model run': when the run was issued (UTC), e.g.\n"
+            "2024-09-25 00:00.  Not after the event start; the gap is the lead time.\n"
+            "Needs a specific model (e.g. ecmwf_ifs), not best_match.")
+        form.addRow("Model run (UTC):", run)
+        source.currentIndexChanged.connect(
+            lambda i, r=run, f=form: self._show_row(f, r, self._OM_SOURCES[i] == "single_run"))
+        self._show_row(form, run, False)
+
+        minutely = QCheckBox("15-minute rain (not in the historical archive)")
+        minutely.setToolTip(
+            "True 15-minute model rain only in Central Europe and North America;\n"
+            "elsewhere each hour is spread evenly.")
+        form.addRow(minutely)
+
+        spacing = QSpinBox()
+        spacing.setRange(100, 100000)
+        spacing.setSingleStep(500)
+        spacing.setValue(5000)
+        spacing.setSuffix(" m")
+        spacing.setToolTip(
+            "Distance between rain request points.  Points in the same model cell\n"
+            "merge, so a spacing below the cell size samples every cell.")
+        form.addRow("Sampling distance:", spacing)
+
+        force = QCheckBox("Force re-download (e.g. for the latest forecast)")
+        form.addRow(force)
+
+        power_spin = None
+        if method == "openmeteo_idw":
+            power_spin = QDoubleSpinBox()
+            power_spin.setRange(0.1, 10.0)
+            power_spin.setDecimals(1)
+            power_spin.setValue(2.0)
+            power_spin.setToolTip("IDW distance exponent p (standard: 2)")
+            form.addRow("IDW power (p):", power_spin)
+
+        self._om[method] = dict(source=source, model=model, run=run, minutely=minutely,
+                                spacing=spacing, force=force, power=power_spin)
+        return w
+
+    @staticmethod
+    def _show_row(form, widget, on):
+        widget.setVisible(on)
+        lbl = form.labelForField(widget)
+        if lbl is not None:
+            lbl.setVisible(on)
+
     # ── Slot ─────────────────────────────────────────────────────────────────
 
     def _on_method_changed(self, idx):
@@ -330,6 +433,18 @@ class TabPrecip(QWidget):
         force = bool(getattr(cfg, "PRECIP_IMERG_FORCE_DOWNLOAD", False))
         self._imerg_th_force.setChecked(force)
         self._imerg_idw_force.setChecked(force)
+        om_source = getattr(cfg, "OPENMETEO_SOURCE", "auto")
+        for om in self._om.values():
+            om["source"].setCurrentIndex(self._OM_SOURCES.index(om_source)
+                                         if om_source in self._OM_SOURCES else 0)
+            om["model"].setText(str(getattr(cfg, "OPENMETEO_MODEL", "best_match")))
+            om["run"].setText(str(getattr(cfg, "OPENMETEO_RUN", None) or ""))
+            om["minutely"].setChecked(bool(getattr(cfg, "OPENMETEO_MINUTELY_15", False)))
+            om["spacing"].setValue(int(round(float(
+                getattr(cfg, "OPENMETEO_POINT_SPACING_M", 5000.0)))))
+            om["force"].setChecked(bool(getattr(cfg, "PRECIP_OPENMETEO_FORCE_DOWNLOAD", False)))
+            if om["power"] is not None:
+                om["power"].setValue(cfg.PRECIP_IDW_POWER)
 
         # Earth Engine + event window
         if getattr(cfg, "EVENT_START_UTC", None):
@@ -386,3 +501,13 @@ class TabPrecip(QWidget):
         elif method == "imerg_idw":
             cfg.PRECIP_IMERG_FORCE_DOWNLOAD = self._imerg_idw_force.isChecked()
             cfg.PRECIP_IDW_POWER = self._imerg_idw_power.value()
+        elif method in self._om:
+            om = self._om[method]
+            cfg.OPENMETEO_SOURCE = self._OM_SOURCES[om["source"].currentIndex()]
+            cfg.OPENMETEO_MODEL = om["model"].text().strip() or "best_match"
+            cfg.OPENMETEO_RUN = om["run"].text().strip() or None
+            cfg.OPENMETEO_MINUTELY_15 = om["minutely"].isChecked()
+            cfg.OPENMETEO_POINT_SPACING_M = float(om["spacing"].value())
+            cfg.PRECIP_OPENMETEO_FORCE_DOWNLOAD = om["force"].isChecked()
+            if om["power"] is not None:
+                cfg.PRECIP_IDW_POWER = om["power"].value()

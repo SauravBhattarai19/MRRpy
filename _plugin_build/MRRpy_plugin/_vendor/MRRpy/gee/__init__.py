@@ -2,7 +2,7 @@
 """
 vsa_opm.gee — Google Earth Engine integrations (optional).
 
-Requires the 'earthengine-api' package (pip install vsa-opm[gee]).
+Requires the 'earthengine-api' package (pip install "MRRpy[gee]").
 
 Modules
 -------

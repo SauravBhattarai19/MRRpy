@@ -9,7 +9,6 @@ docs/
 runs/
 Extra/
 TestCases/
-paper/
 
 # …but the plugin's own unit tests ARE tracked (re-include dir, then its .py).
 !MRRpy_plugin/tests/
@@ -144,3 +143,6 @@ hydroatlas_outlet.json
 
 # Files written by running notebooks/configure_and_run.ipynb
 notebooks/*.yaml
+
+# Personal interview prep (not part of the package)
+interview_prep/

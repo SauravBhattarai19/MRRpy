@@ -23,6 +23,7 @@ import os
 import numpy as np
 
 from ...utils import gpu_utils
+from ..io_utils import routing_grid_crs
 
 _EPS = 1e-12
 _LARGE_GB = 2.0      # warn when the in-memory archive would exceed this
@@ -52,7 +53,7 @@ class FieldRecorder:
         self._cell_size = float(grid_data["cell_size"])
         t = grid_data["transform"]
         self._transform = [t.a, t.b, t.c, t.d, t.e, t.f]
-        self._crs = str(getattr(cfg, "TARGET_CRS_EPSG", "") or "")
+        self._crs = str(routing_grid_crs(cfg) or "")
         # Run outputs the plotting helpers draw alongside the maps (relief, hydrograph).
         self._dem_path = os.path.abspath(getattr(cfg, "ROUTING_DEM_PATH", "") or "") or None
         self._hyd_path = os.path.abspath(getattr(cfg, "HYDROGRAPH_CSV", "") or "") or None

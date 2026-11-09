@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "MRRpy"
-version = "0.3.0"
+version = "1.0.0"
 description = "MRRpy (Multi-Mechanism Runoff and Routing): a distributed, physics-based hydrological + hydrodynamic model — DEM preprocessing, gauge/IMERG precipitation, VSA + Green-Ampt + impervious runoff generation, and kinematic/diffusive-wave/Muskingum–Cunge/local-inertial dynamic-wave routing, with optional Google Earth Engine forcing and CPU/GPU backends."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -18,7 +18,7 @@ keywords = [
     "VSA", "OPM", "green-ampt", "GIS", "rainfall-runoff", "earth-engine",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -59,6 +59,9 @@ gee = ["earthengine-api"]
 notebook = ["ipyleaflet", "ipywidgets>=8"]
 # Optional observed-flow retrieval for USGS gauge comparisons.
 usgs = ["dataretrieval>=1.3"]
+# Everything that works on any machine: Earth Engine + Jupyter form + USGS.
+# GPU stays separate (needs an NVIDIA GPU + CUDA 12.x): pip install "MRRpy[all,gpu]".
+all = ["MRRpy[gee,notebook,usgs]"]
 
 [project.scripts]
 MRRpy = "MRRpy.cli.main:main"
