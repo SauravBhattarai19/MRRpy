@@ -9,6 +9,7 @@ docs/
 runs/
 Extra/
 TestCases/
+paper/
 
 # …but the plugin's own unit tests ARE tracked (re-include dir, then its .py).
 !MRRpy_plugin/tests/

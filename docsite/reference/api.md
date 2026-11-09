@@ -66,6 +66,20 @@ These read the per-cell maps a run saves with `SAVE_FIELDS=True` — see
     options:
       heading_level: 3
 
+### Flood depth and extent maps (`INUNDATION_MAP=True`)
+
+These read the flood maps a run makes with `INUNDATION_MAP=True` — see
+[6.3 Flood depth and extent maps](../manual/outputs.md#63-flood-depth-and-extent-maps).
+The GeoTIFFs, outlines and tables are written by the run itself.
+
+::: MRRpy.plot_inundation
+    options:
+      heading_level: 3
+
+::: MRRpy.animate_inundation
+    options:
+      heading_level: 3
+
 ## `mannings_n_from_dem`
 
 Generate a spatially-varying Manning's-n raster from a DEM using an elevation

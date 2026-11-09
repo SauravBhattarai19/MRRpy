@@ -318,7 +318,7 @@ does:
   Larger means the saturated area shrinks faster.
 
 If you have an observed hydrograph, compare the **runoff volume** first
-([`runoff_ratio`](outputs.md#64-the-water-balance) in `mass_balance.csv`), then
+([`runoff_ratio`](outputs.md#65-the-water-balance) in `mass_balance.csv`), then
 the peak.
 
 ### 4.6.5 Soil from satellite data

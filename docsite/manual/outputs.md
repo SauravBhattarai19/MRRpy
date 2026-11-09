@@ -1,7 +1,8 @@
 # 6 Outputs and run
 
 Every run writes the outlet hydrograph and checks its water balance. This step
-adds optional results, **virtual gauges** and **maps over time**, and picks the
+adds optional results, **virtual gauges**, **maps over time** and **flood
+maps**, and picks the
 **computer** (CPU or GPU). It ends with the files a run writes and how to plot
 them.
 
@@ -49,7 +50,132 @@ The maps stay in memory until the run ends: about *(number of output times) ×
 
 <!-- settings: SAVE_FIELDS FIELD_VARS FIELD_STRIDE FIELD_OUTPUT_DIR -->
 
-## 6.3 Computer: CPU or GPU
+## 6.3 Flood depth and extent maps
+
+The routing moves water from cell to cell along one flow path, so water above
+the banks stays in the river cell: the depth maps of 6.2 show a one-cell-wide
+ribbon, not how far a flood spreads. With `INUNDATION_MAP` on, MRRpy spreads
+the routed river flow over the land beside the rivers and draws **flood depth
+and extent maps**. The routing itself does not change.
+
+The maps are drawn **on the real ground**: the DEM as it is. No channel is cut
+below it, because a DEM's river surface is already the water that was in the
+river when the DEM was made. (Cutting the model's bankfull channel below a 30 m
+DEM counted the river's room twice and drew floods 1–8 m too low at every test
+site.) The only change is along the river line itself: bridges and small DEM
+bumps across it are cleared so the water can run. The river therefore shows as
+water at any flow, not only in a flood.
+
+`INUNDATION_METHOD` chooses how the water is spread:
+
+**`hand` — quick water levels for every river.** The HAND method (Height Above
+Nearest Drainage), the method behind the flood maps of the US National Water
+Model:
+
+1. Every cell is linked to the river cell its water reaches first, and gets its
+   **height above that river cell**. Flow paths are traced on the original DEM
+   by a least-cost search, which keeps rivers in their real channels; filling
+   the DEM instead would turn a valley floor behind a bridge into a flat that
+   flow crosses in straight lines.
+2. Rivers are cut into reaches about 1 km long. Each reach gets a **rating
+   curve** (water level against flow) from the land that drains to it, every
+   cell below the water level with its own roughness.
+3. The reach's routed flow gives its water level. Every cell lower than that is
+   flooded: **depth = water level − height above the river**. The big rivers are
+   mapped again on their own, so a high main river also floods the mouths of
+   the streams that join it.
+
+It takes seconds for a whole basin, but each reach gets one level for a steady
+flow: water held back by a narrow gorge or a bridge downstream is not seen, and
+floodplain storage and timing are not modelled.
+
+**`2d` — a flood simulation over one area.** Inside `INUNDATION_AREA` the water
+is moved over the ground in two dimensions (the local-inertial equations of
+Bates et al. 2010, as in LISFLOOD-FP), every few seconds, with the routed rivers
+flowing in:
+
+1. Every river that enters the area brings its routed flow across the edge,
+   and the land inside the area adds the water the routing passed into its
+   rivers there.
+2. The water spreads, ponds behind narrow places and backs up into side
+   valleys as it does on the ground. It leaves wherever the ground slopes out
+   of the area, and across the valley floor beside every river that leaves
+   it. Where rivers flow in, the edge holds the water like a wall: if a big
+   flood backs up to it, the log says where, so you can make the area larger
+   there.
+3. MRRpy picks the period around the largest flood entering the area and fills
+   the rivers with the flow at its start first.
+
+In tests against measured flood levels (high-water marks at Montpelier,
+Vermont, July 2023; a river gauge on the Pearl River at Jackson, Mississippi,
+February 2020) and satellite flood traces (Nakhu and Bagmati, Kathmandu,
+September 2024), `2d` was closer than `hand` everywhere: with LiDAR it put the
+water level within 0.2–0.4 m. It needs more time: on a 32-core workstation a
+50 km² valley at 30 m ran a day of flood in 6 seconds, and the 520 km² Pearl
+River box (575,000 cells of 30 m) 15 days of flood in 5 minutes; expect a few
+times longer on a laptop. Use it for the town or valley you care about; [Example 13](../examples/flood-2d-town.md) has the steps, how big to make the area and measured times at five places.
+
+**Finer maps.** The maps can be drawn on a finer DEM than the model ran on: the
+flow of each routed river cell is passed to the fine river nearby that drains
+about the same area. `INUNDATION_DEM: auto` does this by itself when the run
+downloaded its DEM from Earth Engine at a coarser size (e.g. FABDEM averaged to
+90 m → flood maps at FABDEM's 30 m). Choose `file` for your own DEM (e.g. LiDAR)
+or name a dataset to download. Without Earth Engine, `auto` keeps the model grid
+and says why. The DEM sets how good the map is: in the tests a LiDAR DEM put
+the water within 0.2–0.4 m, and FABDEM within 0.7–2 m (its big rivers' water
+surface can sit metres too low).
+
+**One area.** `INUNDATION_AREA` limits the maps to a box, such as a town or a
+valley. The flow still comes from the whole basin. With a finer DEM only the box
+and 3 km around it are downloaded and processed.
+
+```yaml
+INUNDATION_MAP: true
+INUNDATION_METHOD: 2d                            # or hand
+INUNDATION_AREA: [85.276, 27.595, 85.325, 27.683] # west, south, east, north
+INUNDATION_DEM: auto                             # model_grid | file | fabdem | …
+```
+
+The maps are written to `inundation/` in the results folder:
+
+| File | Contents |
+|---|---|
+| `flood_depth_max.tif` | the deepest water each place reached (m), rivers included |
+| `flood_extent_max.tif`, `flood_extent_max.geojson` | where there was water (raster 1/0, and outlines with their area in km²) |
+| `flood_animation.gif` | the largest flood spreading and draining, with the hydrograph (`INUNDATION_ANIMATION`) |
+| `flood_time_of_max_hours.tif`, `flood_first_wet_hours.tif`, `flood_duration_hours.tif` | when the water was deepest, when it first passed 10 cm, and for how many hours |
+| `inundation_summary.json` | the method and grid used, area under water, deepest water, how the flow was passed to a finer DEM; for `2d` also the period simulated, the water balance and any place the flood reached the edge |
+| `hand.tif` (`hand`) | height of every cell above its nearest river (m) |
+| `reaches.csv`, `reaches.geojson` (`hand`) | each reach: length, slope, channel width, peak flow, water level above the DEM's river surface, flooded area |
+| `rating_curves.csv` (`hand`) | each reach's water level against flow and flooded area |
+| `flood_velocity_max.tif` (`2d`) | the fastest flow at each place (m/s), where the water was at least 10 cm deep |
+| `inflows.csv` (`2d`) | each river flowing into the area (where, drainage area, peak flow) and the local inflow |
+| `network.npz`, `flood_model.npz` | the data to redraw the maps |
+
+To redraw the maps (another area, another DEM, the other method) without
+routing again, run the `inundation` stage on its own (see [6.6](#66-running)).
+In Python:
+
+```python
+from MRRpy import plot_inundation, animate_inundation
+plot_inundation(out)                 # the deepest water, outlined
+plot_inundation(out, time=30.0)      # the flood 30 h into the run
+animate_inundation(out, start_hours=20, end_hours=60, out_path="flood.gif")
+```
+
+!!! warning "What the flood maps leave out"
+    Embankments, levees, walls, culverts and bridges count only if the DEM shows
+    them: a levee narrower than a DEM cell does not, and the land behind it is
+    drawn flooded. The map is only as good as the DEM: in cities use a
+    bare-earth DEM such as FABDEM, or LiDAR. `hand` draws floods too shallow
+    just above a narrow gorge or bridge (use `2d` there). The maps show river
+    flooding only, not rain ponding away from rivers. Comparing with a
+    satellite image? Optical satellites (Sentinel-2, Landsat) cannot see water
+    under trees, so a correct map can show more water than they do.
+
+<!-- settings: INUNDATION_MAP INUNDATION_METHOD INUNDATION_AREA INUNDATION_DEM INUNDATION_DEM_PATH INUNDATION_DEM_SCALE_M INUNDATION_ANIMATION -->
+
+## 6.4 Computer: CPU or GPU
 
 The **CPU** works everywhere. An NVIDIA **GPU** (`pip install "MRRpy[gpu]"`) can
 be much faster for large grids with the explicit routing methods. If no usable
@@ -58,7 +184,7 @@ always runs on the CPU. On a GPU, `float32` is faster and `float64` more exact.
 
 <!-- settings: BACKEND GPU_PRECISION -->
 
-## 6.4 The water balance
+## 6.5 The water balance
 
 At the end of every routing run MRRpy checks that no water was lost or created:
 
@@ -85,14 +211,15 @@ one table. Columns:
 
 <!-- settings: MASS_BALANCE_REPORT -->
 
-## 6.5 Running
+## 6.6 Running
 
-A run has two **stages**; you can run them separately:
+A run has two **stages**, three with flood maps; you can run them separately:
 
 | Stage | Does | Writes |
 |---|---|---|
 | `process_dem` | [1 Terrain](terrain.md): DEM, flow directions, the area to model | the terrain files |
 | `routing` | rain → runoff → routing | `hydrograph.csv`, `mass_balance.csv`, … |
+| `inundation` | flood maps from the routed flow ([6.3](#63-flood-depth-and-extent-maps)); runs after `routing` when `INUNDATION_MAP` is on | `inundation/` |
 
 Running `routing` alone reuses the terrain already in the results folder, which
 is the quick way to try other rain, runoff or routing settings on the same basin.
@@ -110,6 +237,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
     MRRpy validate -c run.yaml
     MRRpy run -c run.yaml                          # both stages
     MRRpy run -c run.yaml --stages routing         # routing only
+    MRRpy run -c run.yaml --stages inundation      # redraw the flood maps
     MRRpy run -c run.yaml --backend gpu --output-dir results_gpu/
     ```
 
@@ -129,7 +257,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
     the hydrograph; **Load Layers into QGIS**, **Load Peak Maps** and **Save Flow
     Animation…** load the results.
 
-## 6.6 Files a run writes
+## 6.7 Files a run writes
 
 | File | Contents |
 |---|---|
@@ -139,6 +267,8 @@ is the quick way to try other rain, runoff or routing settings on the same basin
 | `gauges.csv` | virtual gauges: `time_s`, `time_hr`, then `<name>_depth_m`, `<name>_Q_m3s`, `<name>_vel_ms` for each gauge |
 | `fields/fields.npz`, `fields/fields_meta.json` | maps over time |
 | `max_<var>.tif`, `time_of_max_<var>_hours.tif` | peak maps, from `export_peak_maps` |
+| `inundation/` | flood depth and extent maps ([6.3](#63-flood-depth-and-extent-maps)) |
+| `state/state_<hours>h.npz`, `state/index.csv` | saved model states, when asked for ([6.8](#68-carrying-on-from-a-saved-state)) |
 | `mrrpy_run.log` | the run's log (notebook form) |
 | the terrain files | see [1.3 Results folder](terrain.md#13-results-folder) |
 | downloads | `raw_dem_gee.tif`, `imerg/`, `cn_gcn250_amc*.tif`, `ksat_hihydro_*.tif`, `deficit_serves_*.tif`, … reused by later runs |
@@ -152,3 +282,29 @@ plot_hydrograph(out)       # Q(t) at the outlet, peak marked
 plot_watershed(out)        # the DEM with the basin outline
 plot_mass_balance(out)     # input, outflow, storage, error
 ```
+
+## 6.8 Carrying on from a saved state
+
+Every run starts **dry**, or with the baseflow, and the soil at its starting
+moisture. A run can instead start from the **state** an earlier run saved: the
+water in every river and on every slope, and the soil water of the runoff model.
+The two runs together then give the same flow as one long run. This is how a
+live forecast carries the basin from one update to the next.
+
+- The earlier run saves states at the hours listed in `SAVE_STATE_AT_HOURS`
+  (a Python or YAML list, e.g. `[24, 48]`; each must be an output time). Each
+  goes into `state/state_<hours>h.npz`, and `state/index.csv` lists them with
+  the clock time when `EVENT_START_UTC` is set.
+- The new run names one of them in `RESTART_FROM`. Its rain, inflow
+  hydrographs and storm times count from **its own** start, as in every run, so
+  its rain file begins where the saved state ends.
+
+A state only fits **the same model**. MRRpy refuses one saved on another grid
+(DEM, outlet or resolution), with other runoff settings, with Muskingum–Cunge
+routing for another method or the other way round, or with different river
+sizes, roughness or soil values. The message names what changed. A soil or
+land-cover file that has gone missing is the usual cause, because MRRpy then
+uses the plain setting instead. The kinematic and the two diffusive methods
+can carry on from each other's states. The dynamic method cannot use states yet.
+
+<!-- settings: RESTART_FROM -->

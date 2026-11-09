@@ -19,7 +19,7 @@ nbformat = pytest.importorskip("nbformat")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The notebooks MRRpy ships (not users' own copies or scratch notebooks there).
 NOTEBOOKS = [os.path.join(ROOT, "notebooks", n)
-             for n in ("configure_and_run.ipynb", "pick_dem_bounds.ipynb")]
+             for n in ("configure_and_run.ipynb", "pick_dem_bounds.ipynb", "flood_maps_2d.ipynb")]
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=os.path.basename)

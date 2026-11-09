@@ -30,6 +30,7 @@ import numpy as np
 import rasterio
 
 from ..io_utils import raster_to_grid
+from .state import StateMixin
 from .soil import (
     OPM_Q_MIN,
     resolve_zone_divides,
@@ -53,9 +54,11 @@ def register_mechanism(name):
     return _wrap
 
 
-class RunoffMechanism:
+class RunoffMechanism(StateMixin):
     """
-    One composable runoff process (forward-Euler, stateful).
+    One composable runoff process (forward-Euler, stateful).  Step-to-step
+    attributes are listed in ``state_attrs`` and fixed per-cell parameters in
+    ``param_attrs``, for restart files.
 
     Parameters
     ----------
@@ -95,6 +98,9 @@ class ImperviousMechanism(RunoffMechanism):
         imperv_np = _ru.resolve_impervious_fraction(cfg, grid_data)   # (n_cells,)
         self.frac = self._xp.asarray(imperv_np)
     # static — no update_state
+
+    def param_attrs(self):
+        return ('frac',)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -197,6 +203,14 @@ class InfiltrationExcessMechanism(RunoffMechanism):
                   f"heavier than K_v")
         else:
             print("  GA recovery   |  off — the soil never dries out between storms")
+
+    # ── Restart state ────────────────────────────────────────────────────────
+    def state_attrs(self):
+        return ('_F', '_dtheta') + (('_Fu', '_T') if self._recovery else ())
+
+    def param_attrs(self):
+        return (('_psi', '_ksat', '_dtheta0')
+                + (('_Lu', '_kr', '_Tr', '_Fumax') if self._recovery else ()))
 
     # ── Contract ─────────────────────────────────────────────────────────────
     def capacity(self):
@@ -530,6 +544,23 @@ class SaturationExcessMechanism(RunoffMechanism):
                   f"  phi={phi}  Q_max={Q_max} m³/s")
             print(f"                |  Initial VSA={self.mask.sum():,} cells"
                   f" ({100*self.mask.mean():.1f}% of watershed)")
+
+    # ── Restart state ────────────────────────────────────────────────────────
+    def state_attrs(self):
+        return ('_opm_z', '_opm_SD_max', '_opm_A_t')
+
+    def param_attrs(self):
+        zones = (('_cell_polygon', '_polygon_divide_idx') if self._per_polygon
+                 else ('_divide_cell',))
+        return ('_SD_max_initial', '_opm_H_a', '_ksat_ms') + zones
+
+    def set_state(self, state):
+        super().set_state(state)
+        # The saturated-area mask follows from A_t (as at the end of update_state).
+        if self._per_polygon:
+            self.mask = self._upslope_area > self._opm_A_t[self._cell_polygon]
+        else:
+            self.mask = self._upslope_area > self._opm_A_t
 
     # ── Diagnostics ──────────────────────────────────────────────────────────
     def diagnostics(self):

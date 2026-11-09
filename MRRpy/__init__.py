@@ -53,7 +53,8 @@ from .gee.dem_catalog import (
     describe_dems as describe_available_dems,
 )
 from .plotting import (plot_hydrograph, plot_watershed, plot_raster, plot_mass_balance,
-                       plot_field, animate_fields, export_peak_maps)
+                       plot_field, animate_fields, export_peak_maps, plot_inundation,
+                       animate_inundation)
 from .utils.terrain_rules import mannings_n_from_dem, apply_elevation_rule
 from .interactive import explain, run_wizard
 
@@ -71,6 +72,8 @@ __all__ = [
     "plot_field",
     "animate_fields",
     "export_peak_maps",
+    "plot_inundation",
+    "animate_inundation",
     "mannings_n_from_dem",
     "apply_elevation_rule",
     "explain",

@@ -106,6 +106,23 @@ class PhysicalRunoffMode(RunoffMode):
         if self._infil is not None:
             self._infil.update_state(rain_1d, dt)
 
+    # ── Restart state: each mechanism's, keyed '<mechanism>.<attribute>' ─────
+    def _mechanisms(self):
+        return [m for m in (self._imperv, self._infil, self._sat) if m is not None]
+
+    def get_state(self):
+        return {f"{m.name}.{k}": v for m in self._mechanisms()
+                for k, v in m.get_state().items()}
+
+    def set_state(self, state):
+        for m in self._mechanisms():
+            pre = m.name + "."
+            m.set_state({k[len(pre):]: v for k, v in state.items() if k.startswith(pre)})
+
+    def get_params(self):
+        return {f"{m.name}.{k}": v for m in self._mechanisms()
+                for k, v in m.get_params().items()}
+
     def is_active(self, t_seconds):
         return (self._imperv is not None
                 or self._infil is not None

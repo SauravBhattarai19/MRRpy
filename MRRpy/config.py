@@ -73,6 +73,8 @@ _ENUM_CHOICES = {
     "DEM_CONDITIONING":      ["fill", "carve", "carve_spread"],
     "CHANNEL_GEOMETRY":      ["order", "area", "discharge"],
     "MODEL_AREA":            ["watershed", "whole_dem"],
+    "INUNDATION_DEM":        ["auto", "model_grid", "file"] + list(_DEM_CATALOG),
+    "INUNDATION_METHOD":     ["hand", "2d"],
 }
 
 # Fixed-choice options that may also be None (None = "use the default rule").
@@ -529,6 +531,35 @@ class Config:
     FIELD_STRIDE: int = 1            # record every Nth OUTPUT_INTERVAL (memory control)
     FIELD_OUTPUT_DIR = None          # None → {OUTPUT_DIR}/fields/  (resolved at runtime)
 
+    # ── Flood depth and extent maps ──────────────────────────────────────────
+    # Spread the routed river flow over the land beside the rivers and write
+    # flood depth / extent maps, an animation and tables to
+    # {OUTPUT_DIR}/inundation/.  Routing results are unchanged.
+    INUNDATION_MAP: bool = False
+    # 'hand': each river reach's flow → a water level (rating curve) spread over
+    # the land below it (Height Above Nearest Drainage); quick, whole network.
+    # '2d': a 2D flood simulation over INUNDATION_AREA with the routed rivers
+    # flowing in; slower, water spreads and backs up as on the ground.
+    INUNDATION_METHOD: str = "hand"
+    INUNDATION_AREA = None           # (west, south, east, north) degrees; None → whole model area
+    # Elevation data for the maps: 'auto' (the run's Earth Engine DEM at its native
+    # resolution when the model grid is coarser, else the model grid) | 'model_grid'
+    # | 'file' (INUNDATION_DEM_PATH) | a DEM_SOURCE dataset name, e.g. 'fabdem'.
+    INUNDATION_DEM: str = "auto"
+    INUNDATION_DEM_PATH = None       # GeoTIFF used when INUNDATION_DEM='file'
+    INUNDATION_DEM_SCALE_M = None    # [m] download resolution; None → the dataset's native
+    INUNDATION_ANIMATION: bool = True     # flood_animation.gif of the largest flood
+
+    # ── Restart: carry on from a saved model state ───────────────────────────
+    # RESTART_FROM: a state file written by an earlier run (SAVE_STATE_AT_HOURS);
+    # the run starts with that run's water and soil instead of dry.  Rain, inflow
+    # and storm times still count from THIS run's start.  None → start dry.
+    RESTART_FROM = None
+    # Hours after the start at which to save the state, e.g. [24, 48]: written to
+    # {OUTPUT_DIR}/state/state_<hours>h.npz.  Each must be a multiple of
+    # OUTPUT_INTERVAL_SECONDS.  None → no state saved.
+    SAVE_STATE_AT_HOURS = None
+
     # ═════════════════════════════════════════════════════════════════════════
     # 10. COMPUTE BACKEND
     # ═════════════════════════════════════════════════════════════════════════
@@ -947,6 +978,55 @@ class Config:
                 errors.append("SAVE_FIELDS is on but FIELD_VARS is empty.")
             if int(self.FIELD_STRIDE) < 1:
                 errors.append(f"FIELD_STRIDE must be >= 1 (got {self.FIELD_STRIDE}).")
+
+        if self.INUNDATION_MAP:
+            area = self.INUNDATION_AREA
+            if area:
+                try:
+                    w, so, e, n = (float(v) for v in area)
+                    ok = -180 <= w < e <= 180 and -90 <= so < n <= 90
+                except (TypeError, ValueError):
+                    ok = False
+                if not ok:
+                    errors.append(f"INUNDATION_AREA must be (west, south, east, north) in "
+                                  f"degrees with west < east and south < north (got {area!r}).")
+            if self.INUNDATION_DEM == "file":
+                path = self.INUNDATION_DEM_PATH
+                if not path or not os.path.exists(path):
+                    errors.append(f"INUNDATION_DEM is 'file' but INUNDATION_DEM_PATH was not "
+                                  f"found: {path!r}")
+            elif (self.INUNDATION_DEM not in ("auto", "model_grid")
+                  and not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT"))):
+                errors.append(f"INUNDATION_DEM '{self.INUNDATION_DEM}' is downloaded from Google "
+                              "Earth Engine: set GEE_PROJECT (or the GEE_PROJECT env var).")
+            if self.INUNDATION_DEM_SCALE_M is not None and not float(self.INUNDATION_DEM_SCALE_M) > 0:
+                errors.append(f"INUNDATION_DEM_SCALE_M must be > 0 or None "
+                              f"(got {self.INUNDATION_DEM_SCALE_M}).")
+
+        # Restart files: the dynamic scheme (under development) has no restart,
+        # and saves must land on output times (the steps are clamped there).
+        if self.RESTART_FROM or self.SAVE_STATE_AT_HOURS:
+            if self.ROUTING_SCHEME == "dynamic":
+                errors.append("RESTART_FROM / SAVE_STATE_AT_HOURS do not work with "
+                              "ROUTING_SCHEME='dynamic' yet.")
+        if self.RESTART_FROM and not os.path.isfile(str(self.RESTART_FROM)):
+            errors.append(f"RESTART_FROM file not found: {self.RESTART_FROM!r}")
+        if self.SAVE_STATE_AT_HOURS:
+            try:
+                hours = [float(h) for h in self.SAVE_STATE_AT_HOURS]
+            except (TypeError, ValueError):
+                hours = None
+                errors.append(f"SAVE_STATE_AT_HOURS must be a list of hours "
+                              f"(got {self.SAVE_STATE_AT_HOURS!r}).")
+            interval = float(self.OUTPUT_INTERVAL_SECONDS or self.TIME_STEP_SECONDS)
+            for h in hours or ():
+                k = h * 3600.0 / interval
+                if not 0 < h <= float(self.TOTAL_SIMULATION_TIME_HOURS) + 1e-9:
+                    errors.append(f"SAVE_STATE_AT_HOURS: {h:g} h is outside the run "
+                                  f"(0 – {float(self.TOTAL_SIMULATION_TIME_HOURS):g} h).")
+                elif abs(k - round(k)) > 1e-6:
+                    errors.append(f"SAVE_STATE_AT_HOURS: {h:g} h is not an output time "
+                                  f"(a multiple of OUTPUT_INTERVAL_SECONDS={interval:g} s).")
 
         if errors:
             raise ValueError(

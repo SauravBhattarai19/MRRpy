@@ -477,6 +477,14 @@ def test_map_picker():
     assert "switched to downloading" in _status(f)
     assert f.dem_mode.value == "download" and f.config.DEM_PATH == ""
     assert f.fields["DEM_PATH"].text.value == "dem.tif"
+    # the same rectangle tool sets the box of the flood maps
+    small = {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [
+        [[85.2, 27.6], [85.2, 27.7], [85.3, 27.7], [85.3, 27.6], [85.2, 27.6]]]}}
+    f.draw_target.value = "INUNDATION_AREA"
+    f._on_draw(None, "created", small)
+    assert f.config.INUNDATION_AREA == (85.2, 27.6, 85.3, 27.7)
+    assert f.config.DEM_BOUNDS_WGS84 == (85.0, 27.0, 86.0, 28.0)      # unchanged
+    assert "flood-map area" in _status(f) and "Turn on" in _status(f)
 
 
 def test_no_map_without_ipyleaflet(monkeypatch):
