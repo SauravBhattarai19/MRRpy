@@ -1,5 +1,5 @@
 ---
-title: 'MRRpy: A modular Python model for distributed rainfall–runoff generation and flood routing'
+title: 'MRRpy: A modular Python model for distributed rainfall–runoff, flood routing, and inundation mapping'
 tags:
   - Python
   - hydrology
