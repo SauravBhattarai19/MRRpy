@@ -73,6 +73,7 @@ _ENUM_CHOICES = {
     "SERVES_SATELLITE":      ["landsat", "sentinel2", "modis"],
     "SOILGRIDS_DEPTH":       ["b0", "b10", "b30", "b60", "b100", "b200"],
     "MANNINGS_N_SOURCE":     ["scalar", "lulc", "lcz", "raster"],
+    "BASEFLOW_METHOD":       ["constant", "store"],
     "DEM_SOURCE":            list(_DEM_CATALOG),
     "DEM_CONDITIONING":      ["fill", "carve", "carve_spread"],
     "CHANNEL_GEOMETRY":      ["order", "area", "discharge"],
@@ -590,6 +591,17 @@ class Config:
     # channel network; channels then START at the corresponding normal depth.
     # 0 → dry start (event-flow only).
     BASEFLOW_SPECIFIC_Q: float = 0.0
+    # How baseflow is made (core/runoff/slowflow.py):
+    #   'constant' – BASEFLOW_SPECIFIC_Q stays the same for the whole run (default)
+    #   'store'    – water that soaks in (rain − runoff) fills a root-zone bucket,
+    #                loses evaporation, and the overflow drains to the rivers
+    #                through a linear store (Q = G/K).  BASEFLOW_SPECIFIC_Q is then
+    #                the STARTING baseflow: it fades and is refilled by rain.
+    BASEFLOW_METHOD: str = "constant"
+    BASEFLOW_RESPONSE_DAYS: float = 45.0   # K: days for baseflow to fade to about a third
+    BASEFLOW_SOIL_STORAGE_MM = None        # root-zone bucket; None → land-cover root depth × 0.10, else 150 mm
+    BASEFLOW_ET0_MM_DAY = None             # evaporation demand; None → Open-Meteo daily ET0 (needs EVENT_START_UTC)
+    BASEFLOW_START_WETNESS: float = 0.5    # how full the root-zone bucket starts (0 dry … 1 full)
 
     # ── Upstream inflow boundary condition(s) ────────────────────────────────
     # Inject an external discharge hydrograph Q(t) [m³/s] at one or more cells so
@@ -962,6 +974,18 @@ class Config:
             errors.append(f"GA_KSAT_DEPTH_CM must be in (0, 200] cm (got {self.GA_KSAT_DEPTH_CM})")
         if float(self.BASEFLOW_SPECIFIC_Q or 0.0) < 0:
             errors.append(f"BASEFLOW_SPECIFIC_Q must be ≥ 0 (got {self.BASEFLOW_SPECIFIC_Q})")
+        if str(self.BASEFLOW_METHOD).lower() == "store":
+            if not float(self.BASEFLOW_RESPONSE_DAYS) > 0:
+                errors.append(f"BASEFLOW_RESPONSE_DAYS must be > 0 (got {self.BASEFLOW_RESPONSE_DAYS})")
+            if self.BASEFLOW_SOIL_STORAGE_MM is not None and not float(self.BASEFLOW_SOIL_STORAGE_MM) > 0:
+                errors.append(f"BASEFLOW_SOIL_STORAGE_MM must be > 0 (got {self.BASEFLOW_SOIL_STORAGE_MM})")
+            if self.BASEFLOW_ET0_MM_DAY is not None and float(self.BASEFLOW_ET0_MM_DAY) < 0:
+                errors.append(f"BASEFLOW_ET0_MM_DAY must be ≥ 0 (got {self.BASEFLOW_ET0_MM_DAY})")
+            if not 0.0 <= float(self.BASEFLOW_START_WETNESS) <= 1.0:
+                errors.append(f"BASEFLOW_START_WETNESS must be between 0 and 1 (got {self.BASEFLOW_START_WETNESS})")
+            if self.BASEFLOW_ET0_MM_DAY is None and not self.EVENT_START_UTC:
+                errors.append("BASEFLOW_METHOD='store' needs the evaporation demand: set EVENT_START_UTC "
+                              "(it is then downloaded for those dates) or BASEFLOW_ET0_MM_DAY (a number, mm/day).")
         if self.TIME_STEP_SECONDS <= 0:
             errors.append(f"TIME_STEP_SECONDS must be > 0 (got {self.TIME_STEP_SECONDS})")
 

@@ -159,6 +159,29 @@ reported hydrograph without changing the routing.
 
 <!-- settings: BASEFLOW_SPECIFIC_Q -->
 
+### Baseflow from the rain that soaks in
+
+With `BASEFLOW_METHOD: store`, baseflow is no longer constant. Rain that does
+not run off fills a root-zone store in each cell. Part of it evaporates. What
+overflows drains to the nearest river over weeks. `BASEFLOW_SPECIFIC_Q` is then
+the flow the run *starts* with: it fades between storms and rises after them.
+
+```yaml
+BASEFLOW_METHOD: store
+BASEFLOW_SPECIFIC_Q: 0.01        # starting baseflow, m³/s per km²
+BASEFLOW_RESPONSE_DAYS: 45
+EVENT_START_UTC: "2021-06-01 00:00"
+```
+
+The evaporation demand is downloaded for your dates from Open-Meteo (no
+account). To run offline, give a number in `BASEFLOW_ET0_MM_DAY`. The run
+writes `baseflow.csv` (soaked-in water, evaporation, stored water and baseflow
+over time) and prints a soil and groundwater budget. This works with every
+runoff method except `none`, where no rain soaks in. In dry climates it tends
+to give too much baseflow, because rivers there lose water to their beds.
+
+<!-- settings: BASEFLOW_METHOD BASEFLOW_RESPONSE_DAYS BASEFLOW_SOIL_STORAGE_MM BASEFLOW_ET0_MM_DAY BASEFLOW_START_WETNESS -->
+
 ## Try it
 
 - [Example 9 – Roughness and river channels](../examples/roughness-channels.md):

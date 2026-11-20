@@ -260,6 +260,12 @@ def initialise_grid(cfg):
         init_Q_1d = np.where(chan_mask_1d, Q0, 0.0)
         print(f"  Baseflow       |  q_b={q_b:g} m³/s/km²  outlet Q0={Q0.max():.2f} m³/s  "
               f"(channel cells start at normal depth)")
+    # BASEFLOW_METHOD='store': the same starting flow, but it then fades and is
+    # refilled by soaked-in water (core/runoff/slowflow.py) instead of staying constant.
+    _bf_store = str(getattr(cfg, 'BASEFLOW_METHOD', 'constant')).lower() == 'store'
+    grid_data["baseflow_start_rate_1d"] = base_rate_1d if _bf_store else None
+    if _bf_store:
+        base_rate_1d = None
     grid_data["base_rate_1d"] = base_rate_1d
     grid_data["init_volume_1d"] = init_volume_1d
     grid_data["init_Q_1d"] = init_Q_1d
@@ -278,7 +284,8 @@ def initialise_grid(cfg):
         width_1d      = gpu_utils.to_device(width_1d.astype(_dtype),      xp)
         store_area_1d = gpu_utils.to_device(store_area_1d.astype(_dtype), xp)
         chan_mask_1d  = gpu_utils.to_device(chan_mask_1d,                 xp)
-        for _k in ("bank_1d", "n_fp_1d", "base_rate_1d", "init_volume_1d", "init_Q_1d"):
+        for _k in ("bank_1d", "n_fp_1d", "base_rate_1d", "baseflow_start_rate_1d",
+                   "init_volume_1d", "init_Q_1d"):
             if grid_data.get(_k) is not None:
                 grid_data[_k] = gpu_utils.to_device(np.asarray(grid_data[_k]).astype(_dtype), xp)
         grid_data["slope_1d"]  = slope_1d
@@ -315,6 +322,13 @@ def initialise_grid(cfg):
         grid_data["inflow_bc"] = _bc if _bc.active else None
     else:
         grid_data["inflow_bc"] = None
+
+    # Baseflow from soaked-in water (optional; None with BASEFLOW_METHOD='constant')
+    if _bf_store:
+        from ..runoff.slowflow import SlowFlowStore
+        grid_data["slow_flow"] = SlowFlowStore(cfg, grid_data, dtype=gpu_utils.get_dtype(cfg))
+    else:
+        grid_data["slow_flow"] = None
 
     return grid_data
 
@@ -378,6 +392,7 @@ def run_time_loop(grid_data, cfg, on_progress=None, is_cancelled=None):
     bank_1d        = grid_data.get("bank_1d")         # sub-grid bankfull depth (None = off)
     n_fp_1d        = grid_data.get("n_fp_1d")         # floodplain n above bank
     base_rate_1d   = grid_data.get("base_rate_1d")    # baseflow lateral inflow [m³/s]
+    slow_flow      = grid_data.get("slow_flow")       # baseflow store (None = off)
     _flux_limiter  = bool(getattr(cfg, "FLUX_LIMITER", True))  # kinematic/diffusive Q<=V/dt clip
 
     # ── Optional rain/snow elevation partition ───────────────────────────────
@@ -462,6 +477,8 @@ def run_time_loop(grid_data, cfg, on_progress=None, is_cancelled=None):
         # outlet rebuild baseflow from nothing and leave that volume in the ledger.
         _q0 = xp.asarray(grid_data["init_Q_1d"], dtype=_dtype)
         _qb = grid_data.get("base_rate_1d")
+        if _qb is None:
+            _qb = grid_data.get("baseflow_start_rate_1d")
         _qb = xp.asarray(_qb, dtype=_dtype) if _qb is not None else xp.zeros_like(_q0)
         Q_out_1d     = _q0.copy()
         I_prev_1d    = xp.maximum(_q0 - _qb, 0.0)
@@ -626,6 +643,8 @@ def run_time_loop(grid_data, cfg, on_progress=None, is_cancelled=None):
     _save_hours = getattr(cfg, 'SAVE_STATE_AT_HOURS', None) or ()
     _save_at    = {int(round(float(h) * 3600.0 / _out_interval)) for h in _save_hours}
     _out_count  = 0                                    # output times passed so far
+    if slow_flow is not None:                          # plan the first interval's baseflow
+        slow_flow.update(0.0, min(_out_interval, T))
     t_wall_start = time.time()
 
     while t_seconds < T - _eps:
@@ -652,6 +671,9 @@ def run_time_loop(grid_data, cfg, on_progress=None, is_cancelled=None):
         bc_rate_1d = inflow_bc.rate_1d(t_seconds) if inflow_bc is not None else None
         if base_rate_1d is not None:                     # constant channel baseflow
             bc_rate_1d = base_rate_1d if bc_rate_1d is None else bc_rate_1d + base_rate_1d
+        if slow_flow is not None:                        # baseflow from soaked-in water
+            bc_rate_1d = (slow_flow.rate_1d if bc_rate_1d is None
+                          else bc_rate_1d + slow_flow.rate_1d)
 
         # ── 2. Inflow buffer: accumulates VOLUME (not rate) from upstream cells ─
         # We scatter-add Q_out_vol_1d [m³] — the volume that left each upstream
@@ -1061,6 +1083,8 @@ def run_time_loop(grid_data, cfg, on_progress=None, is_cancelled=None):
         _out_vol_dev += Q_out_vol_1d[outlet_pos]              # outlet outflow volume this step [m³]
         if peak_rec is not None:
             peak_rec.add_input(rain_vol, bc_rate_1d, dt)      # read-only: local inflow of rivers
+        if slow_flow is not None:
+            slow_flow.add_step(rain_1d, source_1d, dt)        # water that soaked in this step
 
         # ── Advance simulation time and accumulate step statistics ───────────
         t_seconds    += dt
@@ -1110,6 +1134,9 @@ def run_time_loop(grid_data, cfg, on_progress=None, is_cancelled=None):
                 ))
             if on_progress is not None:
                 on_progress(min(t_seconds / T, 1.0))
+            if slow_flow is not None:                 # close this interval, plan the next
+                _left = T - t_seconds
+                slow_flow.update(t_seconds, min(_out_interval, _left) if _left > _eps else 0.0)
             _out_count += 1
             if _out_count in _save_at:
                 from .restart import save_state
@@ -1154,6 +1181,9 @@ def run_time_loop(grid_data, cfg, on_progress=None, is_cancelled=None):
         partition_m3=((float(mb_dunne.item()), float(mb_horton.item()),
                        float(mb_imperv.item())) if _partition else None),
         partition_series=partition_series)
+
+    if slow_flow is not None:
+        slow_flow.finish()
 
     # ── Persist spatiotemporal fields (depth/velocity/discharge over time) ────
     if recorder is not None:

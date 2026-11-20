@@ -800,6 +800,35 @@ PARAMS = [
       "Constant flow per km² of drainage area; rivers then start at that "
       "depth. 0 starts them dry.", "float", unit="m³/s per km²",
       level="advanced", min=0, example=0.01),
+    P("BASEFLOW_METHOD", "surface", "How baseflow is made",
+      "Constant keeps the steady baseflow above for the whole run. Store makes "
+      "baseflow from the rain that soaks in: it fills the soil, part evaporates, "
+      "and the rest drains slowly to the rivers. The steady baseflow above is "
+      "then only the starting flow.", "choice", level="advanced",
+      choice_labels={
+          "constant": "constant — the same flow all run (or none)",
+          "store": "store — from soaked-in rain, fading between storms",
+      }),
+    P("BASEFLOW_RESPONSE_DAYS", "surface", "Days for baseflow to fade",
+      "After rain stops, baseflow falls to about a third in this many days. "
+      "Typical: 15 to 100.", "float", unit="days", level="advanced",
+      min=0, min_exclusive=True, when=(("BASEFLOW_METHOD", In("store")),), example=30.0),
+    P("BASEFLOW_SOIL_STORAGE_MM", "surface", "Water the root zone can hold",
+      "Soaked-in rain fills this first; only the overflow becomes baseflow.",
+      "float", unit="mm", level="advanced", optional=True,
+      none_label="from land cover (150 mm without a land-cover map)",
+      min=0, min_exclusive=True, when=(("BASEFLOW_METHOD", In("store")),), example=120.0),
+    P("BASEFLOW_ET0_MM_DAY", "surface", "Evaporation demand",
+      "How much a well-watered grass surface would evaporate per day. Left "
+      "empty, daily values for your dates are downloaded from Open-Meteo "
+      "(no account; needs the storm start date).",
+      "float", unit="mm/day", level="advanced", optional=True,
+      none_label="downloaded for the run dates", min=0,
+      when=(("BASEFLOW_METHOD", In("store")),), example=3.0),
+    P("BASEFLOW_START_WETNESS", "surface", "How full the root zone starts",
+      "0 is dry soil, 1 is full. Matters most in short runs.", "float",
+      level="advanced", min=0, max=1,
+      when=(("BASEFLOW_METHOD", In("store")),), example=0.8),
 
     # ── 5. Routing and simulation time ───────────────────────────────────────
     P("ROUTING_SCHEME", "routing", "Routing method",

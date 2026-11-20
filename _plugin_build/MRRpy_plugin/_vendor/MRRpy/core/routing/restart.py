@@ -151,6 +151,11 @@ def save_state(cfg, grid_data, scheme, t_seconds, routing):
         for k, v in engine.get_state().items():
             arrays[f"runoff.{k}"] = v
 
+    store = grid_data.get("slow_flow")
+    if store is not None:                          # baseflow store (soil water, groundwater)
+        for k, v in store.get_state().items():
+            arrays[f"baseflow.{k}"] = v
+
     out_dir = state_dir(cfg)
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, state_file_name(hours))
@@ -234,6 +239,7 @@ def load_state(path, grid_data, cfg, scheme):
         saved = json.loads(str(z["meta"]))
         routing = {k[len("routing."):]: z[k] for k in z.files if k.startswith("routing.")}
         runoff = {k[len("runoff."):]: z[k] for k in z.files if k.startswith("runoff.")}
+        baseflow = {k[len("baseflow."):]: z[k] for k in z.files if k.startswith("baseflow.")}
     _check(saved, describe(grid_data, cfg, scheme), path)
 
     engine = grid_data.get("runoff_engine")
@@ -243,6 +249,17 @@ def load_state(path, grid_data, cfg, scheme):
         except ValueError as exc:
             raise RestartError(f"The state file {path} does not fit this runoff model: "
                                f"{exc}.") from None
+    store = grid_data.get("slow_flow")
+    if store is not None:
+        if baseflow:
+            try:
+                store.set_state(baseflow)
+            except ValueError as exc:
+                raise RestartError(f"The state file {path} does not fit the baseflow store: "
+                                   f"{exc}.") from None
+        else:
+            print("  [NOTE] the state file has no baseflow store; soil water and groundwater "
+                  "start from the settings (BASEFLOW_START_WETNESS, BASEFLOW_SPECIFIC_Q).")
     out = {}
     for k, v in routing.items():
         out[k] = float(v) if v.ndim == 0 else v
