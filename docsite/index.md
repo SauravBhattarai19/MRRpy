@@ -179,3 +179,10 @@ method, so comparing two choices means changing one setting.
 A free, interactive companion course walks through the physics from the ground
 up (DEMs, delineation, runoff, and each routing scheme) with in-browser
 simulations: [**the MRRpy course**](https://sauravbhattarai19.github.io/MRRpy/).
+
+## Citing and acknowledgements
+
+MRRpy was developed as part of Saurav Bhattarai's PhD research at Jackson State
+University, in collaboration with the U.S. Army Engineer Research and Development
+Center (ERDC–CHL), with support from ORISE. If you use it, please
+[cite it](about.md#how-to-cite-mrrpy).

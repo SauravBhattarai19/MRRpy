@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use MRRpy, please cite it using the metadata below."
 type: software
-title: "MRRpy: A modular Python model for distributed rainfall–runoff generation and flood routing"
+title: "MRRpy: A modular Python model for distributed rainfall–runoff, flood routing, and inundation mapping"
 abstract: >-
   MRRpy (Multi-Mechanism Runoff and Routing) is an open-source Python package
   for distributed, event-scale rainfall–runoff simulation and channel flood

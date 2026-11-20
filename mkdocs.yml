@@ -74,6 +74,7 @@ nav:
       - Command line: reference/cli.md
       - Python API: reference/api.md
       - For developers: reference/developers.md
+  - Citing and acknowledgements: about.md
 
 markdown_extensions:
   - admonition
