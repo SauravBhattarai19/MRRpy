@@ -1,6 +1,7 @@
 [general]
 name=MRRpy_plugin
 qgisMinimumVersion=3.16
+qgisMaximumVersion=4.99
 description=QGIS interface to MRRpy, a distributed rainfall–runoff and flood-routing model: DEM preprocessing and watershed delineation, gauge or IMERG satellite rainfall, physical (VSA saturation-excess / Green-Ampt / impervious) or SCS-CN runoff, and kinematic, diffusive, Muskingum–Cunge, dynamic or semi-implicit diffusive routing, with optional GPU (CuPy/CUDA) acceleration.
 version=4.0.0
 author=ORISE / Saurav Bhattarai

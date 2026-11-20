@@ -37,6 +37,7 @@ bridge.ensure_core() makes it importable (pip install, vendored copy in
 the plugin zip, or the development checkout next to a symlinked plugin).
 """
 
+import contextlib
 import io
 import sys
 import traceback
@@ -77,6 +78,31 @@ class _StdoutCapture(io.TextIOBase):
             self._buffer = ""
 
 
+def _core_captures_output():
+    """True when the installed MRRpy core routes its own output (MRRpy >= 1.1)."""
+    try:
+        from MRRpy.utils import runlog  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@contextlib.contextmanager
+def _captured(signal):
+    """Send what the core prints inside the block to *signal*, one line at a time."""
+    if _core_captures_output():
+        from MRRpy.utils.runlog import capture
+        with capture(on_line=signal.emit):
+            yield
+    else:
+        original = sys.stdout
+        sys.stdout = _StdoutCapture(signal)
+        try:
+            yield
+        finally:
+            sys.stdout = original
+
+
 # ── Worker thread ──────────────────────────────────────────────────────────────
 
 class PipelineWorker(QThread):
@@ -115,7 +141,8 @@ class PipelineWorker(QThread):
     def cancel(self):
         """Request graceful cancellation (checked between stages)."""
         self._cancelled = True
-        self.log.emit("[INFO] Cancel requested — the run stops after the current stage.")
+        self.log.emit("[INFO] Cancel requested — routing stops within one time step; "
+                      "terrain and flood-map steps finish what they are doing first.")
 
     # ── QThread entry point ───────────────────────────────────────────────────
 
@@ -123,9 +150,13 @@ class PipelineWorker(QThread):
         """Called by QThread.start().  Runs in the worker thread."""
         ensure_core()
 
-        # Redirect stdout so model print() calls go to the log signal
+        # MRRpy >= 1.1 sends every line it reports to on_log itself (per run, so
+        # other threads are untouched).  An older core only prints: capture its
+        # stdout the old way.
+        swap = not _core_captures_output()
         original_stdout = sys.stdout
-        sys.stdout = _StdoutCapture(self.log)
+        if swap:
+            sys.stdout = _StdoutCapture(self.log)
 
         try:
             self._run_pipeline()
@@ -138,7 +169,8 @@ class PipelineWorker(QThread):
             )
         finally:
             # Always restore stdout and free GPU memory
-            sys.stdout = original_stdout
+            if swap:
+                sys.stdout = original_stdout
             self._release_gpu_memory()
 
     # ── Pipeline stages ───────────────────────────────────────────────────────
@@ -157,7 +189,7 @@ class PipelineWorker(QThread):
 
         # Exactly one of finished / cancelled / error is emitted per run, so the
         # dialog always gets a signal to re-enable its controls.
-        if self._cancelled:
+        if self._cancelled or getattr(self._result, "cancelled", False):
             self.cancelled.emit()
         else:
             self.finished.emit(self._result)
@@ -207,37 +239,12 @@ class DemStepWorker(QThread):
         """Called by QThread.start().  Runs in the worker thread."""
         ensure_core()
 
-        original_stdout = sys.stdout
-        sys.stdout = _StdoutCapture(self.log)
         try:
             from MRRpy.core import dem_processing as dp
 
             engine = self._params.get("engine", "pyflwdir")
-            if self._task == "analyze_terrain":
-                out = dp.analyze_terrain(
-                    self._params["dem_path"],
-                    self._params["target_crs_epsg"],
-                    self._params["output_dir"],
-                    engine=engine,
-                    conditioning=self._params.get("conditioning"),
-                    min_slope=self._params.get("min_slope", 1e-4),
-                    lake_mask_path=self._params.get("lake_mask_path"),
-                )
-            elif self._task == "delineate":
-                out = dp.delineate_from_outlet(
-                    self._params["output_dir"],
-                    self._params["output_point_latlon"],
-                    self._params["target_crs_epsg"],
-                    engine=engine,
-                )
-            elif self._task == "whole_dem":
-                out = dp.use_whole_dem(
-                    self._params["output_dir"],
-                    self._params["target_crs_epsg"],
-                )
-            else:
-                raise ValueError(f"Unknown DEM step: {self._task!r}")
-
+            with _captured(self.log):
+                out = self._run_step(dp, engine)
             self._result = {"task": self._task, **(out or {})}
             self.finished.emit(self._result)
         except Exception:  # noqa: BLE001
@@ -247,5 +254,32 @@ class DemStepWorker(QThread):
                 f"The '{self._task}' step failed.\n\n{tb.splitlines()[-1]}"
             )
         finally:
-            sys.stdout = original_stdout
             PipelineWorker._release_gpu_memory()
+
+    def _run_step(self, dp, engine):
+        """Run the one DEM step asked for; returns the core function's result."""
+        if self._task == "analyze_terrain":
+            out = dp.analyze_terrain(
+                self._params["dem_path"],
+                self._params["target_crs_epsg"],
+                self._params["output_dir"],
+                engine=engine,
+                conditioning=self._params.get("conditioning"),
+                min_slope=self._params.get("min_slope", 1e-4),
+                lake_mask_path=self._params.get("lake_mask_path"),
+            )
+        elif self._task == "delineate":
+            out = dp.delineate_from_outlet(
+                self._params["output_dir"],
+                self._params["output_point_latlon"],
+                self._params["target_crs_epsg"],
+                engine=engine,
+            )
+        elif self._task == "whole_dem":
+            out = dp.use_whole_dem(
+                self._params["output_dir"],
+                self._params["target_crs_epsg"],
+            )
+        else:
+            raise ValueError(f"Unknown DEM step: {self._task!r}")
+        return out

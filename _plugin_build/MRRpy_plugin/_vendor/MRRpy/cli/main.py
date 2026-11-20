@@ -36,9 +36,22 @@ Commands
         accepts the string or the code, e.g. PRECIP_METHOD: uniform ≡ 0).
 
     MRRpy list-dems
-        Print every DEM dataset MRRpy can auto-download from Google Earth
-        Engine (dataset id, resolution, coverage) — set DEM_SOURCE to one of
+        Print every DEM dataset MRRpy can download (dataset id, resolution,
+        coverage, and which need no account) — set DEM_SOURCE to one of
         these keys.
+
+    MRRpy demo [FOLDER] [--real]
+        Run a small sample basin from start to finish; nothing to prepare.
+
+    MRRpy doctor [--offline]
+        Check this computer: packages, GPU, Earth Engine sign-in, internet.
+
+    MRRpy ensemble -c config.yaml [--model M] [--members N …] [--workers N]
+        Run every member of an Open-Meteo ensemble forecast and write the
+        range of floods they give.
+
+Global flags: ``MRRpy --version``; ``MRRpy --debug <command> …`` shows the full
+Python traceback on an error.  ``MRRpy run`` takes ``--quiet`` and ``--no-log``.
 """
 
 import argparse
@@ -57,8 +70,11 @@ def _cmd_run(args):
     if args.backend:
         cfg.BACKEND = args.backend
     cfg.validate()
-    run_pipeline(cfg, stages=args.stages)
-    return 0
+    out = run_pipeline(cfg, stages=args.stages, quiet=args.quiet,
+                       log_file=not args.no_log)
+    if args.quiet:
+        print(out.summary())
+    return 130 if out.cancelled else 0
 
 
 def _cmd_init_config(args):
@@ -124,6 +140,38 @@ def _cmd_validate(args):
     return 0
 
 
+def _cmd_demo(args):
+    from ..sample import demo
+    out = demo(args.folder, real=args.real, quiet=not args.verbose)
+    return 0 if out.hydrograph is not None else 1
+
+
+def _cmd_doctor(args):
+    from ..doctor import report
+    return 0 if report(online=not args.offline) else 1
+
+
+def _cmd_ensemble(args):
+    from ..batch import run_ensemble
+    cfg = Config.from_file(args.config)
+    if args.output_dir:
+        cfg.OUTPUT_DIR = args.output_dir
+    if args.model:
+        cfg.OPENMETEO_MODEL = args.model
+    res = run_ensemble(cfg, members=args.members, workers=args.workers)
+    try:
+        import matplotlib
+        matplotlib.use("Agg", force=False)
+        from ..plotting import plot_ensemble
+        fig, _ax = plot_ensemble(res)
+        png = os.path.join(res["output_dir"], "ensemble_hydrograph.png")
+        fig.savefig(png, dpi=120, bbox_inches="tight")
+        print(f"Figure: {png}")
+    except Exception as exc:              # noqa: BLE001 — the runs themselves succeeded
+        print(f"(The figure could not be drawn: {exc})")
+    return 0
+
+
 def _cmd_list_options(args):
     from ..core.routing.qbf import describe_presets
     print(Config.describe_options())
@@ -145,6 +193,10 @@ def build_parser():
         description="MRRpy — distributed hydrological + hydrodynamic model "
                     "(VSA-OPM; Pradhan & Ogden 2010).",
     )
+    from .. import __version__
+    parser.add_argument("--version", action="version", version=f"MRRpy {__version__}")
+    parser.add_argument("--debug", action="store_true",
+                        help="on an error, show the full Python traceback")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser("run", help="run the pipeline from a config file")
@@ -157,6 +209,11 @@ def build_parser():
                        help="override OUTPUT_DIR from the config file")
     p_run.add_argument("--backend", default=None, choices=("cpu", "gpu"),
                        help="override the compute backend")
+    p_run.add_argument("-q", "--quiet", action="store_true",
+                       help="print only warnings and a closing summary (the full "
+                            "report still goes to run.log in the results folder)")
+    p_run.add_argument("--no-log", action="store_true",
+                       help="do not write run.log in the results folder")
     p_run.set_defaults(func=_cmd_run)
 
     p_wiz = sub.add_parser(
@@ -217,6 +274,43 @@ def build_parser():
                        help="config file (.yaml, .json or legacy .py)")
     p_val.set_defaults(func=_cmd_validate)
 
+    p_demo = sub.add_parser(
+        "demo", help="run a small sample basin from start to finish (nothing to prepare)",
+        description="Run the sample basin: a made-up valley by default (offline), or a real "
+                    "basin near Kathmandu with --real (downloads a DEM, no account).")
+    p_demo.add_argument("folder", nargs="?", default="mrrpy_demo",
+                        help="where to put the demo (default: mrrpy_demo)")
+    p_demo.add_argument("--real", action="store_true",
+                        help="a real basin with a downloaded 90 m DEM (needs internet)")
+    p_demo.add_argument("-v", "--verbose", action="store_true",
+                        help="print the full report of the run")
+    p_demo.set_defaults(func=_cmd_demo)
+
+    p_doc = sub.add_parser(
+        "doctor", help="check this computer: packages, GPU, Earth Engine, internet",
+        description="Check what MRRpy needs on this computer. Nothing is installed or changed.")
+    p_doc.add_argument("--offline", action="store_true",
+                       help="skip the checks that need the internet")
+    p_doc.set_defaults(func=_cmd_doctor)
+
+    p_ens = sub.add_parser(
+        "ensemble", help="run every member of an Open-Meteo ensemble forecast",
+        description="Run each member of an ensemble forecast and write the range of floods "
+                    "they give (ensemble_hydrograph.csv and .png). The config must use "
+                    "Open-Meteo rain (PRECIP_METHOD openmeteo_thiessen or openmeteo_idw).")
+    p_ens.add_argument("-c", "--config", required=True,
+                       help="config file (.yaml, .json or legacy .py)")
+    p_ens.add_argument("--model", default=None,
+                       help="ensemble model, e.g. gfs_seamless (31 members), ecmwf_ifs025 "
+                            "(51), icon_seamless (40); default: OPENMETEO_MODEL of the file")
+    p_ens.add_argument("--members", nargs="+", type=int, default=None,
+                       help="member numbers to run (default: all; 0 is the control run)")
+    p_ens.add_argument("--workers", type=int, default=1,
+                       help="how many members to run at the same time (default 1)")
+    p_ens.add_argument("--output-dir", default=None,
+                       help="override OUTPUT_DIR from the config file")
+    p_ens.set_defaults(func=_cmd_ensemble)
+
     p_opts = sub.add_parser("list-options",
                             help="list fixed-choice options and their integer codes")
     p_opts.set_defaults(func=_cmd_list_options)
@@ -233,8 +327,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (FileNotFoundError, ValueError, AttributeError, ImportError) as exc:
-        print(f"[ERROR] {exc}", file=sys.stderr)
+    except KeyboardInterrupt:
+        print("\n[INFO] Stopped.", file=sys.stderr)
+        return 130
+    except Exception as exc:              # noqa: BLE001 — one plain line, not a traceback
+        if args.debug:
+            raise
+        expected = (FileNotFoundError, ValueError, AttributeError, ImportError, RuntimeError)
+        what = str(exc) if isinstance(exc, expected) else f"{type(exc).__name__}: {exc}"
+        print(f"[ERROR] {what}", file=sys.stderr)
+        if not isinstance(exc, (FileNotFoundError, ValueError)):
+            print("        For the full details, run the same command with --debug "
+                  "right after 'MRRpy', e.g.  MRRpy --debug run -c run.yaml",
+                  file=sys.stderr)
         return 1
 
 

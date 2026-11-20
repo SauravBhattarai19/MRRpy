@@ -70,7 +70,7 @@ class MainDialog(QDialog):
         self.setWindowTitle("MRRpy_plugin")
         self.setMinimumSize(780, 680)
         self.resize(900, 760)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
 
         self._build_ui()
         self._connect_signals()
@@ -149,7 +149,7 @@ class MainDialog(QDialog):
         monofont.setFamily("Monospace")
         monofont.setPointSize(9)
         self.log_panel.setFont(monofont)
-        self.log_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.log_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         root.addWidget(self.log_panel, stretch=2)
 
         # ── Button row ────────────────────────────────────────────────────────
@@ -370,9 +370,9 @@ class MainDialog(QDialog):
             f"The model needs these packages, which are not installed in "
             f"QGIS's Python:\n\n    {names}\n\n"
             "Open the Dependencies manager to install them now?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes,
         )
-        if resp == QMessageBox.Yes:
+        if resp == QMessageBox.StandardButton.Yes:
             self._open_dependencies()
         return False
 
@@ -505,7 +505,7 @@ class MainDialog(QDialog):
     def _open_dependencies(self):
         """Open the dependency status/installer dialog (modal)."""
         dlg = DependencyDialog(parent=self)
-        dlg.exec_()
+        dlg.exec()
 
     def load_config(self, path):
         """Load a .yaml / .json / .py config file into every tab."""

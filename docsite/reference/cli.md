@@ -80,6 +80,54 @@ MRRpy run -c my_run.yaml --backend gpu --output-dir results/
 | `--stages` | subset/order of `process_dem`, `routing`, `inundation`, `vsa_opm` (`inundation` redraws the flood maps of a routed run) |
 | `--backend` | override `BACKEND` (`cpu`/`gpu`) |
 | `--output-dir` | override `OUTPUT_DIR` |
+| `--quiet`, `-q` | print only warnings and a closing summary; the full report still goes to `run.log` in the results folder |
+| `--no-log` | do not write `run.log` |
+
+Ctrl+C stops a run within one routing time step.
+
+### `demo` — try MRRpy before you have data
+
+```bash
+MRRpy demo               # a made-up valley, about 70 km²; nothing is downloaded
+MRRpy demo --real        # a real basin near Kathmandu; downloads a 90 m DEM, no account
+```
+
+Writes `mrrpy_demo/run.yaml` (the settings, to edit and run again) and
+`mrrpy_demo/results/` with the hydrograph, its figure and the basin.
+
+### `doctor` — check this computer
+
+```bash
+MRRpy doctor             # packages, GPU, Earth Engine sign-in, internet, a place to write
+MRRpy doctor --offline   # skip the checks that need the internet
+```
+
+Each line says `OK`, `MISSING` (an optional part) or `PROBLEM`, with what to do.
+Nothing is installed or changed.
+
+### `ensemble` — every member of an ensemble forecast
+
+```bash
+MRRpy ensemble -c run.yaml --model gfs_seamless --workers 4
+```
+
+Runs each member of an Open-Meteo ensemble forecast and writes the range of
+floods they give (`ensemble/ensemble_hydrograph.csv` and `.png`). See
+[Ensemble forecasts](../manual/precipitation.md#ensemble-forecasts).
+
+| Flag | Purpose |
+|---|---|
+| `--model` | the ensemble model (default: `OPENMETEO_MODEL` of the file) |
+| `--members` | member numbers to run (default: all; 0 is the control run) |
+| `--workers` | how many members run at the same time |
+| `--output-dir` | override `OUTPUT_DIR` |
+
+### Flags before the command
+
+| Flag | Purpose |
+|---|---|
+| `MRRpy --version` | print the version |
+| `MRRpy --debug <command> …` | on an error, show the full Python traceback instead of one line |
 
 ### `list-options` — discover option codes
 
@@ -105,6 +153,8 @@ of these keys and `DEM_BOUNDS_WGS84` to skip needing a local `DEM_PATH`. See
 ## Typical session
 
 ```bash
+MRRpy doctor                # once: is everything here?
+MRRpy demo                  # once: see a run from start to finish
 MRRpy wizard -o run.yaml    # answer the questions (or: init-config + edit the file)
 MRRpy validate -c run.yaml
 MRRpy run -c run.yaml

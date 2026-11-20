@@ -73,6 +73,7 @@ API_URLS = {
     "historical":          "https://archive-api.open-meteo.com/v1/archive",
     "historical_forecast": "https://historical-forecast-api.open-meteo.com/v1/forecast",
     "single_run":          "https://single-runs-api.open-meteo.com/v1/forecast",
+    "ensemble":            "https://ensemble-api.open-meteo.com/v1/ensemble",
 }
 # The forecast API also serves the recent past (its `past_days` reaches 92).
 # One day of margin keeps 'auto' clear of the boundary.
@@ -247,6 +248,11 @@ def _base_url(api):
     return url
 
 
+def member_file(om_dir, member):
+    """Rain table of one ensemble member (0 = the control run)."""
+    return os.path.join(om_dir, f"timeseries_member{int(member):02d}.csv")
+
+
 def fetch_points(api, lats, lons, start_date, end_date, model="best_match",
                  minutely_15=False, run=None):
     """
@@ -288,12 +294,20 @@ def fetch_points(api, lats, lons, start_date, end_date, model="best_match",
                 f"Open-Meteo returned {len(rows)} locations for {len(la)} requested.")
         for r in rows:
             series = r.get(block) or {}
-            out.append({
+            point = {
                 "latitude": float(r["latitude"]),
                 "longitude": float(r["longitude"]),
                 "time": list(series.get("time") or []),
                 "precipitation": list(series.get("precipitation") or []),
-            })
+            }
+            # The ensemble API adds one series per member next to the control
+            # run: precipitation_member01, precipitation_member02, …
+            members = {int(k.rsplit("member", 1)[1]): list(v or [])
+                       for k, v in series.items()
+                       if k.startswith("precipitation_member")}
+            if members:
+                point["members"] = members
+            out.append(point)
     return out
 
 
@@ -474,6 +488,20 @@ def download_openmeteo(cfg):
             from None
 
     stations, depth_mm, notes = build_series(points, start, end, step_s)
+    # Ensemble: one rain table per member, on the control run's stations and rows.
+    member_tables = {}
+    if api == 'ensemble':
+        numbers = sorted(set().union(*(p.get("members", {}).keys() for p in points)))
+        member_tables[0] = depth_mm
+        for m in numbers:
+            pts = [dict(p, precipitation=p.get("members", {}).get(m, [])) for p in points]
+            _st, table, _notes = build_series(pts, start, end, step_s)
+            member_tables[m] = table.reindex(index=depth_mm.index,
+                                             columns=depth_mm.columns).fillna(0.0)
+        if not numbers:
+            raise OpenMeteoError(
+                f"Open-Meteo returned no ensemble members for model {req['model']!r}; "
+                "use an ensemble model such as gfs_seamless or ecmwf_ifs025.")
 
     from pyproj import Transformer
     tf = Transformer.from_crs("EPSG:4326", target_crs, always_xy=True)
@@ -485,6 +513,8 @@ def download_openmeteo(cfg):
     stations[['gauge_id', 'name', 'easting_m', 'northing_m']].to_csv(
         gauges_path, index=False)
     depth_mm.reset_index().to_csv(ts_path, index=False)
+    for m, table in member_tables.items():
+        table.reset_index().to_csv(member_file(om_dir, m), index=False)
 
     now = datetime.now(timezone.utc)
     data_end = start + timedelta(seconds=int(depth_mm.index[-1]))
@@ -496,6 +526,7 @@ def download_openmeteo(cfg):
         'bbox_4326':         [round(b, 5) for b in bounds],
         'n_query_points':    int(len(lats)),
         'n_stations':        int(len(stations)),
+        'members':           sorted(member_tables),
         'n_timesteps':       int(len(depth_mm)),
         'data_end_utc':      data_end.strftime('%Y-%m-%d %H:%M'),
         'includes_forecast': data_end > now.replace(tzinfo=None),
@@ -510,6 +541,10 @@ def download_openmeteo(cfg):
         print(f"  [WARN] {n}")
     mean_total = float(depth_mm.sum(axis=0).mean())
     print(f"  Stations     : {len(stations)} model cells (from {len(lats)} points)")
+    if member_tables:
+        totals = [float(t.sum(axis=0).mean()) for t in member_tables.values()]
+        print(f"  Members      : {len(member_tables)} (control + {len(member_tables) - 1}); "
+              f"mean totals {min(totals):.1f} to {max(totals):.1f} mm")
     print(f"  Timesteps    : {len(depth_mm)} × {step_s}s")
     print(f"  Mean total   : {mean_total:.1f} mm per station over the window")
     if meta['includes_forecast']:
@@ -523,7 +558,38 @@ def download_openmeteo(cfg):
 
 # ── Cache-aware entry point used by PrecipEngine ──────────────────────────────
 
+def ensemble_members(cfg):
+    """Member numbers held in the Open-Meteo folder (downloading if needed); 0 = control."""
+    ensure_openmeteo_data(cfg)
+    _dir, _g, _t, meta_path = _resolve_paths(cfg)
+    with open(meta_path) as f:
+        return list(json.load(f).get('members') or [])
+
+
 def ensure_openmeteo_data(cfg):
+    """
+    Return (gauges_path, timeseries_path) for the Open-Meteo folder.  For an
+    ensemble (OPENMETEO_SOURCE='ensemble') the rain table is that of member
+    OPENMETEO_MEMBER; every member is saved by the one download.
+    """
+    gauges_path, ts_path = _ensure_download(cfg)
+    if str(getattr(cfg, 'OPENMETEO_SOURCE', 'auto')).lower() != 'ensemble':
+        return gauges_path, ts_path
+    om_dir = _resolve_paths(cfg)[0]
+    member = int(getattr(cfg, 'OPENMETEO_MEMBER', 0) or 0)
+    path = member_file(om_dir, member)
+    if not os.path.isfile(path):
+        have = sorted(int(f[17:19]) for f in os.listdir(om_dir)
+                      if f.startswith("timeseries_member") and f.endswith(".csv"))
+        raise ValueError(
+            f"OPENMETEO_MEMBER={member}: this ensemble has members "
+            f"{have[0] if have else '?'} to {have[-1] if have else '?'} (0 is the control run).")
+    print(f"  [Open-Meteo] Ensemble member {member}"
+          + (" (the control run)" if member == 0 else ""))
+    return gauges_path, path
+
+
+def _ensure_download(cfg):
     """
     Return (gauges_path, timeseries_path) for the Open-Meteo folder.
 

@@ -1,0 +1,19 @@
+name: An idea or a request
+description: Something MRRpy could do, or do more simply
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What are you trying to do?
+      description: The task, in your own words. It helps more than a proposed solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: textarea
+    id: now
+    attributes:
+      label: How do you do it today, if at all?

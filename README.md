@@ -60,16 +60,25 @@ the zip includes a copy of MRRpy.
 from MRRpy import Config, run_pipeline
 
 cfg = Config(DEM_PATH="dem.tif", OUTPUT_DIR="results/",
-             OUTPUT_POINT=(27.632, 85.293),   # (lat, lon) of the outlet
-             TARGET_CRS_EPSG="EPSG:32645")    # a projection in metres (UTM zone)
-run_pipeline(cfg)                             # → results/hydrograph.csv
+             OUTPUT_POINT=(27.632, 85.293))   # (lat, lon) of the outlet
+out = run_pipeline(cfg)                       # → results/hydrograph.csv
+print(out.summary())                          # peak flow, water balance
+```
+
+No DEM, no account: give the area and MRRpy downloads the terrain.
+
+```python
+cfg = Config(DEM_BOUNDS_WGS84=(85.48, 27.52, 85.66, 27.68),   # west, south, east, north
+             DEM_SOURCE="glo90_open", OUTPUT_POINT=(27.575, 85.555),
+             OUTPUT_DIR="results/")
+run_pipeline(cfg)
 ```
 
 Add flood maps of a town or valley:
 
 ```python
 cfg = Config(DEM_PATH="dem.tif", OUTPUT_DIR="results/",
-             OUTPUT_POINT=(27.632, 85.293), TARGET_CRS_EPSG="EPSG:32645",
+             OUTPUT_POINT=(27.632, 85.293),
              INUNDATION_MAP=True, INUNDATION_METHOD="2d",
              INUNDATION_AREA=(85.276, 27.595, 85.325, 27.683))  # lon/lat box
 run_pipeline(cfg)                             # → results/inundation/flood_depth_max.tif
@@ -78,9 +87,13 @@ run_pipeline(cfg)                             # → results/inundation/flood_dep
 Or without writing code:
 
 ```bash
+MRRpy demo                      # a sample basin, start to finish, nothing to prepare
 MRRpy wizard                    # answer a few plain questions → run.yaml
 MRRpy run -c run.yaml
+MRRpy doctor                    # check the install, the GPU, the internet
 ```
+
+Try it in your browser, with nothing to install: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SauravBhattarai19/MRRpy/blob/main/notebooks/quickstart_demo.ipynb)
 
 In Jupyter, `MRRpy.ConfigForm()` is a step-by-step form with a map for picking
 the outlet and the flood-map area. `MRRpy init-config -o run.yaml` writes a
@@ -90,12 +103,13 @@ commented settings file, and `MRRpy explain <SETTING>` explains any setting.
 
 | Step | Options |
 |---|---|
-| **Terrain** | Your DEM, or one downloaded for you (FABDEM, Copernicus, NASADEM, ALOS, MERIT, USGS 3DEP, …). Pit filling, D8 flow directions, watershed delineation, or the whole DEM with no outlet. |
-| **Rain** | Rain gauges (Thiessen or IDW), NASA IMERG satellite rain, Open-Meteo weather models and forecasts, or one uniform rate. Optional rain/snow split by elevation. |
+| **Terrain** | Your DEM, or one downloaded for you: Copernicus with no account, or FABDEM, NASADEM, ALOS, MERIT, USGS 3DEP, … through Earth Engine. Pit filling, D8 flow directions, watershed delineation, or the whole DEM with no outlet. |
+| **Rain** | Rain gauges (Thiessen or IDW), NASA IMERG satellite rain, Open-Meteo weather models, forecasts and ensemble forecasts, or one uniform rate. Optional rain/snow split by elevation. |
 | **Runoff** | SCS Curve Number, or physical mechanisms in any combination: Green–Ampt infiltration (with soil drying between storms), saturated source areas (VSA), impervious cities. Soil and land cover from global maps or your own rasters. |
 | **Routing** | Kinematic wave, Muskingum–Cunge, or a semi-implicit diffusion wave (backwater, flat valleys), through every grid cell and a river channel sized from the 2-year flood. Water entering from upstream can be added as a hydrograph. |
 | **Flood maps** | HAND for the whole basin, or a 2D flood simulation of a chosen area, on the model's DEM or a finer one (e.g. lidar). Depth, extent, speed, time of the peak, duration, animations. |
-| **Outputs** | Hydrograph, flow and depth at named points, maps and animations of depth and flow, peak GeoTIFFs, an always-on water-balance check, restart files. |
+| **Outputs** | Hydrograph, flow and depth at named points, maps and animations of depth and flow, peak GeoTIFFs, an always-on water-balance check, restart files, a log and a record of every run. |
+| **Many runs** | `run_many` for sweeps and comparisons with the terrain shared, `run_ensemble` for the range of an ensemble forecast, and scores (NSE, KGE, peak and timing) against a gauge record. |
 | **Speed** | NumPy and Numba on the CPU, or CuPy on an NVIDIA GPU, with automatic fallback to the CPU. |
 | **Interfaces** | Python API, a command line with a question-and-answer wizard, a Jupyter form and a QGIS plugin, all driven by one `Config`. |
 

@@ -39,6 +39,7 @@ class GaugeRecorder:
 
         self._xp = grid_data.get("xp", np)
         self._out_dir = getattr(cfg, "OUTPUT_DIR", "output/")
+        self._cfg = cfg
         self._gauges = []      # (name, pos, row, col, faccum)
         self._rows = []        # accumulated [t_s, d0,q0,v0, d1,q1,v1, ...]
 
@@ -106,13 +107,18 @@ class GaugeRecorder:
         header = ["time_s", "time_hr"]
         for n, _, _, _, _ in self._gauges:
             header += [f"{n}_depth_m", f"{n}_Q_m3s", f"{n}_vel_ms"]
+        from .reporting import utc_times
+        stamps = utc_times(self._cfg, [r[0] for r in self._rows])
+        if stamps is not None:              # last column: older readers are unaffected
+            header.append("time_utc")
         with open(path, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(header)
-            for r in self._rows:
+            for i, r in enumerate(self._rows):
                 t = r[0]
                 w.writerow([f"{t:.1f}", f"{t / 3600.0:.5f}"]
-                           + [f"{v:.4f}" for v in r[1:]])
+                           + [f"{v:.4f}" for v in r[1:]]
+                           + ([stamps[i]] if stamps is not None else []))
         print(f"  Gauges saved    → {path}  ({len(self._rows)} rows, "
               f"{len(self._gauges)} gauges)")
         return path

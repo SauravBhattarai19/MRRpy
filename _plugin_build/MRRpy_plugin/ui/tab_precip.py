@@ -42,13 +42,16 @@ class TabPrecip(QWidget):
         "Open-Meteo weather models, forecast or past — Thiessen (internet)",
         "Open-Meteo weather models, forecast or past — IDW (internet)",
     ]
-    _OM_SOURCES = ["auto", "forecast", "historical", "historical_forecast", "single_run"]
+    _OM_SOURCES = ["auto", "forecast", "historical", "historical_forecast", "single_run",
+                   "ensemble"]
+    _INTERPOLATIONS = ["linear", "interval"]
     _OM_SOURCE_LABELS = [
         "Automatic from the event date",
         "Forecast (last 3 months … 16 days ahead)",
         "Historical archive (ERA5 …, 1940 → a few days ago)",
         "Historical forecasts (archived model runs, ~2021 →)",
         "One model run as issued (forecast hindcast, 2024 →)",
+        "Ensemble forecast, one member (20–50 equally likely forecasts)",
     ]
 
     def __init__(self, parent=None):
@@ -99,6 +102,9 @@ class TabPrecip(QWidget):
         ]
         for w in self._panels:
             root.addWidget(w)
+
+        # ── Rain between two records (every method but the uniform storm) ─────
+        root.addWidget(self._build_interpolation_group())
 
         # ── Rain / snow partition (applies to every method) ───────────────────
         root.addWidget(self._build_snow_group())
@@ -191,6 +197,23 @@ class TabPrecip(QWidget):
             lbl = self._ee_form.labelForField(w)
             if lbl is not None:
                 lbl.setVisible(on)
+
+    def _build_interpolation_group(self):
+        """PRECIP_INTERPOLATION: how a table of rain totals becomes rain over time."""
+        grp = QGroupBox("Rain between two records (gauges, IMERG, Open-Meteo)")
+        form = QFormLayout(grp)
+        self.interpolation = QComboBox()
+        self.interpolation.addItems([
+            "Straight lines between records (the behaviour up to MRRpy 1.0)",
+            "Each total stays inside its own interval",
+        ])
+        self.interpolation.setToolTip(
+            "A rain table holds totals per interval.  Straight lines keep the total\n"
+            "but spread a one-hour burst over two hours.  The second choice lets each\n"
+            "total fall evenly within its own interval only, so short bursts stay as\n"
+            "sharp, and as early, as they were recorded.")
+        form.addRow("Method:", self.interpolation)
+        return grp
 
     def _build_snow_group(self):
         """Optional rain/snow elevation partition (RAIN_SNOW_ELEV_LOW/HIGH).
@@ -361,6 +384,18 @@ class TabPrecip(QWidget):
             lambda i, r=run, f=form: self._show_row(f, r, self._OM_SOURCES[i] == "single_run"))
         self._show_row(form, run, False)
 
+        member = QSpinBox()
+        member.setRange(0, 60)
+        member.setToolTip(
+            "Only for 'Ensemble forecast': which member's rain this run uses.\n"
+            "0 is the control run.  Needs an ensemble model (gfs_seamless,\n"
+            "ecmwf_ifs025, icon_seamless …), not best_match.  To run every member\n"
+            "and get the range of floods, use 'MRRpy ensemble' or MRRpy.run_ensemble().")
+        form.addRow("Ensemble member:", member)
+        source.currentIndexChanged.connect(
+            lambda i, m=member, f=form: self._show_row(f, m, self._OM_SOURCES[i] == "ensemble"))
+        self._show_row(form, member, False)
+
         minutely = QCheckBox("15-minute rain (not in the historical archive)")
         minutely.setToolTip(
             "True 15-minute model rain only in Central Europe and North America;\n"
@@ -389,7 +424,8 @@ class TabPrecip(QWidget):
             power_spin.setToolTip("IDW distance exponent p (standard: 2)")
             form.addRow("IDW power (p):", power_spin)
 
-        self._om[method] = dict(source=source, model=model, run=run, minutely=minutely,
+        self._om[method] = dict(source=source, model=model, run=run, member=member,
+                                minutely=minutely,
                                 spacing=spacing, force=force, power=power_spin)
         return w
 
@@ -439,6 +475,7 @@ class TabPrecip(QWidget):
                                          if om_source in self._OM_SOURCES else 0)
             om["model"].setText(str(getattr(cfg, "OPENMETEO_MODEL", "best_match")))
             om["run"].setText(str(getattr(cfg, "OPENMETEO_RUN", None) or ""))
+            om["member"].setValue(int(getattr(cfg, "OPENMETEO_MEMBER", 0) or 0))
             om["minutely"].setChecked(bool(getattr(cfg, "OPENMETEO_MINUTELY_15", False)))
             om["spacing"].setValue(int(round(float(
                 getattr(cfg, "OPENMETEO_POINT_SPACING_M", 5000.0)))))
@@ -458,6 +495,10 @@ class TabPrecip(QWidget):
         if getattr(cfg, "GEE_PROJECT", None):
             self.gee_project.setText(str(cfg.GEE_PROJECT))
 
+        mode = str(getattr(cfg, "PRECIP_INTERPOLATION", "linear"))
+        self.interpolation.setCurrentIndex(
+            self._INTERPOLATIONS.index(mode) if mode in self._INTERPOLATIONS else 0)
+
         # Rain/snow partition: either bound alone means a hard cutoff there
         # (the router substitutes the missing one), so mirror that here.
         lo = getattr(cfg, "RAIN_SNOW_ELEV_LOW", None)
@@ -470,6 +511,8 @@ class TabPrecip(QWidget):
     def write_to_config(self, cfg):
         method = self.get_method()
         cfg.PRECIP_METHOD = method
+        if hasattr(type(cfg), "PRECIP_INTERPOLATION"):       # MRRpy >= 1.1
+            cfg.PRECIP_INTERPOLATION = self._INTERPOLATIONS[self.interpolation.currentIndex()]
         cfg.PRECIP_EXCLUDE_OUTSIDE_STATIONS = self.exclude_outside.isChecked()
         cfg.RAIN_INTENSITY_MM_HR = self.intensity_spin.value()
         cfg.RAIN_DURATION_HOURS = self.duration_spin.value()
@@ -506,6 +549,8 @@ class TabPrecip(QWidget):
             cfg.OPENMETEO_SOURCE = self._OM_SOURCES[om["source"].currentIndex()]
             cfg.OPENMETEO_MODEL = om["model"].text().strip() or "best_match"
             cfg.OPENMETEO_RUN = om["run"].text().strip() or None
+            if hasattr(type(cfg), "OPENMETEO_MEMBER"):       # MRRpy >= 1.1
+                cfg.OPENMETEO_MEMBER = om["member"].value()
             cfg.OPENMETEO_MINUTELY_15 = om["minutely"].isChecked()
             cfg.OPENMETEO_POINT_SPACING_M = float(om["spacing"].value())
             cfg.PRECIP_OPENMETEO_FORCE_DOWNLOAD = om["force"].isChecked()

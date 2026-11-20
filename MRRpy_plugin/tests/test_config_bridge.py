@@ -88,7 +88,7 @@ class TestConfigKwargs:
         assert cfg.GPU_PRECISION == "float32"
 
     def test_invalid_attribute_raises(self):
-        with pytest.raises(AttributeError, match="has no attribute"):
+        with pytest.raises(AttributeError, match="no setting"):
             Config(INVALID_PARAM=42)
 
 

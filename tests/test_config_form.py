@@ -429,7 +429,9 @@ def test_starting_points():
 def test_crs_suggestion_button():
     f = ConfigForm(map=False)
     crs = f.fields["TARGET_CRS_EPSG"]
-    assert crs.suggest.disabled                                # default outlet → 32645 already
+    assert crs.text.value == "auto" and not crs.suggest.disabled   # auto; a zone is offered
+    crs.suggest.click()
+    assert f.config.TARGET_CRS_EPSG == "EPSG:32645" and crs.suggest.disabled
     f.fields["OUTPUT_POINT"].text.value = "-33.9, 18.4"
     assert not crs.suggest.disabled and "EPSG:32734" in crs.suggest.description
     crs.suggest.click()

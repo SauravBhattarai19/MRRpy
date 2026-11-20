@@ -17,6 +17,7 @@ Cells are stored in the router's 1-D topological order; ``field_to_2d`` (below)
 scatters a (N,) or (T, N) array back onto the (nrows, ncols) grid for plotting.
 """
 
+from ...config import Config as _Defaults   # one source for fallback values
 import json
 import os
 
@@ -41,7 +42,7 @@ class FieldRecorder:
 
     def __init__(self, cfg, grid_data):
         allowed = ("depth", "velocity", "discharge", "volume")
-        self._vars = [v for v in getattr(cfg, "FIELD_VARS", ["depth"]) if v in allowed]
+        self._vars = [v for v in getattr(cfg, "FIELD_VARS", _Defaults.FIELD_VARS) if v in allowed]
         self._stride = max(1, int(getattr(cfg, "FIELD_STRIDE", 1)))
         self._out_dir = (getattr(cfg, "FIELD_OUTPUT_DIR", None)
                          or os.path.join(getattr(cfg, "OUTPUT_DIR", "output/"), "fields"))
@@ -70,7 +71,7 @@ class FieldRecorder:
     def _warn_if_large(self, cfg):
         """Print the expected in-memory size; warn when it gets big (whole DEMs)."""
         interval = float(getattr(cfg, "OUTPUT_INTERVAL_SECONDS", None)
-                         or getattr(cfg, "TIME_STEP_SECONDS", 1.0) or 1.0)
+                         or getattr(cfg, "TIME_STEP_SECONDS", _Defaults.TIME_STEP_SECONDS) or 1.0)
         hours = float(getattr(cfg, "TOTAL_SIMULATION_TIME_HOURS", 0.0) or 0.0)
         n_rec = int(np.ceil(np.ceil(hours * 3600.0 / interval) / self._stride))
         gb = n_rec * self._s_rows.size * len(self._vars) * 4 / 1e9

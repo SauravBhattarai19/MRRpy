@@ -14,7 +14,7 @@ runs with MRRpy 0.2.0 on a 90 m ALOS DEM. On your own DEM they will differ.
 | Example | Shows | Main settings | Needs Earth Engine |
 |---|---|---|---|
 | [1 Your first run](first-run.md) | a design storm on your DEM; virtual gauges | `DEM_PATH`, `OUTPUT_POINT`, `RAIN_INTENSITY_MM_HR`, `ROUTING_GAUGES` | no |
-| [2 Download a DEM](download-dem.md) | no DEM file: download one and delineate | `DEM_BOUNDS_WGS84`, `DEM_SOURCE`, `DEM_SCALE_M` | yes |
+| [2 Download a DEM](download-dem.md) | no DEM file: download one and delineate | `DEM_BOUNDS_WGS84`, `DEM_SOURCE`, `DEM_SCALE_M` | no with `glo30_open` / `glo90_open`; yes for the others |
 | [3 Compare routing methods](routing-schemes.md) | kinematic, Muskingum–Cunge, implicit diffusive | `ROUTING_SCHEME` | no |
 | [4 Runoff methods](runoff-methods.md) | none, SCS Curve Number (dry, normal, wet), Green–Ampt | `RUNOFF_SOURCE`, `RUNOFF_CN_AMC` | no (optional GCN250) |
 | [5 Physical runoff processes](physical-runoff.md) | infiltration excess, saturation excess, both | `RUNOFF_MECHANISMS`, `GA_*`, `VSA_*` | no (optional soil maps) |
@@ -23,9 +23,10 @@ runs with MRRpy 0.2.0 on a 90 m ALOS DEM. On your own DEM they will differ.
 | [8 Route an inflow hydrograph](inflow-hydrograph.md) | water from upstream, no rain | `ROUTING_INFLOW_BC` | no |
 | [9 Roughness and river channels](roughness-channels.md) | roughness by elevation; channel size from the 2-year flood | `MANNINGS_N_*`, `CHANNEL_QBF_M3S` | no (optional) |
 | [10 The whole DEM and flood maps](whole-dem.md) | every DEM cell, maps and animations | `MODEL_AREA`, `SAVE_FIELDS` | no |
-| [11 Many runs from Python](batch-runs.md) | sweeps and comparison tables | Python loops | no |
+| [11 Many runs from Python](batch-runs.md) | sweeps and comparison tables, side by side, terrain shared | `run_many` | no |
 | [12 Flood depth and extent maps](flood-maps.md) | how far rivers spread: quick maps for the basin, a 2D flood simulation for one valley, at 30 m | `INUNDATION_MAP`, `INUNDATION_METHOD`, `INUNDATION_DEM` | yes (or your own fine DEM) |
 | [13 A flood map for your town (2D)](flood-2d-town.md) | from satellite rain to a 2D flood map of one town; how big an area, how long, five places | `INUNDATION_METHOD: 2d`, `INUNDATION_AREA` | yes |
+| [14 Compare a run with a flow record](flow-records.md) | your gauge file, a USGS gauge or the GloFAS reference; NSE, KGE, peak and timing errors | `EVENT_START_UTC`, `MRRpy.observed` | no |
 | [Case study: Nepal (Trishuli)](nepal-case-study.md) | a large Himalayan basin, satellite storm and an outburst flood | many | yes |
 
 !!! tip "Before you start"

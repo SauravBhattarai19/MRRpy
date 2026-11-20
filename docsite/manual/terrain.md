@@ -30,16 +30,33 @@ smaller time steps. **90 m is a good size for basins of a few hundred to a few
 thousand km²**; use 30 m or finer for small or urban areas.
 
 **A download** happens when `DEM_PATH` is empty and `DEM_BOUNDS_WGS84` is set. MRRpy
-fetches the area from Google Earth Engine, averages it to `DEM_SCALE_M` if you set
-one, and saves it as `raw_dem_gee.tif` in the results folder. A second run with
-the same settings reuses that file. Make the box a little larger than the basin:
-anything that drains into your outlet must be inside it. Downloading needs an
-Earth Engine sign-in (see [Google Earth Engine](earth-engine.md)).
+fetches the area, averages it to `DEM_SCALE_M` if you set one, and saves it in
+the results folder. A second run with the same settings reuses that file. Make
+the box a little larger than the basin: anything that drains into your outlet
+must be inside it.
+
+Two datasets need **no account and no sign-in**: `glo30_open` and `glo90_open`,
+the Copernicus global DEM read straight from Amazon's open-data service (saved as
+`raw_dem_open.tif`). With one of them and a design storm or
+[Open-Meteo rain](precipitation.md#35-weather-model-rain-open-meteo), a run
+anywhere on Earth needs nothing but an internet connection:
+
+```yaml
+DEM_BOUNDS_WGS84: [85.48, 27.52, 85.66, 27.68]   # west, south, east, north
+DEM_SOURCE: glo30_open
+DEM_SCALE_M: 90
+OUTPUT_POINT: [27.575, 85.555]
+```
+
+The other datasets come from Google Earth Engine (saved as `raw_dem_gee.tif`)
+and need a one-time sign-in (see [Google Earth Engine](earth-engine.md)).
 
 The datasets you can download (`MRRpy list-dems` prints the same list):
 
 | `DEM_SOURCE` | Dataset | Pixel | Coverage | Notes |
 |---|---|---|---|---|
+| `glo30_open` | Copernicus DEM GLO-30, open data | ~30 m | global, a few countries missing | **no account**; surface model: includes trees and buildings |
+| `glo90_open` | Copernicus DEM GLO-90, open data | ~90 m | global | **no account**; a good first choice for basins over a few hundred km² |
 | `nasadem` (default) | NASADEM, void-filled SRTM | ~30 m | 56°S–60°N | good all-round choice |
 | `srtm` | SRTM GL1 v3 | ~30 m | 56°S–60°N | not void-filled; for reproducing older studies |
 | `merit` | MERIT DEM | ~92 m | 60°S–90°N | errors and tree bias removed; good for flow paths at 90 m |
@@ -51,9 +68,10 @@ The datasets you can download (`MRRpy list-dems` prints the same list):
 
 !!! tip "Bare earth or surface?"
     Water flows on the ground, not on tree tops. A **surface model** (`alos`,
-    `copernicus_glo30`) includes trees and buildings and can create false dams
-    in forests and cities. Prefer a bare-earth DEM (`nasadem`, `fabdem`, `merit`)
-    for routing.
+    `copernicus_glo30`, `glo30_open`, `glo90_open`) includes trees and buildings
+    and can create false dams in forests and cities. Prefer a bare-earth DEM
+    (`nasadem`, `fabdem`, `merit`) for routing when you can sign in to Earth
+    Engine; at 90 m the difference is small on most basins.
 
 <!-- settings: DEM_PATH DEM_BOUNDS_WGS84 DEM_SOURCE DEM_SCALE_M -->
 

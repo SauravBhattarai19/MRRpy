@@ -13,9 +13,41 @@ from MRRpy import Config, run_pipeline, OpmConfig, DEFAULT_STAGES
     options:
       heading_level: 3
 
+::: MRRpy.RunResult
+    options:
+      heading_level: 3
+
+## Many runs: `run_many`, `run_ensemble`
+
+::: MRRpy.run_many
+    options:
+      heading_level: 3
+
+::: MRRpy.run_ensemble
+    options:
+      heading_level: 3
+
+## Flow records and skill: `MRRpy.observed`
+
+::: MRRpy.observed
+    options:
+      heading_level: 3
+      members: [read_flow_csv, usgs_flow, glofas_flow, glofas_two_year_flood, skill]
+
+## Sample basin: `demo`, `sample_basin`
+
+::: MRRpy.demo
+    options:
+      heading_level: 3
+
+::: MRRpy.sample_basin
+    options:
+      heading_level: 3
+
 ## `list_available_dems` / `describe_available_dems`
 
-Browse the DEM datasets MRRpy can auto-download from Google Earth Engine
+Browse the DEM datasets MRRpy can download: two with no account, the others
+from Google Earth Engine
 (see [1.1 Elevation data](../manual/terrain.md#11-elevation-data-dem)).
 No `[gee]` install required just to list them.
 
@@ -34,6 +66,10 @@ DataFrame, a `run_pipeline()` result dict, or a `Config`, and returns
 `(fig, ax)`. See the [examples](../examples/index.md) for them in context.
 
 ::: MRRpy.plot_watershed
+    options:
+      heading_level: 3
+
+::: MRRpy.plot_ensemble
     options:
       heading_level: 3
 

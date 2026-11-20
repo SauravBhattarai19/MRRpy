@@ -19,7 +19,8 @@ nbformat = pytest.importorskip("nbformat")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The notebooks MRRpy ships (not users' own copies or scratch notebooks there).
 NOTEBOOKS = [os.path.join(ROOT, "notebooks", n)
-             for n in ("configure_and_run.ipynb", "pick_dem_bounds.ipynb", "flood_maps_2d.ipynb")]
+             for n in ("configure_and_run.ipynb", "pick_dem_bounds.ipynb", "flood_maps_2d.ipynb",
+                       "quickstart_demo.ipynb")]
 
 
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=os.path.basename)
@@ -56,3 +57,19 @@ def test_configuration_notebook_runs(tmp_path):
     widget_outputs = [o for c in nb.cells for o in c.get("outputs", [])
                       if "application/vnd.jupyter.widget-view+json" in o.get("data", {})]
     assert widget_outputs, "the form did not display as a widget"
+
+
+def test_quickstart_notebook_runs_offline(tmp_path):
+    """The first-run notebook, without its last section (a real DEM download)."""
+    pytest.importorskip("ipykernel")
+    nbclient = pytest.importorskip("nbclient")
+    nb = nbformat.read(os.path.join(ROOT, "notebooks", "quickstart_demo.ipynb"), as_version=4)
+    stop = next(i for i, c in enumerate(nb.cells) if c.source.startswith("## 5."))
+    nb.cells = nb.cells[:stop]
+    client = nbclient.NotebookClient(nb, timeout=600, kernel_name="python3",
+                                     resources={"metadata": {"path": str(tmp_path)}})
+    client.execute()
+    text = "".join(o.get("text", "") for c in nb.cells if c.cell_type == "code"
+                   for o in c.get("outputs", []))
+    assert "Peak flow at the outlet" in text and "water balance closes" in text
+    assert (tmp_path / "mrrpy_demo" / "curve_numbers" / "summary.csv").exists()

@@ -1,9 +1,30 @@
 # Quickstart
 
+## See it work first
+
+Before you look for data, run the sample basin. It needs nothing but the
+install, and takes a few seconds:
+
+```bash
+pip install MRRpy
+MRRpy demo
+```
+
+It routes a two-hour storm over a made-up valley and writes
+`mrrpy_demo/results/hydrograph.csv`, a figure of it, and `mrrpy_demo/run.yaml`,
+the settings, which you can edit and run again. `MRRpy demo --real` does the
+same on a real basin near Kathmandu, downloading a 90 m DEM with no account.
+If anything goes wrong, `MRRpy doctor` checks the install.
+
+Nothing installed yet? The same first run, in your browser: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SauravBhattarai19/MRRpy/blob/main/notebooks/quickstart_demo.ipynb)
+
+## Your own basin
+
 From a DEM to a flood hydrograph in a few minutes. You need two things: a
 **DEM** (a GeoTIFF of ground elevation covering your basin) and the **latitude
 and longitude of the outlet**, the river point your basin drains to. No DEM?
-MRRpy can [download one](../examples/download-dem.md).
+Give the area instead and MRRpy [downloads one](../examples/download-dem.md),
+with no account needed.
 
 Pick the way you like to work; all of them make the same run.
 
@@ -38,7 +59,7 @@ Pick the way you like to work; all of them make the same run.
     Or write the file yourself, starting from a commented template:
 
     ```bash
-    MRRpy init-config --short -o run.yaml   # then set DEM_PATH, OUTPUT_POINT, TARGET_CRS_EPSG
+    MRRpy init-config --short -o run.yaml   # then set DEM_PATH and OUTPUT_POINT
     MRRpy validate -c run.yaml              # checks it and says what the run will do
     MRRpy run -c run.yaml
     ```
@@ -51,15 +72,19 @@ Pick the way you like to work; all of them make the same run.
     cfg = Config(
         DEM_PATH="dem.tif",
         OUTPUT_POINT=(27.632, 85.293),   # (latitude, longitude) of the outlet
-        TARGET_CRS_EPSG="EPSG:32645",    # a projection in metres: your UTM zone
         OUTPUT_DIR="results/",
         RAIN_INTENSITY_MM_HR=20.0,       # a design storm: 20 mm/h …
         RAIN_DURATION_HOURS=3.0,         # … for 3 hours
         TOTAL_SIMULATION_TIME_HOURS=12.0,
     )
     out = run_pipeline(cfg)              # terrain, then routing
+    print(out.summary())                 # peak flow, water balance, results folder
     plot_hydrograph(out)
     ```
+
+    The map projection is chosen for you (the UTM zone of the outlet). With no
+    DEM file, give the area instead:
+    `Config(DEM_BOUNDS_WGS84=(85.1, 27.5, 85.6, 27.9), DEM_SOURCE="glo90_open", …)`.
 
 === "QGIS plugin"
 
@@ -79,6 +104,7 @@ In the results folder:
 |---|---|
 | `hydrograph.csv` | the flow at the outlet over time (`time_hr`, `Q_m3s`) |
 | `mass_balance.csv` | the water-balance check: rain, outflow, storage, error |
+| `run.log`, `run_config.yaml`, `run_info.json` | what the run reported, its settings (ready to run again) and its record |
 | `watershed.tif`, `watershed.geojson` | the basin |
 | `clipped_dem.tif`, `flow_direction.tif`, `clipped_flow_accumulation.tif` | the terrain the model ran on |
 

@@ -182,6 +182,11 @@ class FloodModel:
             if not drains.any():
                 break
             self.levels.append(Level(grid, drains, a, reach_len_m, q_peak, t_peak))
+        if not self.levels:
+            raise RuntimeError(
+                "Flood maps: the model area has no river to map. Rivers start where "
+                f"{meta['a_channel_km2']:.3g} km² of land drains to a cell "
+                "(CHANNEL_MIN_AREA_KM2); lower it, or model a larger area.")
         self.times_s = arrays["times_s"]
         q_series = arrays["q_series"]
         for lev in self.levels:

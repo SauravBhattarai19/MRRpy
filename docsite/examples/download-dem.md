@@ -1,10 +1,23 @@
 # 2 Download a DEM
 
-**Goal:** start with no DEM at all. MRRpy downloads one from Google Earth Engine
-for a box you choose, then delineates the basin.
+**Goal:** start with no DEM at all. MRRpy downloads one for a box you choose,
+then delineates the basin.
 
-**You need:** an Earth Engine sign-in and project
-([setup](../manual/earth-engine.md)) and `pip install "MRRpy[gee]"`.
+**You need:** an internet connection. With `DEM_SOURCE: glo30_open` or
+`glo90_open` (the Copernicus DEM as open data) that is all:
+
+```yaml
+DEM_PATH: ''
+DEM_BOUNDS_WGS84: [85.05, 27.55, 85.55, 27.90]
+DEM_SOURCE: glo90_open
+OUTPUT_POINT: [27.632222, 85.293333]
+OUTPUT_DIR: results/download/
+```
+
+The rest of this page uses NASADEM, a bare-earth DEM that comes from Google
+Earth Engine. For it and the other Earth Engine datasets you also need a sign-in
+and project ([setup](../manual/earth-engine.md)) and `pip install "MRRpy[gee]"`.
+The steps are otherwise the same.
 
 **Settings used:** [[DEM_PATH]] (empty), [[DEM_BOUNDS_WGS84]], [[DEM_SOURCE]],
 [[DEM_SCALE_M]], [[GEE_PROJECT]], [[OUTPUT_POINT]].
@@ -16,7 +29,7 @@ larger than you think. Here it covers the Kathmandu valley.
 
 === "Notebook form"
 
-    1. **Terrain**: *Download a DEM for an area (Google Earth Engine)*. Type the
+    1. **Terrain**: *Download a DEM for an area*. Type the
        area `85.05, 27.55, 85.55, 27.90` (west, south, east, north), or press
        **Pick the outlet or download area on a map** and draw a rectangle.
        *DEM dataset* `nasadem`; under *More options*, *Download resolution* `90`.

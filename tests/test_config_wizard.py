@@ -140,7 +140,7 @@ def test_wizard_built_config_runs_the_model(basin):
 
 def test_satellite_event_asks_for_project_and_date(basin, monkeypatch):
     monkeypatch.delenv("GEE_PROJECT", raising=False)
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Google Earth Engine project": "my-ee",
                      "Storm start (UTC)": "2024-09-27 00:00",
                      SAVE: basin["yaml"]}, starting_point="satellite_event")
@@ -152,7 +152,7 @@ def test_satellite_event_asks_for_project_and_date(basin, monkeypatch):
 
 
 def test_scs_curve_number_session(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Runoff method": "scs_cn", "Curve numbers from": "scalar",
                      "Soil wetness": "wet", "Curve number": "85", SAVE: basin["yaml"]},
                     starting_point="design_storm")
@@ -165,7 +165,7 @@ def test_gauge_rain_session(basin):
     g, r = basin["tmp"] / "gauges.csv", basin["tmp"] / "rain.csv"
     g.write_text("gauge_id,name,easting_m,northing_m\nG1,a,330450,3060450\n")
     r.write_text("time_s,G1\n0,0\n600,5\n")
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Gauge locations": str(g), "Gauge rainfall": str(r),
                      SAVE: basin["yaml"]}, starting_point="gauge_event")
     assert cfg.PRECIP_GAUGE_FILE == str(g) and cfg.PRECIP_TIMESERIES_FILE == str(r)
@@ -175,7 +175,7 @@ def test_gauge_rain_session(basin):
 def test_inflow_only_session_asks_for_inflows(basin):
     q = basin["tmp"] / "q.csv"
     q.write_text("time_hr,Q_m3s\n0,1\n1,5\n")
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Inflow hydrographs, point 1": f"us1, {basin['point']}, {q}",
                      SAVE: basin["yaml"]}, starting_point="inflow_only")
     assert cfg.RAIN_INTENSITY_MM_HR == 0.0 and cfg.RUNOFF_SOURCE == "none"
@@ -186,7 +186,7 @@ def test_inflow_only_session_asks_for_inflows(basin):
 def test_physical_runoff_catches_up_on_the_storm_date(basin):
     """The storm-date question (rain part) only applies after the soil source
     (runoff part) is set to satellite — it is asked afterwards, with a note."""
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Runoff method": "physical", "Processes to include": "1, 2",
                      "Soil storage from": "gee", "Storm start (UTC)": "2024-07-01 06:00",
                      "Google Earth Engine project": "p", SAVE: basin["yaml"]},
@@ -200,7 +200,7 @@ def test_physical_runoff_catches_up_on_the_storm_date(basin):
 
 
 def test_advanced_gate_opens_only_when_asked(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Routing method": "diffusive_implicit",
                      "advanced settings for Routing": "yes",
                      "Implicit time weighting": "0.8", SAVE: basin["yaml"]},
@@ -220,7 +220,7 @@ def test_crs_is_suggested_from_the_outlet(basin):
 
 
 def test_composite_questions(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Manning's n in river channels": "elevation",
                      "Elevation limits and n": ["1500: 0.06, 900: 0.04", "1500: 0.06, 9000: 0.04"],
                      "Bankfull flow": "formula", "Formula or preset": ["import os", "wecs_nepal"],
@@ -232,7 +232,7 @@ def test_composite_questions(basin):
 
 
 def test_back_from_a_sub_question_returns_to_its_mode(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Bankfull flow": ["value", "auto"], "2-year flood": "back",
                      SAVE: basin["yaml"]}, starting_point="design_storm")
     assert cfg.CHANNEL_QBF_M3S is None
@@ -240,7 +240,7 @@ def test_back_from_a_sub_question_returns_to_its_mode(basin):
 
 
 def test_virtual_gauges(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Virtual gauges, point 1": "bridge, 27.70, 85.30",
                      "Virtual gauges, point 2": "dam, row=3, col=4",
                      SAVE: basin["yaml"]}, starting_point="design_storm")
@@ -269,7 +269,7 @@ def test_back_at_the_first_question(basin):
 
 
 def test_back_across_a_gate(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Rainfall input": ["back", "0"],
                      "advanced settings for Basin": ["no", "yes"],
                      "Flow-direction engine": "pysheds", SAVE: basin["yaml"]},
@@ -283,7 +283,7 @@ def test_back_across_a_gate(basin):
 
 
 def test_done_skips_to_the_review(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      "Rainfall input": "done", SAVE: basin["yaml"]},
                     starting_point="design_storm")
     assert cfg is not None and os.path.exists(basin["yaml"])
@@ -309,7 +309,7 @@ def test_missing_file_is_confirmed(basin):
 
 
 def test_review_offers_to_fix_problems(basin):
-    cfg, s = wizard({"Elevation model (DEM) file": ["", basin["dem"]],
+    cfg, s = wizard({"Elevation model (DEM) file": ["", basin["dem"]], "Basin outlet": basin["point"],
                      "Fix them now?": "yes", SAVE: basin["yaml"]},
                     starting_point="design_storm")
     assert cfg.DEM_PATH == basin["dem"]
@@ -334,7 +334,7 @@ def test_declining_to_save(basin):
 def test_save_name_checks(basin):
     existing = basin["tmp"] / "taken.yaml"
     existing.write_text("RAIN_INTENSITY_MM_HR: 1\n")
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                      SAVE: ["notes.txt", str(existing), basin["yaml"]],
                      "already exists": "no"}, starting_point="design_storm")
     assert "ending in .yaml" in s.text
@@ -344,7 +344,7 @@ def test_save_name_checks(basin):
 
 def test_json_output(basin):
     path = str(basin["tmp"] / "run.json")
-    cfg, _s = wizard({"Elevation model (DEM) file": basin["dem"],
+    cfg, _s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                       "Manning's n in river channels": "order",
                       "Channel n for order": "0.06, 0.05, 0.04", SAVE: path},
                      starting_point="design_storm")
@@ -376,7 +376,7 @@ def _feed_stdin(monkeypatch, answers):
 
 
 def test_cli_wizard(monkeypatch, basin, capsys):
-    script = _feed_stdin(monkeypatch, {"Elevation model (DEM) file": basin["dem"],
+    script = _feed_stdin(monkeypatch, {"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                                        "Run the model now?": "no"})
     assert cli(["wizard", "-o", basin["yaml"], "--start", "design_storm", "--brief"]) == 0
     assert os.path.exists(basin["yaml"])
@@ -394,7 +394,7 @@ def test_cli_wizard_edit_and_write_all(monkeypatch, basin):
 
 
 def test_cli_init_config_interactive(monkeypatch, basin):
-    _feed_stdin(monkeypatch, {"Elevation model (DEM) file": basin["dem"],
+    _feed_stdin(monkeypatch, {"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"],
                               "Run the model now?": "no"})
     assert cli(["init-config", "-i", "-o", basin["yaml"]]) == 0
     assert Config.from_file(basin["yaml"]).DEM_PATH == basin["dem"]
@@ -408,7 +408,7 @@ def test_cli_wizard_quit_returns_error_code(monkeypatch):
 def test_wizard_offers_to_run(monkeypatch, basin):
     calls = []
     monkeypatch.setattr("MRRpy.pipeline.run_pipeline", lambda cfg: calls.append(cfg))
-    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], SAVE: basin["yaml"],
+    cfg, s = wizard({"Elevation model (DEM) file": basin["dem"], "Basin outlet": basin["point"], SAVE: basin["yaml"],
                      "Run the model now?": "yes"}, starting_point="design_storm",
                     offer_run=True)
     assert len(calls) == 1 and calls[0].DEM_PATH == basin["dem"]

@@ -28,6 +28,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Hydrology",
     "Topic :: Scientific/Engineering :: GIS",
 ]
@@ -43,6 +45,7 @@ dependencies = [
     "pyproj",
     "pysheds",
     "pyflwdir",
+    "numba",      # JIT kernels (routing, flood maps); also what pyflwdir runs on
     "affine<3",   # pyflwdir numba kernels (dem_adjust) cannot type affine>=3
     "fiona",
     "pyyaml",
@@ -59,7 +62,9 @@ gee = ["earthengine-api"]
 # Kept separate from [gee] so headless/script users aren't forced into ipywidgets/ipyleaflet.
 notebook = ["ipyleaflet", "ipywidgets>=8"]
 # Optional observed-flow retrieval for USGS gauge comparisons.
-usgs = ["dataretrieval>=1.3"]
+# (dataretrieval 1.2+ needs Python 3.10; on 3.9 the extra installs nothing, so
+# "MRRpy[all]" still installs there and usgs_flow says what is missing.)
+usgs = ["dataretrieval>=1.3; python_version >= '3.10'"]
 # Everything that works on any machine: Earth Engine + Jupyter form + USGS.
 # GPU stays separate (needs an NVIDIA GPU + CUDA 12.x): pip install "MRRpy[all,gpu]".
 all = ["MRRpy[gee,notebook,usgs]"]
@@ -78,6 +83,19 @@ testpaths = ["tests", "MRRpy_plugin/tests"]
 python_files = ["test_*.py"]
 # tests/test_random.py is a data-prep scratch script, not a test suite.
 addopts = "-ra --ignore=tests/test_random.py"
+
+# Lint: only what is a real fault (syntax errors, undefined names, broken
+# comparisons). Style is left alone.  Run:  ruff check MRRpy tests
+[tool.ruff]
+line-length = 100
+exclude = ["_plugin_build", "study", "site", "TestCases", "runs", "poster", "tools"]
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.coverage.run]
+source = ["MRRpy"]
+omit = ["MRRpy/core/*/gpu.py"]
 
 [tool.setuptools.packages.find]
 include = ["MRRpy*"]

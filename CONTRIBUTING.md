@@ -19,9 +19,10 @@ and include, where possible:
 
 1. What you did (the `Config` settings, CLI command, or a minimal code snippet).
 2. What you expected to happen and what actually happened (full traceback).
-3. Your environment: OS, Python version, `MRRpy` version
-   (`python -c "import MRRpy; print(MRRpy.__version__)"`), and whether
-   you use the `[all]`, `[gpu]` or `[gee]` extras.
+3. Your environment: paste what `MRRpy doctor` prints (it lists the MRRpy and
+   Python versions, the packages, the GPU and the Earth Engine sign-in).
+   From MRRpy 1.1 a results folder also holds `run_config.yaml` (the settings)
+   and `run.log` (the full report): attaching those two is usually enough.
 4. A minimal, reproducible example if you can — a small synthetic DEM is often
    enough (see `tests/test_core_science.py` for how to build one in-memory).
 

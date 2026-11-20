@@ -1,5 +1,81 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **A run with no account.** `DEM_SOURCE: glo30_open` or `glo90_open` downloads
+  the Copernicus global DEM from Amazon's open-data service: no sign-in. With a
+  design storm or Open-Meteo rain, a run anywhere needs only the internet.
+- **`MRRpy demo`** (`MRRpy.demo()`): runs a sample basin from start to finish,
+  offline; `--real` uses a real basin and a downloaded DEM. **`MRRpy doctor`**
+  checks the packages, the GPU, the Earth Engine sign-in and the internet.
+  `MRRpy --version`; `MRRpy --debug …` shows a full traceback.
+- **Map projection chosen for you.** `TARGET_CRS_EPSG` defaults to `auto`: the
+  UTM zone of the outlet (of the DEM's centre for a whole-DEM run).
+- **Rain gauge files as people keep them:** `lat`/`lon` columns for the gauges
+  and a `time` column of clock times for the rain. The old `easting_m`,
+  `northing_m` and `time_s` columns still work.
+- **`PRECIP_INTERPOLATION`** (`linear` | `interval`). `interval` lets each
+  rain total fall inside its own interval only; `linear`, the default, is the
+  behaviour up to 1.0 (totals joined by straight lines, which spreads a
+  one-interval burst over two and shifts hourly rain by half an hour).
+- **Ensemble forecasts.** `OPENMETEO_SOURCE: ensemble` with `OPENMETEO_MEMBER`
+  uses one member of an Open-Meteo ensemble; `MRRpy.run_ensemble` /
+  `MRRpy ensemble` runs every member and writes the range
+  (`ensemble_hydrograph.csv`), drawn by `plot_ensemble`.
+- **`MRRpy.run_many`**: variations of one configuration in one call, with the
+  terrain and rain downloads shared, runs side by side (`workers=`), and one
+  summary table.
+- **Flow records and scores** (`MRRpy.observed`): `read_flow_csv`, `usgs_flow`
+  (the `[usgs]` extra now has a use; it reads the new USGS Water Data API),
+  `glofas_flow` and `glofas_two_year_flood` (GloFAS through Open-Meteo, no
+  account), and `skill` (NSE, KGE, bias, peak and timing errors).
+  `plot_hydrograph(out, observed=…, reference=…)` draws them over the run.
+- **Every run leaves a record:** `run.log` (everything it reported),
+  `run_config.yaml` (its settings, ready to run again) and `run_info.json`
+  (versions, times, status, peak, water-balance error). `hydrograph.csv` and
+  `gauges.csv` get a last column `time_utc` when `EVENT_START_UTC` is set.
+- **`run_pipeline` returns a `RunResult`**: still the dict it was, plus
+  `.hydrograph`, `.peak_m3s`, `.summary()`, `.plot()` and `.cancelled`. New
+  arguments `quiet=` and `log_file=`; `MRRpy run --quiet`.
+- **Progress and cancel inside the routing.** `on_progress` moves through the
+  time loop, the report gives the time left, and `is_cancelled` is asked every
+  time step (the QGIS plugin's Cancel now stops a run within one step).
+- `Config.copy(**changes)`, `Config.changes()`, equality between configs, and a
+  short `repr` (only what differs from the defaults).
+- QGIS plugin: loads in **QGIS 4** (`qgisMaximumVersion=4.99`, Qt6-safe calls);
+  widgets for the rain-interval setting and the ensemble member.
+
+### Changed
+- **Typos are refused.** Assigning a setting that does not exist
+  (`cfg.ROUTNG_SCHEME = …`) raises an error with a suggestion instead of being
+  silently ignored; unknown names in a file get the same suggestion.
+- **`MRRpy validate` holds a hand-edited file to the wizard's rules:** ranges,
+  dates, a projection in metres, latitude before longitude. It also stops an
+  outlet outside the DEM, a projection made for another part of the world, and
+  an Earth Engine option without a project whatever the runoff method.
+- **Numbers typed as text are read** (`"2"`, and `1e-4`, which YAML reads as
+  text).
+- **Output paths.** The paths that follow `OUTPUT_DIR` move when it is assigned
+  (no `update_output_paths()` needed), and a path given its own value, such as a
+  `PRECIP_IMERG_DIR` shared by many runs, is kept instead of being overwritten
+  when the run starts. `Config.save` no longer writes the paths that merely
+  follow `OUTPUT_DIR`.
+- The run report is captured per run rather than by replacing `sys.stdout` for
+  the whole program, so two runs in two threads keep separate logs.
+- Fallback values used for old settings modules that lack a setting now come
+  from `Config` (seven of them had drifted, e.g. Manning's n 0.05 against 0.09).
+- `numba` is a declared dependency (it was already installed through pyflwdir).
+
+### Fixed
+- Flood maps crashed with an `IndexError` on a basin where none of the map
+  grid's rivers matched a routed river; they now use the routing network.
+- A legacy `.py` settings file could not set `RUNOFF_SCS_Ia_FACTOR`.
+- `pip install "MRRpy[all]"` failed on Python 3.9, because the USGS client
+  needs Python 3.10; the `[usgs]` extra is now skipped there.
+- Command-line errors that are not about the config (a failed download, an
+  unwritable folder) print one plain line instead of a traceback.
+
 ## 1.0.0 — 2026-11-09
 
 ### Added

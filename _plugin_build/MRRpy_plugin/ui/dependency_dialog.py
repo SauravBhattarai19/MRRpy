@@ -61,7 +61,7 @@ class DependencyDialog(QDialog):
 
         self.manual_label = QLabel()
         self.manual_label.setWordWrap(True)
-        self.manual_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.manual_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.manual_label.setStyleSheet("QLabel { color:#555; }")
         root.addWidget(self.manual_label)
 
@@ -70,7 +70,7 @@ class DependencyDialog(QDialog):
         self.log_panel.setPlaceholderText("Install output will appear here …")
         mono = self.log_panel.font(); mono.setFamily("Monospace"); mono.setPointSize(9)
         self.log_panel.setFont(mono)
-        self.log_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.log_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         root.addWidget(self.log_panel, stretch=1)
 
         btn_row = QHBoxLayout()

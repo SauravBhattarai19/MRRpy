@@ -112,7 +112,7 @@ class MRRpyPlugin:
         if not missing(include_optional=False):
             return True
         from .ui.dependency_dialog import DependencyDialog
-        DependencyDialog(parent=self.iface.mainWindow()).exec_()
+        DependencyDialog(parent=self.iface.mainWindow()).exec()
         return not missing(include_optional=False)
 
     def _on_dialog_closed(self):

@@ -69,6 +69,7 @@ nav:
       - "11 Many runs from Python": examples/batch-runs.md
       - "12 Flood depth and extent maps": examples/flood-maps.md
       - "13 A flood map for your town (2D)": examples/flood-2d-town.md
+      - "14 Compare a run with a flow record": examples/flow-records.md
       - "Case study: Nepal (Trishuli)": examples/nepal-case-study.md
   - Reference:
       - Command line: reference/cli.md

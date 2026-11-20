@@ -239,6 +239,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
     MRRpy run -c run.yaml --stages routing         # routing only
     MRRpy run -c run.yaml --stages inundation      # redraw the flood maps
     MRRpy run -c run.yaml --backend gpu --output-dir results_gpu/
+    MRRpy run -c run.yaml --quiet                  # warnings and a closing summary only
     ```
 
 === "Python"
@@ -248,6 +249,8 @@ is the quick way to try other rain, runoff or routing settings on the same basin
     cfg = Config.from_file("run.yaml")
     out = run_pipeline(cfg)                                # both stages
     out = run_pipeline(cfg, stages=("routing",))           # routing only
+    out = run_pipeline(cfg, quiet=True)                    # print warnings only
+    print(out.summary())                                   # peak, water balance, folder
     ```
 
 === "QGIS plugin"
@@ -257,11 +260,58 @@ is the quick way to try other rain, runoff or routing settings on the same basin
     the hydrograph; **Load Layers into QGIS**, **Load Peak Maps** and **Save Flow
     Animation…** load the results.
 
+### What a run reports, and stopping one
+
+Everything a run reports is also saved as `run.log` in the results folder, so a
+quiet run loses nothing. During the routing the report gives the share done, the
+flow at the outlet and an estimate of the time left.
+
+`run_pipeline` returns the results as a dict of file paths and tables, with a
+few shortcuts:
+
+```python
+out = run_pipeline(cfg)
+out.hydrograph        # the outlet hydrograph, a pandas DataFrame
+out.peak_m3s          # its peak; out.peak_time_hr is when
+out.summary()         # a few plain lines
+out.plot()            # the hydrograph figure
+out.cancelled         # True if the run was stopped early
+```
+
+A program that runs MRRpy can follow and stop a run: `on_log` gets each line,
+`on_progress` a percentage that moves all through the routing, and
+`is_cancelled` is asked at every routing time step, so a long run stops within
+one step. Ctrl+C does the same on the command line, and **Cancel** in the QGIS
+plugin.
+
+```python
+import time
+start = time.time()
+out = run_pipeline(cfg, on_progress=lambda pct: print(pct, "%"),
+                   is_cancelled=lambda: time.time() - start > 3600)   # give up after an hour
+```
+
+### The record of a run
+
+Two small files in the results folder say how the results were made:
+
+- `run_config.yaml`: the settings of the run, as a file you can run again
+  (`MRRpy run -c results/run_config.yaml`). Choices MRRpy made for you are
+  filled in: the projection chosen for `auto`, the DEM it downloaded.
+- `run_info.json`: the MRRpy and Python versions, when the run started and
+  ended, whether it finished, was cancelled or failed, the peak flow and the
+  water-balance error.
+
+When the run has a start date (`EVENT_START_UTC`), `hydrograph.csv` and
+`gauges.csv` get a last column `time_utc` with the clock time of each row, ready
+to set next to a gauge record ([Example 14](../examples/flow-records.md)).
+
 ## 6.7 Files a run writes
 
 | File | Contents |
 |---|---|
-| `hydrograph.csv` | `time_s`, `time_hr`, `Q_m3s` at the outlet; whole-DEM runs add `Q_total_outflow_m3s` |
+| `hydrograph.csv` | `time_s`, `time_hr`, `Q_m3s` at the outlet; whole-DEM runs add `Q_total_outflow_m3s`; `time_utc` when the run has a start date |
+| `run.log`, `run_config.yaml`, `run_info.json` | what the run reported, its settings, and its record (above) |
 | `mass_balance.csv` | one row per run (above) |
 | `partition.csv` | physical runoff: cumulative volume by process over time |
 | `gauges.csv` | virtual gauges: `time_s`, `time_hr`, then `<name>_depth_m`, `<name>_Q_m3s`, `<name>_vel_ms` for each gauge |
@@ -271,7 +321,7 @@ is the quick way to try other rain, runoff or routing settings on the same basin
 | `state/state_<hours>h.npz`, `state/index.csv` | saved model states, when asked for ([6.8](#68-carrying-on-from-a-saved-state)) |
 | `mrrpy_run.log` | the run's log (notebook form) |
 | the terrain files | see [1.3 Results folder](terrain.md#13-results-folder) |
-| downloads | `raw_dem_gee.tif`, `imerg/`, `cn_gcn250_amc*.tif`, `ksat_hihydro_*.tif`, `deficit_serves_*.tif`, … reused by later runs |
+| downloads | `raw_dem_gee.tif` or `raw_dem_open.tif`, `imerg/`, `openmeteo/`, `cn_gcn250_amc*.tif`, `ksat_hihydro_*.tif`, `deficit_serves_*.tif`, … reused by later runs |
 
 Plot them in Python. Each function takes the result of `run_pipeline`, a
 `Config` or the results folder:

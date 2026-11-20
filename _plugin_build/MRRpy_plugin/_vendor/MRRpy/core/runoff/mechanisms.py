@@ -24,6 +24,7 @@ number, coefficient, or a third-party method) plugs in one level up, at the
 ``effective runoff [m/s]`` contract.
 """
 
+from ...config import Config as _Defaults   # one source for fallback values
 import os
 
 import numpy as np
@@ -147,7 +148,7 @@ class InfiltrationExcessMechanism(RunoffMechanism):
         # Root-zone depth Z_r per cell from the same land-cover source as the
         # SERVES deficit raster, so Δθ₀ = deficit / Z_r is consistent.
         from ..routing import surface as _ru
-        _n_source = getattr(cfg, 'MANNINGS_N_SOURCE', 'lulc').lower()
+        _n_source = getattr(cfg, 'MANNINGS_N_SOURCE', _Defaults.MANNINGS_N_SOURCE).lower()
         _lc_src   = 'lcz' if _n_source == 'lcz' else 'lulc'
         zr_default = float(getattr(cfg, 'VSA_SD_MAX_INITIAL', 0.5)) or 0.5
         zr_np = np.maximum(

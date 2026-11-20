@@ -13,23 +13,115 @@ O(log T) searchsorted interpolation + O(N·G) matrix-vector multiply.
 
 File formats
 ------------
-precipitation/gauges.csv
-    gauge_id,name,easting_m,northing_m
-    G01,Sundarijal,335000,3090000
-    ...
+precipitation/gauges.csv — where each gauge is, either way:
+    gauge_id,name,lat,lon                 (degrees; also latitude/longitude)
+    G01,Sundarijal,27.76,85.42
+or  gauge_id,name,easting_m,northing_m    (metres, in the model grid's projection)
 
-precipitation/timeseries.csv
-    time_s,G01,G02,...
+precipitation/timeseries.csv — the rain at each gauge, either way:
+    time,G01,G02,...                      (clock time, UTC; also datetime/time_utc/date)
+    2024-09-27 06:00,0.0,0.0,...
+or  time_s,G01,G02,...                    (seconds from the simulation start)
     0,0.0,0.0,...
-    300,1.2,0.8,...
-    ...
-  - time_s   : seconds from simulation start (monotonically increasing)
   - values   : mm depth falling during the interval ending at that time row
-  - Rain is zero before row 0 and after the last row (fill_value=0 in interp)
+  - clock times are counted from EVENT_START_UTC (from the first row when
+    that is not set)
+  - Rain is zero before row 0 and after the last row
+
+How the rows become rain rates (PRECIP_INTERPOLATION)
+-----------------------------------------------------
+'linear'   (default, the behaviour up to MRRpy 1.0): each row's depth is turned
+           into a rate and the rates of neighbouring rows are joined by straight
+           lines.  The total is kept, but a one-interval burst rains for two
+           intervals, centred on the row's time stamp.
+'interval' each row's depth falls evenly over its own interval and nowhere
+           else — the interval ENDING at the row's time (gauge files,
+           Open-Meteo), or STARTING at it for IMERG, whose images are stamped
+           with their start time.
 """
 
 import numpy as np
 import pandas as pd
+
+
+# ── Reading gauge files as people keep them ──────────────────────────────────
+
+_LAT_NAMES = ("lat", "latitude", "lat_deg", "y_deg")
+_LON_NAMES = ("lon", "long", "lng", "longitude", "lon_deg", "x_deg")
+_TIME_NAMES = ("time", "datetime", "time_utc", "date", "timestamp", "date_time")
+
+
+def _column(df, names):
+    """The first column of *df* whose lower-cased name is in *names*, else None."""
+    lower = {str(c).strip().lower(): c for c in df.columns}
+    return next((lower[n] for n in names if n in lower), None)
+
+
+def _gauges_in_grid_crs(gauges_df, cfg, path):
+    """
+    Give the gauge table easting_m / northing_m in the model grid's projection.
+    Tables that already have them are returned unchanged; tables with latitude
+    and longitude columns are projected.
+    """
+    if 'easting_m' in gauges_df.columns and 'northing_m' in gauges_df.columns:
+        return gauges_df
+    lat, lon = _column(gauges_df, _LAT_NAMES), _column(gauges_df, _LON_NAMES)
+    if lat is None or lon is None:
+        raise ValueError(
+            f"{path}: give each gauge's place as columns 'lat' and 'lon' (degrees), or "
+            "'easting_m' and 'northing_m' (metres in the model grid's projection). "
+            f"Found columns: {', '.join(map(str, gauges_df.columns))}.")
+    la = pd.to_numeric(gauges_df[lat], errors='coerce')
+    lo = pd.to_numeric(gauges_df[lon], errors='coerce')
+    if la.isna().any() or lo.isna().any() or (la.abs() > 90).any() or (lo.abs() > 180).any():
+        raise ValueError(f"{path}: latitude must be −90…90 and longitude −180…180 "
+                         f"(columns '{lat}', '{lon}').")
+    from pyproj import Transformer
+    from ..io_utils import routing_grid_crs
+    crs = routing_grid_crs(cfg)
+    east, north = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(
+        lo.values, la.values)
+    out = gauges_df.copy()
+    out['easting_m'], out['northing_m'] = east, north
+    print(f"  Gauges          |  {len(out)} placed from latitude/longitude ({crs})")
+    return out
+
+
+def _seconds_from_start(ts_df, cfg, path):
+    """
+    Give the rain table a time_s column (seconds from the simulation start).
+    Tables that already have one are returned unchanged; a clock-time column
+    (UTC unless it carries an offset) is counted from EVENT_START_UTC, or from
+    its own first row when no start is set.
+    """
+    if 'time_s' in ts_df.columns:
+        return ts_df
+    col = _column(ts_df, _TIME_NAMES)
+    if col is None:
+        raise ValueError(
+            f"{path}: the first column must be 'time' (clock time, UTC, e.g. "
+            "2024-09-27 06:00) or 'time_s' (seconds from the start). "
+            f"Found columns: {', '.join(map(str, ts_df.columns))}.")
+    try:
+        stamps = pd.to_datetime(ts_df[col], utc=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"{path}: column '{col}' is not a list of dates and times "
+                         f"({exc}).") from None
+    start = getattr(cfg, 'EVENT_START_UTC', None)
+    if start:
+        t0 = pd.Timestamp(str(start).strip().rstrip("Z"))
+        t0 = t0.tz_localize("UTC") if t0.tzinfo is None else t0.tz_convert("UTC")
+        note = "counted from EVENT_START_UTC"
+    else:
+        t0 = stamps.iloc[0]
+        note = (f"no EVENT_START_UTC: the simulation starts at the first row, "
+                f"{t0:%Y-%m-%d %H:%M} UTC")
+    out = ts_df.drop(columns=[col])
+    out.insert(0, 'time_s', (stamps - t0).dt.total_seconds().values)
+    if not out['time_s'].is_monotonic_increasing:
+        raise ValueError(f"{path}: the times in column '{col}' must increase down the file.")
+    print(f"  Gauge times     |  clock times in '{col}' ({note})")
+    return out
 
 
 # ── Spatial weight builders ──────────────────────────────────────────────────
@@ -91,6 +183,11 @@ class PrecipEngine:
 
     def __init__(self, cfg, grid_data):
         self._method  = getattr(cfg, 'PRECIP_METHOD', 'uniform').lower()
+        # 'interval': a row's depth falls only in its own interval (see module
+        # docstring).  _stamp says which end of the interval the row's time is.
+        self._by_interval = (str(getattr(cfg, 'PRECIP_INTERPOLATION', 'linear')).lower()
+                             == 'interval' and self._method != 'uniform')
+        self._stamp = 'start' if self._method.startswith('imerg') else 'end'
         self._s_rows  = grid_data['s_rows']
         self._s_cols  = grid_data['s_cols']
         self._nrows   = grid_data['nrows']
@@ -207,8 +304,9 @@ class PrecipEngine:
         because IMERG / Open-Meteo read from a downloaded folder rather than
         PRECIP_GAUGE_FILE.
         """
-        gauges_df = pd.read_csv(gauge_file).set_index('gauge_id')
-        ts_df     = pd.read_csv(timeseries_file)
+        gauges_df = _gauges_in_grid_crs(pd.read_csv(gauge_file), cfg, gauge_file)
+        gauges_df = gauges_df.set_index('gauge_id')
+        ts_df     = _seconds_from_start(pd.read_csv(timeseries_file), cfg, timeseries_file)
 
         gauge_ids = gauges_df.index.tolist()
 
@@ -256,9 +354,14 @@ class PrecipEngine:
         intervals = np.append(intervals, intervals[-1])   # (T,)
 
         depth_mm  = ts_df[gauge_ids].values.astype(np.float64)   # (T, G)
+        if self._by_interval and self._stamp == 'end' and len(intervals) > 1:
+            # Row i is the depth of the interval ENDING at its time: its length
+            # is t[i] − t[i−1] (the first row borrows the next interval's).
+            intervals = np.append(intervals[0], np.diff(time_s_raw))
         rates_ms  = np.maximum(
             depth_mm / 1000.0 / intervals[:, np.newaxis], 0.0
         )                                                          # (T, G)
+        self._intervals = intervals
 
         self._time_s    = time_s_raw   # (T,)
         self._rates_ms  = rates_ms     # (T, G)
@@ -302,6 +405,19 @@ class PrecipEngine:
         Returns (n_gauges,) array of rainfall rates in m/s.
         Outside the time range → 0 (fill_value=0, no extrapolation).
         """
+        if self._by_interval:
+            # Each row's rate holds over its own interval and nowhere else.
+            ts = self._time_s
+            if self._stamp == 'end':          # row i covers (t[i−1], t[i]]
+                i = int(np.searchsorted(ts, t_seconds, side='left'))
+                ok = i < len(ts) and t_seconds > ts[i] - self._intervals[i]
+            else:                             # row i covers [t[i], t[i+1])
+                i = int(np.searchsorted(ts, t_seconds, side='right')) - 1
+                ok = i >= 0 and t_seconds < ts[i] + self._intervals[i]
+            if not ok:
+                return np.zeros(self._n_gauges, dtype=np.float64)
+            return self._rates_ms[i]
+
         # Outside range → zero
         if t_seconds < self._time_s[0] or t_seconds > self._time_s[-1]:
             return np.zeros(self._n_gauges, dtype=np.float64)

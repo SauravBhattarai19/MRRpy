@@ -58,35 +58,66 @@ duration (20 mm/h for 3 h = 60 mm). Set the intensity to 0 to route only an
 
 Gauge rain needs **two CSV files**.
 
-**Gauge locations** (`PRECIP_GAUGE_FILE`), one row per gauge. The coordinates are
-in the model's projection ([2 Coordinate system](coordinate-system.md)), in metres:
+**Gauge locations** (`PRECIP_GAUGE_FILE`), one row per gauge, with its latitude
+and longitude in degrees (columns `lat` and `lon`; `latitude` and `longitude`
+also work):
 
 ```text
-gauge_id,name,easting_m,northing_m
-G01,Sundarijal,344296,3071617
-G02,Kathmandu,334349,3065100
-G03,Lalitpur,335261,3059546
+gauge_id,name,lat,lon
+G01,Sundarijal,27.7606,85.4203
+G02,Kathmandu,27.7010,85.3200
+G03,Lalitpur,27.6510,85.3300
 ```
 
-**Rainfall** (`PRECIP_TIMESERIES_FILE`): a `time_s` column (seconds from the start
-of the run, increasing) and one column per `gauge_id` with the rain **depth in mm
-that fell in the interval ending at that time**:
+Coordinates in metres in the model's projection
+([2 Coordinate system](coordinate-system.md)) work as well, as columns
+`easting_m` and `northing_m`.
+
+**Rainfall** (`PRECIP_TIMESERIES_FILE`): a `time` column with the clock time in
+UTC and one column per `gauge_id` with the rain **depth in mm that fell in the
+interval ending at that time**:
 
 ```text
-time_s,G01,G02,G03
-0,0.0,0.0,0.0
-1800,12.1,1.6,0.4
-3600,17.7,3.9,1.2
-5400,20.0,7.3,2.9
+time,G01,G02,G03
+2024-09-27 06:00,0.0,0.0,0.0
+2024-09-27 06:30,12.1,1.6,0.4
+2024-09-27 07:00,17.7,3.9,1.2
+2024-09-27 07:30,20.0,7.3,2.9
 ```
 
-The row at 1800 s says 12.1 mm fell at G01 between 0 and 1800 s, a rate of
-24.2 mm/h. Between rows the rate changes linearly; before the first row and after
-the last there is no rain. Intervals don't have to be equal. Download these
-example files: [gauges.csv](../assets/data/gauges.csv),
-[rain.csv](../assets/data/rain.csv).
+The row at 06:30 says 12.1 mm fell at G01 between 06:00 and 06:30, a rate of
+24.2 mm/h. The times are counted from the storm start, `EVENT_START_UTC`; if you
+give none, the run starts at the first row. Before the first row and after the
+last there is no rain. Intervals don't have to be equal. If your record is in
+local time, write the offset in the file (`2024-09-27 11:45+05:45`).
+
+Instead of clock times you can give a `time_s` column, the seconds from the start
+of the run (`0, 1800, 3600, …`). Download example files in that form:
+[gauges.csv](../assets/data/gauges.csv), [rain.csv](../assets/data/rain.csv).
 
 <!-- settings: PRECIP_GAUGE_FILE PRECIP_TIMESERIES_FILE PRECIP_IDW_POWER PRECIP_EXCLUDE_OUTSIDE_STATIONS -->
+
+### Rain between two records
+
+A rain table holds totals per interval; the model needs a rain rate at every
+moment. `PRECIP_INTERPOLATION` says how one becomes the other, for gauge files,
+IMERG and Open-Meteo alike:
+
+| `PRECIP_INTERPOLATION` | What it does | Effect |
+|---|---|---|
+| `linear` (default) | turns each total into a rate and joins neighbouring rates by straight lines | the total is right, but a one-hour burst is spread over two hours, centred on the record's time stamp |
+| `interval` | lets each total fall evenly within its own interval and nowhere else | bursts stay as sharp, and as early, as they were recorded |
+
+`linear` is what MRRpy has always done, and it stays the default so that earlier
+results do not change. With hourly records it puts the middle of the rain half
+an hour later than it fell (a gauge file or Open-Meteo, whose records are
+stamped at the end of the interval), or a quarter of an hour earlier for IMERG
+(whose half-hour images are stamped at their start); `interval` removes both
+shifts. On a small, fast basin that moves the flood peak by a similar amount and
+makes it somewhat higher. Try both on a flood you have a record of before you
+change it for good.
+
+<!-- settings: PRECIP_INTERPOLATION -->
 
 ## 3.4 Satellite rain (NASA IMERG)
 
@@ -132,6 +163,7 @@ A start today or in the next few days gives the latest forecast.
 | `historical` | Historical Weather API | 1940 to a few days ago | old storms, long records |
 | `historical_forecast` | Historical Forecast API | the high-resolution models, from 2021 to 2023 depending on the model | a past storm as the models saw it |
 | `single_run` | Single Runs API | one model run, from March 2024 for ECMWF IFS (later for the others) | a forecast hindcast |
+| `ensemble` | Ensemble API | 20 to 50 equally likely forecasts ("members") of one model | a forecast with its range ([below](#ensemble-forecasts)) |
 
 `historical_forecast` joins the first hours of every model run end to end, so it
 is close to what really fell, not to what was forecast days ahead. To see what a
@@ -324,6 +356,51 @@ flood as one possible outcome, not the outcome.
     `OPENMETEO_API_KEY` environment variable.
 
 <!-- settings: OPENMETEO_SOURCE OPENMETEO_MODEL OPENMETEO_RUN OPENMETEO_MINUTELY_15 OPENMETEO_POINT_SPACING_M OPENMETEO_BBOX_BUFFER_M PRECIP_OPENMETEO_FORCE_DOWNLOAD -->
+
+### Ensemble forecasts
+
+A single forecast is one possible future. Weather centres also run the same
+model many times from slightly different starts; each run is a **member**, and
+together they show how sure the forecast is. `OPENMETEO_SOURCE: ensemble` takes
+the rain of one member (`OPENMETEO_MEMBER`, where 0 is the control run), and it
+needs an ensemble model in `OPENMETEO_MODEL`:
+
+| `OPENMETEO_MODEL` | Members | Grid |
+|---|---|---|
+| `gfs_seamless` | 31 | 25 km |
+| `ecmwf_ifs025` | 51 | 25 km |
+| `icon_seamless` | 40 | 13–26 km |
+| `gem_global` | 21 | 25 km |
+
+To run **every member** and get the range of floods they give, use one call. The
+terrain is processed once, the rain is downloaded once, and the members can run
+side by side:
+
+=== "Python"
+
+    ```python
+    from MRRpy import Config, run_ensemble, plot_ensemble
+
+    cfg = Config.from_file("run.yaml")        # an Open-Meteo run
+    cfg.OPENMETEO_MODEL = "gfs_seamless"
+    res = run_ensemble(cfg, workers=4)        # 31 runs, four at a time
+    plot_ensemble(res)                        # median, 25–75 % and 10–90 % bands
+    ```
+
+=== "Command line"
+
+    ```bash
+    MRRpy ensemble -c run.yaml --model gfs_seamless --workers 4
+    ```
+
+Each member's results go to `<results folder>/ensemble/member_NN/`, and
+`ensemble/ensemble_hydrograph.csv` holds every member's hydrograph with the
+minimum, the 10, 25, 50, 75 and 90 % levels, the maximum and the mean at each
+time. The ensemble models are coarse (13–25 km), so on a small basin all members
+share one or two rain cells: the range then says how uncertain the storm is, not
+where in the basin it falls.
+
+<!-- settings: OPENMETEO_MEMBER -->
 
 ## 3.6 Snow (optional)
 

@@ -20,6 +20,8 @@ shapely
 pyproj
 pysheds
 pyflwdir
+numba
+affine<3
 fiona
 
 # Optional: GPU acceleration (requires CUDA)

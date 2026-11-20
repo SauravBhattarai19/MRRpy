@@ -47,14 +47,17 @@ authentication).
 __version__ = "1.0.0"
 
 from .config import Config, OpmConfig
-from .pipeline import run_pipeline, DEFAULT_STAGES
+from .pipeline import run_pipeline, DEFAULT_STAGES, RunResult
+from .batch import run_many, run_ensemble
+from .sample import demo, sample_basin
 from .gee.dem_catalog import (
     list_dems as list_available_dems,
     describe_dems as describe_available_dems,
 )
 from .plotting import (plot_hydrograph, plot_watershed, plot_raster, plot_mass_balance,
                        plot_field, animate_fields, export_peak_maps, plot_inundation,
-                       animate_inundation)
+                       animate_inundation, plot_ensemble)
+from . import observed
 from .utils.terrain_rules import mannings_n_from_dem, apply_elevation_rule
 from .interactive import explain, run_wizard
 
@@ -63,6 +66,13 @@ __all__ = [
     "OpmConfig",
     "run_pipeline",
     "DEFAULT_STAGES",
+    "RunResult",
+    "run_many",
+    "run_ensemble",
+    "demo",
+    "sample_basin",
+    "observed",
+    "plot_ensemble",
     "list_available_dems",
     "describe_available_dems",
     "plot_hydrograph",

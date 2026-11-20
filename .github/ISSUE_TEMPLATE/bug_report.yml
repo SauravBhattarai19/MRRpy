@@ -1,0 +1,37 @@
+name: Something does not work
+description: A run fails, a result looks wrong, or an install does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time. The three boxes below are usually enough to find the cause.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: "The run stopped with ... / The peak flow is ... but I expected ..."
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Your settings
+      description: >
+        Paste `run_config.yaml` from the results folder (MRRpy 1.1 or newer), or your own
+        config file or Python lines. Remove anything private, such as a project ID.
+      render: yaml
+  - type: textarea
+    id: log
+    attributes:
+      label: The end of the run's report
+      description: >
+        The last 30 lines of `run.log` from the results folder, or what was printed.
+        For a command-line error, run it again as `MRRpy --debug run -c run.yaml`.
+      render: text
+  - type: textarea
+    id: computer
+    attributes:
+      label: Your computer
+      description: Paste what `MRRpy doctor` prints (or the MRRpy version, Python version and operating system).
+      render: text

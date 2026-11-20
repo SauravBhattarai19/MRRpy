@@ -28,10 +28,13 @@ Usage
 ``OpmConfig`` is available as an alias of ``Config``.
 """
 
+import copy as _copy
+import difflib
 import json
 import os
 
 from .gee.dem_catalog import DEM_CATALOG as _DEM_CATALOG
+from .gee.dem_catalog import needs_earth_engine as _needs_ee
 
 
 def _data_path(filename):
@@ -53,7 +56,8 @@ _ENUM_CHOICES = {
     "PRECIP_METHOD":         ["uniform", "thiessen", "idw", "imerg_thiessen", "imerg_idw",
                               "openmeteo_thiessen", "openmeteo_idw"],
     "OPENMETEO_SOURCE":      ["auto", "forecast", "historical", "historical_forecast",
-                              "single_run"],
+                              "single_run", "ensemble"],
+    "PRECIP_INTERPOLATION":  ["linear", "interval"],
     "RUNOFF_SOURCE":         ["none", "coefficient", "raster", "scs_cn", "physical"],
     "RUNOFF_CN_SOURCE":      ["scalar", "gee", "raster"],
     "RUNOFF_CN_AMC":         ["i", "ii", "iii"],
@@ -129,6 +133,115 @@ def _choices_help(choices):
     return ", ".join(f"{i}={c}" for i, c in enumerate(choices))
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Paths that follow OUTPUT_DIR
+# ═════════════════════════════════════════════════════════════════════════════
+# attribute → file or folder name inside OUTPUT_DIR.  Each follows OUTPUT_DIR
+# automatically (assigning OUTPUT_DIR moves it) until it is given a value of
+# its own, e.g. one PRECIP_IMERG_DIR shared by many runs; that value is kept.
+_DERIVED_PATHS = {
+    "ROUTING_DEM_PATH": "clipped_dem.tif",
+    "ROUTING_FLOW_DIR_PATH": "flow_direction.tif",
+    "ROUTING_FLOW_ACCUM_PATH": "clipped_flow_accumulation.tif",
+    "ROUTING_WATERSHED_MASK_PATH": "watershed.tif",
+    "WATERSHED_GEOJSON": "watershed.geojson",
+    "PRECIP_IMERG_DIR": "imerg/",
+    "PRECIP_OPENMETEO_DIR": "openmeteo/",
+    "HYDROGRAPH_CSV": "hydrograph.csv",
+    "MASS_BALANCE_CSV": "mass_balance.csv",
+}
+_DEFAULT_OUTPUT_DIR = "output/"
+
+
+def _same_path(a, b):
+    """True when *a* and *b* name the same file or folder."""
+    return os.path.abspath(str(a)) == os.path.abspath(str(b))
+
+
+def _setting_names(cls):
+    """Every public setting of *cls* (class attributes that are not methods)."""
+    return [k for k in dir(cls)
+            if not k.startswith("_") and not callable(getattr(cls, k))]
+
+
+def _unknown_message(cls, names):
+    """Plain message for unknown setting names, with a did-you-mean per name."""
+    known = _setting_names(cls)
+    by_upper = {k.upper(): k for k in known}
+    parts = []
+    for name in sorted(names):
+        guess = by_upper.get(str(name).upper())
+        if guess is None:
+            close = difflib.get_close_matches(str(name).upper(), list(by_upper), n=2, cutoff=0.6)
+            guess = " or ".join(by_upper[c] for c in close) if close else None
+        parts.append(f"'{name}'" + (f" (did you mean {guess}?)" if guess else ""))
+    many = len(parts) > 1
+    return (f"Config has no setting{'s' if many else ''} called {', '.join(parts)}.  "
+            "List the settings with `MRRpy explain --all`, or search them with "
+            "`MRRpy explain <word>`.")
+
+
+_NUMERIC_KINDS = None
+
+
+def _numeric_kind(key):
+    """'float' / 'int' when the catalogue says *key* is a number, else None."""
+    global _NUMERIC_KINDS
+    if _NUMERIC_KINDS is None:
+        try:
+            from .config_schema import PARAMS
+        except ImportError:            # catalogue still loading (import cycle)
+            return None
+        _NUMERIC_KINDS = {p.name: p.kind for p in PARAMS if p.kind in ("float", "int")}
+    return _NUMERIC_KINDS.get(key)
+
+
+def _number_from_text(key, text, kind):
+    """A number typed as text ("2", "1e-4" — PyYAML reads 1e-4 as text) → number."""
+    t = text.strip()
+    if t.lower() in ("", "none", "null", "~"):
+        return None
+    try:
+        v = float(t)
+    except ValueError:
+        raise ValueError(f"{key}: {text!r} is not a number.") from None
+    if kind == "int" and v == int(v):
+        return int(v)
+    return v
+
+
+def _same_value(a, b):
+    """Equality that treats tuples and lists alike (YAML/JSON round trips)."""
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(_same_value(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same_value(a[k], b[k]) for k in a)
+    try:
+        return bool(a == b)
+    except (TypeError, ValueError):       # arrays and other odd values
+        return a is b
+
+
+def _stale_paths(data, output_dir):
+    """
+    Names in *data* of OUTPUT_DIR-following paths left over from a full dump made
+    for another folder: at least five of them, every one at its standard name
+    under one common folder that is not OUTPUT_DIR.  Nobody sets that by hand;
+    it is what remains when only OUTPUT_DIR was edited in a saved file.
+    """
+    given = {k: data[k] for k in _DERIVED_PATHS if data.get(k)}
+    if len(given) < 5 or "HYDROGRAPH_CSV" not in given:
+        return []
+    folder = os.path.dirname(os.path.abspath(str(given["HYDROGRAPH_CSV"])))
+    if _same_path(folder, output_dir or _DEFAULT_OUTPUT_DIR):
+        return []
+    if not all(_same_path(v, os.path.join(folder, _DERIVED_PATHS[k])) for k, v in given.items()):
+        return []
+    print(f"[NOTE] The config lists its output files under {folder}, but OUTPUT_DIR is "
+          f"{output_dir}: writing to OUTPUT_DIR. (Remove those lines to silence this.)")
+    return list(given)
+
+
 class Config:
     """
     All model knobs as a mutable plain object.
@@ -161,7 +274,10 @@ class Config:
     # set e.g. 100.0 to area-average to a coarser grid at download time.
     DEM_SCALE_M = None
 
-    TARGET_CRS_EPSG: str = "EPSG:32645"
+    # Map projection of the model grid: an EPSG code of a projection in metres,
+    # or "auto" (default) = the UTM zone of the outlet (of the DEM's centre when
+    # the whole DEM is modelled).  Resolved when the run starts (utils/crs.py).
+    TARGET_CRS_EPSG: str = "auto"
 
     # Which cells are modelled:
     #   'watershed' – everything upstream of OUTPUT_POINT (delineated basin)
@@ -228,6 +344,12 @@ class Config:
     PRECIP_GAUGE_FILE: str = ""
     PRECIP_TIMESERIES_FILE: str = ""
     PRECIP_IDW_POWER: float = 2.0
+    # How the rows of a rain table become rain rates (gauges, IMERG, Open-Meteo):
+    #   'linear'   – rates of neighbouring rows joined by straight lines (the
+    #                behaviour up to 1.0; a one-interval burst rains for two)
+    #   'interval' – each row's depth falls evenly over its own interval only
+    # See MRRpy/core/precip/engine.py.
+    PRECIP_INTERPOLATION: str = "linear"
     PRECIP_EXCLUDE_OUTSIDE_STATIONS: bool = False
 
     # IMERG source (used when PRECIP_METHOD='imerg_thiessen'/'imerg_idw').
@@ -243,10 +365,13 @@ class Config:
     # Weather-model rain over HTTP, no account; window = EVENT_START_UTC … +
     # TOTAL_SIMULATION_TIME_HOURS (UTC).  See MRRpy/core/precip/openmeteo.py.
     # 'auto' → forecast API for recent/future storms, historical archive before.
-    # 'auto'|'forecast'|'historical'|'historical_forecast'|'single_run'
+    # 'auto'|'forecast'|'historical'|'historical_forecast'|'single_run'|'ensemble'
     OPENMETEO_SOURCE: str = "auto"
     OPENMETEO_MODEL: str = "best_match"
     OPENMETEO_RUN = None               # single_run: issue time (UTC); None → EVENT_START_UTC
+    # OPENMETEO_SOURCE='ensemble': which member's rain this run uses (0 = the
+    # control run).  MRRpy.run_ensemble() runs them all and gives the spread.
+    OPENMETEO_MEMBER: int = 0
     OPENMETEO_MINUTELY_15: bool = False      # 15-min data (not in the historical archive)
     OPENMETEO_POINT_SPACING_M: float = 5000.0
     OPENMETEO_BBOX_BUFFER_M: float = 10000.0
@@ -560,6 +685,10 @@ class Config:
     # OUTPUT_INTERVAL_SECONDS.  None → no state saved.
     SAVE_STATE_AT_HOURS = None
 
+    # Optional label for this run: written to mass_balance.csv and used in the
+    # name of the runoff-partition file (batch tools set one per event).
+    RUN_TAG = None
+
     # ═════════════════════════════════════════════════════════════════════════
     # 10. COMPUTE BACKEND
     # ═════════════════════════════════════════════════════════════════════════
@@ -583,7 +712,37 @@ class Config:
             if isinstance(value, (str, int)):
                 value = [value]           # tolerate a single element
             value = [_normalize_enum(key, v, choices) for v in value]
+        elif key[:1].isupper() and not hasattr(type(self), key):
+            # A setting that does not exist is almost always a typo
+            # (cfg.ROUTNG_SCHEME = …), and a silent one would leave the run on
+            # its defaults.
+            raise AttributeError(_unknown_message(type(self), [key]))
+        elif isinstance(value, str) and _numeric_kind(key):
+            value = _number_from_text(key, value, _numeric_kind(key))
+        if key == "OUTPUT_DIR":
+            old = self.OUTPUT_DIR
+            object.__setattr__(self, key, value)
+            self._rebase_paths(old)
+            return
         object.__setattr__(self, key, value)
+
+    def _rebase_paths(self, old_dir):
+        """Move the paths that still follow *old_dir* under the new OUTPUT_DIR."""
+        new_dir = self.OUTPUT_DIR
+        if not new_dir:
+            return
+        for attr, name in _DERIVED_PATHS.items():
+            cur = getattr(self, attr, None)
+            if (not cur or _same_path(cur, os.path.join(str(old_dir or ""), name))
+                    or _same_path(cur, os.path.join(_DEFAULT_OUTPUT_DIR, name))):
+                object.__setattr__(self, attr, os.path.join(str(new_dir), name))
+
+    def explicit_paths(self):
+        """{name: path} of the OUTPUT_DIR-following paths given a value of their own."""
+        d = str(self.OUTPUT_DIR or _DEFAULT_OUTPUT_DIR)
+        return {attr: getattr(self, attr) for attr, name in _DERIVED_PATHS.items()
+                if getattr(self, attr, None)
+                and not _same_path(getattr(self, attr), os.path.join(d, name))}
 
     def __init__(self, **kwargs):
         """
@@ -602,29 +761,48 @@ class Config:
         if isinstance(self.CHANNEL_HG, dict):
             self.CHANNEL_HG = dict(self.CHANNEL_HG)
         self.FIELD_VARS = list(self.FIELD_VARS)
+        unknown = [k for k in kwargs if not hasattr(type(self), k) or k.startswith("_")]
+        if unknown:
+            raise AttributeError(_unknown_message(type(self), unknown))
+        # OUTPUT_DIR first, so the paths that follow it move before any path
+        # given in the same call is set (that one then keeps its own value).
+        if "OUTPUT_DIR" in kwargs:
+            self.OUTPUT_DIR = kwargs["OUTPUT_DIR"]
         for key, value in kwargs.items():
-            if not hasattr(self, key):
-                raise AttributeError(
-                    f"Config has no attribute '{key}'.  "
-                    f"Check MRRpy/config.py for valid parameter names."
-                )
-            setattr(self, key, value)
+            if key != "OUTPUT_DIR":
+                setattr(self, key, value)
 
     def update_output_paths(self):
         """
-        Sync every OUTPUT_DIR-derived path to the current OUTPUT_DIR.
-        Call this after setting OUTPUT_DIR.
+        Re-sync the OUTPUT_DIR-following paths with the current OUTPUT_DIR.
+
+        Assigning OUTPUT_DIR already does this, so calling it is only needed by
+        older scripts.  A path given a value of its own (see ``explicit_paths``)
+        is kept.
         """
-        d = self.OUTPUT_DIR
-        self.ROUTING_DEM_PATH = os.path.join(d, "clipped_dem.tif")
-        self.ROUTING_FLOW_DIR_PATH = os.path.join(d, "flow_direction.tif")
-        self.ROUTING_FLOW_ACCUM_PATH = os.path.join(d, "clipped_flow_accumulation.tif")
-        self.ROUTING_WATERSHED_MASK_PATH = os.path.join(d, "watershed.tif")
-        self.WATERSHED_GEOJSON = os.path.join(d, "watershed.geojson")
-        self.PRECIP_IMERG_DIR = os.path.join(d, "imerg/")
-        self.PRECIP_OPENMETEO_DIR = os.path.join(d, "openmeteo/")
-        self.HYDROGRAPH_CSV = os.path.join(d, "hydrograph.csv")
-        self.MASS_BALANCE_CSV = os.path.join(d, "mass_balance.csv")
+        self._rebase_paths(self.OUTPUT_DIR)
+
+    def copy(self, **changes):
+        """An independent copy of this configuration, with *changes* applied."""
+        new = type(self).from_dict(_copy.deepcopy(self.to_dict()))
+        for key, value in changes.items():
+            setattr(new, key, value)
+        return new
+
+    def changes(self):
+        """{name: value} of the settings that differ from the defaults."""
+        base = type(self)()
+        skip = set(_DERIVED_PATHS) - set(self.explicit_paths())
+        return {k: v for k, v in self.to_dict().items()
+                if k not in skip and not _same_value(v, getattr(base, k))}
+
+    def __eq__(self, other):
+        if not isinstance(other, Config):
+            return NotImplemented
+        a, b = self.to_dict(), other.to_dict()
+        return a.keys() == b.keys() and all(_same_value(a[k], b[k]) for k in a)
+
+    __hash__ = None
 
     # ── Construction from dicts / files ──────────────────────────────────────
 
@@ -633,20 +811,22 @@ class Config:
         """
         Build a Config from a plain dict of {PARAMETER: value}.
 
-        If OUTPUT_DIR is given, all derived paths are re-based onto it first;
-        explicitly provided derived paths then take precedence.
+        If OUTPUT_DIR is given, the paths that follow it are moved onto it
+        first; a path given a value of its own then keeps that value (so one
+        PRECIP_IMERG_DIR can be shared by many runs).  The one exception is a
+        file that lists the whole standard set of paths under another folder —
+        a full dump whose OUTPUT_DIR was edited afterwards: those lines are
+        dropped (with a note) so the results go to the new OUTPUT_DIR.
         """
         data = dict(data or {})
-        unknown = [k for k in data if not hasattr(cls, k)]
+        unknown = [k for k in data if not hasattr(cls, k) or str(k).startswith("_")]
         if unknown:
-            raise AttributeError(
-                "Unknown config parameter(s): " + ", ".join(sorted(unknown))
-                + ".  Check MRRpy/config.py for valid names."
-            )
+            raise AttributeError(_unknown_message(cls, unknown))
         cfg = cls()
         if "OUTPUT_DIR" in data:
-            cfg.OUTPUT_DIR = data.pop("OUTPUT_DIR")
-            cfg.update_output_paths()
+            cfg.OUTPUT_DIR = data.pop("OUTPUT_DIR")     # the paths that follow it move too
+        for key in _stale_paths(data, cfg.OUTPUT_DIR):
+            del data[key]
         for key, value in data.items():
             setattr(cfg, key, value)
         return cfg
@@ -694,13 +874,9 @@ class Config:
             spec = importlib.util.spec_from_file_location("_MRRpy_user_config", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            data = {k: v for k, v in vars(module).items()
-                    if k.isupper() and hasattr(cls, k)}
-            # .py configs define derived paths explicitly, so no re-basing.
-            cfg = cls()
-            for key, value in data.items():
-                setattr(cfg, key, value)
-            return cfg
+            names = set(_setting_names(cls))
+            data = {k: v for k, v in vars(module).items() if k in names}
+            return cls.from_dict(data)
 
         raise ValueError(f"Unsupported config format '{ext}' (use .yaml, .json or .py)")
 
@@ -709,8 +885,12 @@ class Config:
         path = str(path)
         ext = os.path.splitext(path)[1].lower()
         data = self.to_dict()
+        # Paths that only follow OUTPUT_DIR are left out, so editing OUTPUT_DIR in
+        # the saved file moves all of them; a path with its own value is kept.
+        follow = set(_DERIVED_PATHS) - set(self.explicit_paths())
         # Tuples don't round-trip through YAML/JSON; store as lists.
-        data = {k: (list(v) if isinstance(v, tuple) else v) for k, v in data.items()}
+        data = {k: (list(v) if isinstance(v, tuple) else v) for k, v in data.items()
+                if k not in follow}
         if ext in (".yaml", ".yml"):
             import yaml
             with open(path, "w") as f:
@@ -736,14 +916,16 @@ class Config:
             if not self.DEM_BOUNDS_WGS84:
                 errors.append(
                     "DEM_PATH is empty — provide a local DEM file, or set "
-                    "DEM_BOUNDS_WGS84 (+ optionally DEM_SOURCE) to "
-                    "auto-download from Google Earth Engine (requires "
-                    "MRRpy[gee] + GEE_PROJECT)."
+                    "DEM_BOUNDS_WGS84 to download one: DEM_SOURCE 'glo30_open' or "
+                    "'glo90_open' needs no account; the other datasets come from "
+                    "Google Earth Engine (MRRpy[gee] + GEE_PROJECT)."
                 )
-            elif not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
+            elif (_needs_ee(self.DEM_SOURCE)
+                  and not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT"))):
                 errors.append(
-                    "DEM auto-download (DEM_BOUNDS_WGS84 is set) needs "
-                    "GEE_PROJECT (or the GEE_PROJECT env var)."
+                    f"Downloading the '{self.DEM_SOURCE}' DEM (DEM_BOUNDS_WGS84 is set) "
+                    "needs GEE_PROJECT (or the GEE_PROJECT env var). For a download "
+                    "with no account, set DEM_SOURCE to 'glo30_open' or 'glo90_open'."
                 )
         elif not os.path.exists(self.DEM_PATH):
             errors.append(f"DEM_PATH not found: '{self.DEM_PATH}'")
@@ -880,6 +1062,15 @@ class Config:
                     errors.append(
                         "OPENMETEO_RUN must not be after EVENT_START_UTC: a model run "
                         "only forecasts rain after it was issued.")
+            if self.OPENMETEO_SOURCE == "ensemble":
+                if self.OPENMETEO_MODEL == "best_match":
+                    errors.append(
+                        "OPENMETEO_SOURCE='ensemble' needs an ensemble OPENMETEO_MODEL, "
+                        "not 'best_match': e.g. gfs_seamless (31 members), ecmwf_ifs025 "
+                        "(51), icon_seamless (40) or gem_global (21).")
+                if self.OPENMETEO_MINUTELY_15:
+                    errors.append("OPENMETEO_MINUTELY_15 is not available for "
+                                  "OPENMETEO_SOURCE='ensemble' (hourly only).")
             if not self.OPENMETEO_POINT_SPACING_M or self.OPENMETEO_POINT_SPACING_M <= 0:
                 errors.append(
                     f"OPENMETEO_POINT_SPACING_M must be > 0 (got {self.OPENMETEO_POINT_SPACING_M}).")
@@ -891,23 +1082,6 @@ class Config:
                     errors.append(f"VSA_Q_MAX must be > 0.001 m³/s (got {self.VSA_Q_MAX})")
                 if not (0 < self.VSA_PHI < 1):
                     errors.append(f"VSA_PHI must be in (0, 1) (got {self.VSA_PHI})")
-
-            # GEE-backed parameter sources need a project — but only when the
-            # mechanism that needs them is actually active.
-            _needs_gee = (
-                ("saturation_excess" in mechs and self.VSA_SD_SOURCE == "gee")
-                or ("infiltration_excess" in mechs
-                    and (self.GA_KSAT_SOURCE == "gee"
-                         or self.GA_SUCTION_SOURCE == "texture"))
-                or self.MANNINGS_N_SOURCE in ("lulc", "lcz")
-                or self.IMPERVIOUS_SOURCE in ("lulc", "lcz")
-            )
-            if _needs_gee and not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
-                errors.append(
-                    "A GEE-backed mechanism is active (SERVES SD, gridded Ksat, "
-                    "texture suction, or LULC/LCZ Manning's/impervious) but "
-                    "GEE_PROJECT is not set."
-                )
 
         # SCS Curve Number sourced from Earth Engine (GCN250) also needs a project.
         if self.RUNOFF_SOURCE == "scs_cn" and self.RUNOFF_CN_SOURCE == "gee":
@@ -996,6 +1170,7 @@ class Config:
                     errors.append(f"INUNDATION_DEM is 'file' but INUNDATION_DEM_PATH was not "
                                   f"found: {path!r}")
             elif (self.INUNDATION_DEM not in ("auto", "model_grid")
+                  and _needs_ee(self.INUNDATION_DEM)
                   and not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT"))):
                 errors.append(f"INUNDATION_DEM '{self.INUNDATION_DEM}' is downloaded from Google "
                               "Earth Engine: set GEE_PROJECT (or the GEE_PROJECT env var).")
@@ -1028,15 +1203,70 @@ class Config:
                     errors.append(f"SAVE_STATE_AT_HOURS: {h:g} h is not an output time "
                                   f"(a multiple of OUTPUT_INTERVAL_SECONDS={interval:g} s).")
 
+        errors += self._catalogue_errors(errors)
+
         if errors:
             raise ValueError(
                 "Config validation failed:\n" + "\n".join(f"  • {e}" for e in errors)
             )
 
+    def _catalogue_errors(self, found):
+        """
+        The checks the wizard and the notebook form make on each answer (range,
+        date, projection, latitude/longitude order, …), applied to every setting
+        that matters for this run — so a hand-edited file is held to the same
+        rules.  *found*: messages already raised (a setting named there is not
+        reported twice).
+        """
+        from . import config_schema as S
+
+        said = " ".join(found)
+        values = S.values_of(self)
+        errors = []
+        for p in S.visible_params(values):
+            value = values[p.name]
+            if p.name in said or callable(value):
+                continue
+            if p.kind == "points" and isinstance(value, dict):
+                value = [value]                          # a single point is accepted
+            try:
+                S.check_value(p, value)
+            except (ValueError, TypeError, KeyError) as exc:
+                errors.append(f"{p.name}: {exc}")
+        said += " ".join(errors)
+
+        # Options that download from Earth Engine need a project, whichever
+        # runoff method is chosen.  (DEM, IMERG, curve numbers and the Q_bf
+        # formula have their own messages above.)
+        if not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
+            own = {"DEM_BOUNDS_WGS84", "PRECIP_METHOD", "RUNOFF_CN_SOURCE", "CHANNEL_QBF_M3S"}
+            need = [f"{what} ({name})" for what, req, name in S.earth_engine_triggers(values)
+                    if req and name not in own]
+            if need:
+                errors.append(
+                    "These options download from Google Earth Engine, but GEE_PROJECT is "
+                    "not set: " + "; ".join(need) + ". Set GEE_PROJECT (or the GEE_PROJECT "
+                    "env var), or choose the offline option of each.")
+
+        # A projection made for another part of the world (often one copied from
+        # an example) distorts the whole grid without any error.
+        from .utils.crs import crs_mismatch
+        problem = crs_mismatch(self.TARGET_CRS_EPSG, S.crs_reference_point(values))
+        if problem and "TARGET_CRS_EPSG" not in said:
+            errors.append(problem)
+        # An outlet outside the DEM (often the default one, or longitude first).
+        problem = S.outlet_problem(values)
+        if problem and "OUTPUT_POINT" not in said:
+            errors.append(problem)
+        return errors
+
     def to_dict(self):
         """Return all public attributes as a plain dict (for logging/saving)."""
+        cls = type(self)
         keys = [k for k in vars(Config)
                 if not k.startswith("_") and not callable(getattr(Config, k))]
+        if cls is not Config:                 # settings added by a subclass
+            keys += [k for k in _setting_names(cls) if k not in keys]
         return {k: getattr(self, k) for k in keys}
 
     @classmethod
@@ -1059,8 +1289,9 @@ class Config:
         return "\n".join(lines)
 
     def __repr__(self):
-        items = ", ".join(f"{k}={v!r}" for k, v in self.to_dict().items())
-        return f"Config({items})"
+        # Only what differs from the defaults: the full list is to_dict().
+        items = ", ".join(f"{k}={v!r}" for k, v in self.changes().items())
+        return f"{type(self).__name__}({items})"
 
 
 # ── Alias ────────────────────────────────────────────────────────────────────

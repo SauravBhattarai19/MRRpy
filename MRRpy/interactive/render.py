@@ -153,6 +153,19 @@ def render_yaml(cfg, full=True, title=None, source="MRRpy init-config"):
                 lines += _comment(f"{p.name} is set to a Python {exc} that a YAML file "
                                   "cannot hold; set it in Python instead.", "# ")
                 lines.append(f"# {p.name}: <python value>")
+    # Settings outside the catalogue that were given a value of their own
+    # (an output path that does not follow OUTPUT_DIR, state-save times, …).
+    extra = {k: v for k, v in (cfg.changes().items() if hasattr(cfg, "changes") else ())
+             if k not in S.PARAM_BY_NAME}
+    if extra:
+        lines += ["", "", "# " + "=" * (_WIDTH - 2), "# Other settings",
+                  *_comment("Set by hand or by a program; not asked by the wizard."),
+                  "# " + "=" * (_WIDTH - 2), ""]
+        for name, value in extra.items():
+            try:
+                lines += yaml_entry(name, value).splitlines()
+            except Unrepresentable:
+                lines.append(f"# {name}: <python value>")
     if not full and skipped:
         lines += ["", "",
                   f"# The other {skipped} settings keep their defaults. To see and edit "
@@ -230,7 +243,7 @@ def describe_run(cfg):
         out.append(f"Area: the whole DEM, no outlet — water leaves where it flows off "
                    f"the DEM edge; the grid uses {v['TARGET_CRS_EPSG']}.")
     else:
-        lat, lon = v["OUTPUT_POINT"]
+        lat, lon = v["OUTPUT_POINT"] or (float("nan"), float("nan"))
         out.append(f"Outlet: latitude {_fmt(lat)}, longitude {_fmt(lon)}; the grid uses "
                    f"{v['TARGET_CRS_EPSG']}.")
 
@@ -256,7 +269,9 @@ def describe_run(cfg):
         src = {"auto": "forecast or past weather by date", "forecast": "forecast",
                "historical": "historical archive",
                "historical_forecast": "archived model runs",
-               "single_run": f"the run issued {v['OPENMETEO_RUN'] or start} UTC"
+               "single_run": f"the run issued {v['OPENMETEO_RUN'] or start} UTC",
+               "ensemble": f"ensemble member {v.get('OPENMETEO_MEMBER') or 0}"
+                           + ("" if v.get('OPENMETEO_MEMBER') else " (the control run)"),
                }[v["OPENMETEO_SOURCE"]]
         out.append(f"Rain: Open-Meteo {v['OPENMETEO_MODEL']} weather-model rain "
                    f"({src}, {how}) from {start} UTC.")

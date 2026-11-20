@@ -1150,11 +1150,19 @@ def main(cfg):
         MODEL_AREA='whole_dem' skips delineation (OUTPUT_POINT unused) and
         models every valid DEM cell — see ``use_whole_dem``.
     """
+    from ..utils.crs import resolve_target_crs
+
     dem_path            = cfg.DEM_PATH
-    target_crs_epsg     = cfg.TARGET_CRS_EPSG
-    output_point_latlon = cfg.OUTPUT_POINT
+    target_crs_epsg     = resolve_target_crs(cfg)     # "auto" → the outlet's UTM zone
+    output_point_latlon = getattr(cfg, 'OUTPUT_POINT', None)
     output_dir          = cfg.OUTPUT_DIR
     engine              = getattr(cfg, 'DELINEATION_ENGINE', 'pyflwdir')
+    if (not output_point_latlon
+            and str(getattr(cfg, 'MODEL_AREA', 'watershed')) != 'whole_dem'):
+        raise ValueError(
+            "OUTPUT_POINT is not set: give the (latitude, longitude) of the river "
+            "point your basin drains to, or set MODEL_AREA='whole_dem' to model "
+            "every cell of the DEM without an outlet.")
 
     if str(getattr(cfg, 'MODEL_AREA', 'watershed')) == 'whole_dem':
         # Same reprojection, conditioning and terrain as below, then every

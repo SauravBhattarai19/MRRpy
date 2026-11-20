@@ -357,7 +357,14 @@ class TabDem(QWidget):
         """Populate widgets from an Config object."""
         if cfg.DEM_PATH:
             self.dem_widget.setFilePath(cfg.DEM_PATH)
-        self.crs_widget.setCrs(QgsCoordinateReferenceSystem(cfg.TARGET_CRS_EPSG))
+        crs = str(cfg.TARGET_CRS_EPSG or "auto")
+        if crs.lower() == "auto":           # MRRpy >= 1.1: the outlet's UTM zone
+            try:
+                from MRRpy.utils.crs import utm_epsg
+                crs = utm_epsg(*cfg.OUTPUT_POINT) or "EPSG:32645"
+            except Exception:  # noqa: BLE001
+                crs = "EPSG:32645"
+        self.crs_widget.setCrs(QgsCoordinateReferenceSystem(crs))
         lat, lon = cfg.OUTPUT_POINT
         self.lat_spin.setValue(lat)
         self.lon_spin.setValue(lon)

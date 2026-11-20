@@ -56,7 +56,9 @@ pip install MRRpy
 
 === "USGS data"
 
-    Adds `dataretrieval` to download observed USGS streamflow for comparison.
+    Adds `dataretrieval`, which `MRRpy.observed.usgs_flow("04286000", start, end)`
+    uses to download the record of a USGS stream gauge
+    ([Example 14](../examples/flow-records.md)).
 
     ```bash
     pip install "MRRpy[usgs]"
@@ -73,8 +75,9 @@ pip install MRRpy
 ## Verify
 
 ```bash
-python -c "import MRRpy; print(MRRpy.__version__)"
-MRRpy --help
+MRRpy --version
+MRRpy doctor      # checks the packages, the GPU, Earth Engine and the internet
+MRRpy demo        # runs a small sample basin from start to finish
 ```
 
 ## Dependencies

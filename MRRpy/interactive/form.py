@@ -745,7 +745,7 @@ class ConfigForm:
 
         self.dem_mode = W.RadioButtons(
             options=[("I have a DEM file (GeoTIFF)", "file"),
-                     ("Download a DEM for an area (Google Earth Engine)", "download")],
+                     ("Download a DEM for an area (no account needed for the open datasets)", "download")],
             description="Elevation data from", style=_style(W.RadioButtons),
             layout=_kit().input)
 

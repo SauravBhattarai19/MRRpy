@@ -29,6 +29,7 @@ Checked against observations in TestCases/flood_zoom_nakhu and
 TestCases/flood_zoom_us (Nakhu 2024, Montpelier 2023, Pearl at Jackson 2020).
 """
 
+from ...config import Config as _Defaults   # one source for fallback values
 import json
 import math
 import os
@@ -347,7 +348,7 @@ def make_2d_flood_maps(cfg, arrays, meta, grid, out_dir, log=print):
 
     area = getattr(cfg, "INUNDATION_AREA", None)
     w0 = _time.time()
-    box = Box(grid, arrays, meta, area, mannings_n=float(getattr(cfg, "MANNINGS_N", 0.05)))
+    box = Box(grid, arrays, meta, area, mannings_n=float(getattr(cfg, "MANNINGS_N", _Defaults.MANNINGS_N)))
     ny, nx = box.shape
     dx = box.dx
     log(f"  Flood maps     |  2D simulation on {grid.label}: {nx} × {ny} cells "

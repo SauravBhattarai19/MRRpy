@@ -75,7 +75,7 @@ class TabRunoff(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         outer.addWidget(scroll)
         page = QWidget()
         scroll.setWidget(page)

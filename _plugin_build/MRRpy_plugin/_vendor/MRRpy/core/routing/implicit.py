@@ -51,6 +51,7 @@ convention of the explicit scheme: a kinematic normal-depth outflow on the bed
 slope, linearised as a conductance ``K_bnd`` to a ghost WSE at the bed.
 """
 
+from ...config import Config as _Defaults   # one source for fallback values
 import os
 
 import numpy as np
@@ -410,7 +411,7 @@ class ImplicitDiffusiveSolver:
         self.sqrt_Sbed  = np.sqrt(np.maximum(self.slope_bed, 0.0))
 
         # Tunables (all defaulted in Config so existing configs are unchanged).
-        self.max_iters   = int(getattr(cfg, "IMPLICIT_MAX_ITERS", 4))
+        self.max_iters   = int(getattr(cfg, "IMPLICIT_MAX_ITERS", _Defaults.IMPLICIT_MAX_ITERS))
         self.tol         = float(getattr(cfg, "IMPLICIT_TOL", 1e-4))
         self.slope_floor = float(getattr(cfg, "IMPLICIT_SLOPE_FLOOR", 1e-8))
         self.theta       = float(getattr(cfg, "IMPLICIT_THETA", 1.0))

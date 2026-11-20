@@ -12,7 +12,14 @@ reprojects them to this one.
 
 ## 2.1 Map projection
 
-The safe choice is the **UTM zone that contains your basin**. Its EPSG code is
+**You can leave this alone.** `TARGET_CRS_EPSG` is `auto` by default: MRRpy uses
+the UTM zone of your outlet (of the DEM's centre when the whole DEM is modelled),
+tells you which one it chose, and writes it into the run's saved settings. Set a
+code yourself only when you need a particular projection, such as a national
+grid.
+
+The safe choice, and the one `auto` makes, is the **UTM zone that contains your
+basin**. Its EPSG code is
 
 $$
 \text{EPSG} = \begin{cases} 32600 + \text{zone} & \text{north of the equator} \\ 32700 + \text{zone} & \text{south of the equator} \end{cases}
@@ -30,10 +37,15 @@ A national projection in metres (for example `EPSG:5070` for the contiguous
 USA) works as well. Don't use a geographic system such as `EPSG:4326`: its unit
 is the degree, not the metre.
 
+`MRRpy validate` also stops a projection made for another part of the world, such
+as one copied from an example: a UTM zone more than one zone away from your
+outlet would distort the whole grid without any other warning.
+
 <!-- settings: TARGET_CRS_EPSG -->
 
 !!! note "Coordinates that stay in degrees"
     Points you type, such as the outlet `OUTPUT_POINT`, gauges and inflow points,
     are always **latitude, longitude** in degrees, whatever the projection. The
-    exceptions are the rain-gauge file (`easting_m`, `northing_m`) and points
-    given as `easting`/`northing`: those are in this projection.
+    exceptions are a rain-gauge file that uses `easting_m`, `northing_m` instead
+    of `lat`, `lon`, and points given as `easting`/`northing`: those are in this
+    projection.

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://mrrpy.readthedocs.io
+    about: Getting started, a manual that explains every setting, and worked examples.
+  - name: A question about using MRRpy
+    url: https://github.com/SauravBhattarai19/MRRpy/discussions
+    about: Ask how to set something up, or show what you made.

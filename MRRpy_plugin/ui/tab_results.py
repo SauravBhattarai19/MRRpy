@@ -52,8 +52,8 @@ class TabResults(QWidget):
         # ── Summary label ─────────────────────────────────────────────────────
         self.summary_label = QLabel("No simulation results yet.")
         self.summary_label.setWordWrap(True)
-        self.summary_label.setFrameShape(QFrame.StyledPanel)
-        self.summary_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.summary_label.setFrameShape(QFrame.Shape.StyledPanel)
+        self.summary_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.summary_label.setMinimumHeight(48)
         root.addWidget(self.summary_label)
 
@@ -65,7 +65,7 @@ class TabResults(QWidget):
             self._fig = Figure(figsize=(6, 2.8), tight_layout=True)
             self._ax = self._fig.add_subplot(111)
             self._canvas = FigureCanvas(self._fig)
-            self._canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            self._canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             v_plot.addWidget(self._canvas)
             self._draw_empty_plot()
         else:
@@ -323,7 +323,7 @@ class TabResults(QWidget):
         from qgis.PyQt.QtWidgets import QApplication
         from .layer_utils import add_raster
         from MRRpy.plotting import export_peak_maps
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             written = export_peak_maps(self._fields_dir())
         except Exception as exc:  # noqa: BLE001
@@ -367,7 +367,7 @@ class TabResults(QWidget):
                                               "GIF animation (*.gif)")
         if not path:
             return
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             have = [v for v in ("depth", "discharge") if v in self._saved_vars()]
             animate_fields(self._fields_dir(), have or "depth", path)

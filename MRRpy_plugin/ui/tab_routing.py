@@ -121,7 +121,7 @@ class TabRouting(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         outer.addWidget(scroll)
 
         panel = QWidget()
@@ -364,7 +364,7 @@ class TabRouting(QWidget):
         for key, (_f, desc) in qbf_presets().items():
             self.channel_qbf_formula.addItem(key)
             self.channel_qbf_formula.setItemData(self.channel_qbf_formula.count() - 1, desc,
-                                                 Qt.ToolTipRole)
+                                                 Qt.ItemDataRole.ToolTipRole)
         self.channel_qbf_formula.setToolTip(
             "A preset name or your own formula for the 2-year flood [m³/s], e.g.\n"
             "  1.8767*(A_below(3000)+1)^0.8783      (WECS/DHM 1990, Nepal = 'wecs_nepal')\n"

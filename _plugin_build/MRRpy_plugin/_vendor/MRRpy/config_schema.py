@@ -291,7 +291,8 @@ PARAMS = [
     # ── 1. Basin, terrain and results folder ─────────────────────────────────
     P("DEM_PATH", "project", "Elevation model (DEM) file",
       "A GeoTIFF of ground elevation covering your basin, in any projection. "
-      "Leave it empty to download a DEM from Google Earth Engine instead.",
+      "Leave it empty to have MRRpy download one for the area you give "
+      "(no account needed for the 'open' datasets).",
       "file", example="dem.tif"),
     P("DEM_BOUNDS_WGS84", "project", "Area to download",
       "Only used when no DEM file is given: the box to download, in longitude/"
@@ -299,8 +300,9 @@ PARAMS = [
       "than the basin.", "bbox", unit="west, south, east, north", optional=True,
       none_label="no download", when=(_NO_DEM,), example=(85.1, 27.5, 85.6, 27.9)),
     P("DEM_SOURCE", "project", "DEM dataset to download",
-      "Which global elevation dataset to download. 'MRRpy list-dems' compares "
-      "coverage and resolution.", "choice", when=(_NO_DEM,),
+      "Which global elevation dataset to download. glo30_open and glo90_open "
+      "need no account; the others come from Google Earth Engine. 'MRRpy "
+      "list-dems' compares coverage and resolution.", "choice", when=(_NO_DEM,),
       choice_labels=_dem_labels()),
     P("DEM_SCALE_M", "project", "Download resolution",
       "Average the downloaded DEM to this pixel size (e.g. 90 for faster runs). "
@@ -321,8 +323,9 @@ PARAMS = [
       "27.6322, 85.2933.", "latlon", unit="latitude, longitude",
       when=(("MODEL_AREA", In("watershed")),), example=(28.0, 84.5)),
     P("TARGET_CRS_EPSG", "project", "Map projection for the model grid",
-      "A projected coordinate system in metres, as an EPSG code. The UTM zone "
-      "of your outlet is a safe choice, and MRRpy suggests it for you.",
+      "A projected coordinate system in metres, as an EPSG code. On 'auto' "
+      "MRRpy uses the UTM zone of your outlet, which is a safe choice almost "
+      "everywhere; set a code only if you need a particular national grid.",
       "crs", example="EPSG:32644"),
     P("OUTPUT_DIR", "project", "Results folder",
       "Where every output is written. It is created if it does not exist.",
@@ -397,13 +400,28 @@ PARAMS = [
       "How long the design storm lasts.", "float", unit="hours", min=0,
       when=(("PRECIP_METHOD", In("uniform")),), example=6.0),
     P("PRECIP_GAUGE_FILE", "rain", "Gauge locations (CSV)",
-      "One row per gauge with columns gauge_id, name, easting_m, northing_m "
-      "(coordinates in the map projection above).", "file", when=(_GAUGES,),
+      "One row per gauge with columns gauge_id, name, lat, lon (degrees). "
+      "Coordinates in metres in the model grid's projection also work, as "
+      "columns easting_m, northing_m.", "file", when=(_GAUGES,),
       example="gauges.csv"),
     P("PRECIP_TIMESERIES_FILE", "rain", "Gauge rainfall (CSV)",
-      "Columns time_s, then one column per gauge_id holding the rain depth "
-      "(mm) that fell in the interval ending at that time.", "file",
+      "A column 'time' with the clock time in UTC (e.g. 2024-09-27 06:00), "
+      "then one column per gauge_id holding the rain depth (mm) that fell in "
+      "the interval ending at that time. Times are counted from the storm "
+      "start if you give one. A column time_s (seconds from the start) also "
+      "works.", "file",
       when=(_GAUGES,), example="rain.csv"),
+    P("PRECIP_INTERPOLATION", "rain", "Rain between two records",
+      "How a table of rain totals becomes rain over time. 'linear' joins the "
+      "records with straight lines, as MRRpy has always done: the total is "
+      "right, but a one-hour burst is spread over two hours. 'interval' lets "
+      "each total fall evenly within its own interval and nowhere else, which "
+      "keeps short bursts as sharp, and as early, as they were recorded.",
+      "choice", level="advanced", when=(("PRECIP_METHOD", NotIn("uniform")),),
+      choice_labels={
+          "linear": "linear — straight lines between records (the behaviour up to 1.0)",
+          "interval": "interval — each total stays inside its own interval",
+      }),
     P("PRECIP_IDW_POWER", "rain", "Distance-weighting power",
       "How quickly a gauge's influence fades with distance (2 is standard).",
       "float", level="advanced", min=0,
@@ -456,6 +474,8 @@ PARAMS = [
                                  "model runs, since about 2021",
           "single_run": "single_run — one model run as issued (a forecast hindcast), "
                         "since 2024",
+          "ensemble": "ensemble — one member of an ensemble forecast (20 to 50 "
+                      "equally likely forecasts); MRRpy.run_ensemble() runs them all",
       }),
     P("OPENMETEO_MODEL", "rain", "Open-Meteo weather model",
       "The model whose rain to use, by its Open-Meteo name. 'best_match' is "
@@ -472,6 +492,12 @@ PARAMS = [
       level="advanced", optional=True, none_label="the storm start",
       when=(_OPENMETEO, ("OPENMETEO_SOURCE", In("single_run"))),
       example="2024-09-25 00:00"),
+    P("OPENMETEO_MEMBER", "rain", "Ensemble member",
+      "For an ensemble forecast: which member's rain this run uses. 0 is the "
+      "control run; the others are numbered from 1. To run every member and "
+      "get the range of floods they give, use MRRpy.run_ensemble() or "
+      "'MRRpy ensemble'.", "int", level="advanced", min=0,
+      when=(_OPENMETEO, ("OPENMETEO_SOURCE", In("ensemble"))), example=3),
     P("OPENMETEO_MINUTELY_15", "rain", "Open-Meteo rain every 15 minutes",
       "Read rain every 15 minutes instead of every hour. Only Central Europe and "
       "North America have true 15-minute model rain; elsewhere each hour is "
@@ -986,6 +1012,7 @@ NOT_ASKED = {
     "MASS_BALANCE_CSV": "derived from OUTPUT_DIR",
     "SERVES_TARGET_DATE": "legacy, not read by the model (EVENT_START_UTC sets the date)",
     "MAX_DEPTH_M": "display-only, not read by the model",
+    "RUN_TAG": "a label for batch scripts (written to mass_balance.csv); not a model setting",
     "SAVE_STATE_AT_HOURS": "a list of save times set by programs such as the live "
                            "forecast (MRRpy forecast); documented there",
 }
@@ -1429,6 +1456,8 @@ def _parse_datetime(s):
 
 def _parse_crs(s):
     s = s.strip()
+    if s.lower() in ("auto", ""):
+        return "auto"
     if re.fullmatch(r"\d{4,6}", s):
         s = f"EPSG:{s}"
     if re.fullmatch(r"(?i)epsg:\d{4,6}", s):
@@ -1700,6 +1729,21 @@ def _format_point(pt, p):
 # ═════════════════════════════════════════════════════════════════════════════
 # Small helpers shared by the front-ends
 # ═════════════════════════════════════════════════════════════════════════════
+def crs_reference_point(values):
+    """(lat, lon) a map projection is chosen from: the outlet, or the DEM's
+    centre when the whole DEM is modelled (or no outlet is set yet); None."""
+    pt = None
+    if values.get("MODEL_AREA") != "whole_dem":
+        pt = values.get("OUTPUT_POINT")
+    if not pt:
+        pt = _dem_centre(values)
+    try:
+        lat, lon = (float(v) for v in pt)
+    except (TypeError, ValueError):
+        return None
+    return lat, lon
+
+
 def suggest_crs(values):
     """(EPSG string, reason) for the UTM zone of the outlet — or, when the
     whole DEM is modelled, of the DEM's centre — or (None, '')."""
@@ -1739,8 +1783,44 @@ def _dem_centre(values):
         return None
 
 
+def dem_extent(values):
+    """(west, south, east, north) in degrees of the DEM file or download box; None."""
+    bounds = values.get("DEM_BOUNDS_WGS84")
+    path = values.get("DEM_PATH")
+    try:
+        if not path and bounds:
+            w, s, e, n = (float(x) for x in bounds)
+            return w, s, e, n
+        if not path or not os.path.exists(path):
+            return None
+        import rasterio
+        from rasterio.warp import transform_bounds
+        with rasterio.open(path) as src:
+            return tuple(transform_bounds(src.crs, "EPSG:4326", *src.bounds))
+    except Exception:            # noqa: BLE001 — unreadable file / no CRS: not judged here
+        return None
+
+
+def outlet_problem(values):
+    """A plain message when the outlet lies outside the DEM, else None."""
+    if values.get("MODEL_AREA") == "whole_dem":
+        return None
+    ext, pt = dem_extent(values), values.get("OUTPUT_POINT")
+    try:
+        lat, lon = (float(v) for v in pt)
+        w, s, e, n = ext
+    except (TypeError, ValueError):
+        return None
+    if w <= lon <= e and s <= lat <= n:
+        return None
+    hint = (" Latitude comes first: did you put longitude first?"
+            if w <= lat <= e and s <= lon <= n else "")
+    return (f"OUTPUT_POINT (latitude {lat:g}, longitude {lon:g}) is outside your DEM, which "
+            f"covers latitude {s:.3f} to {n:.3f} and longitude {w:.3f} to {e:.3f}.{hint}")
+
+
 def _same(a, b):
-    """Value equality that treats tuples and lists alike (YAML round trips)."""
+    """Value equality that treats tuples and lists alike (YAML round trips).""" 
     if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
         return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
     if isinstance(a, dict) and isinstance(b, dict):
@@ -1775,7 +1855,9 @@ def earth_engine_triggers(values):
     mech = v.get("RUNOFF_MECHANISMS") or []
     sat, inf, imp = (phys and m in mech for m in
                      ("saturation_excess", "infiltration_excess", "impervious"))
-    if _blank(v.get("DEM_PATH")) and v.get("DEM_BOUNDS_WGS84"):
+    from .gee.dem_catalog import needs_earth_engine
+    if (_blank(v.get("DEM_PATH")) and v.get("DEM_BOUNDS_WGS84")
+            and needs_earth_engine(v.get("DEM_SOURCE", "nasadem"))):
         use("DEM download", True, "DEM_BOUNDS_WGS84")
     if str(v.get("PRECIP_METHOD", "")).startswith("imerg"):
         use("IMERG satellite rainfall", True, "PRECIP_METHOD")

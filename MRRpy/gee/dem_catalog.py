@@ -127,6 +127,36 @@ DEM_CATALOG = {
             "very large / continental-scale domains."
         ),
     },
+    # ── No account needed: read over the internet from Amazon's open data ────
+    "glo30_open": {
+        "title": "Copernicus GLO-30, open data (no account)",
+        "provider": "aws",
+        "gee_id": None,
+        "gee_type": None,
+        "band": None,
+        "resolution_m": 30,
+        "bbox": (-180.0, -90.0, 180.0, 90.0),
+        "description": (
+            "The Copernicus global 30 m surface model (TanDEM-X, 2011-2015), "
+            "downloaded straight from Amazon's open-data service: no account, "
+            "no sign-in. Includes trees and buildings. A few countries' 30 m "
+            "tiles are not public (use glo90_open there)."
+        ),
+    },
+    "glo90_open": {
+        "title": "Copernicus GLO-90, open data (no account)",
+        "provider": "aws",
+        "gee_id": None,
+        "gee_type": None,
+        "band": None,
+        "resolution_m": 90,
+        "bbox": (-180.0, -90.0, 180.0, 90.0),
+        "description": (
+            "The same model at 90 m, public for the whole globe: no account, "
+            "no sign-in. A good first choice for basins larger than a few "
+            "hundred km²."
+        ),
+    },
 }
 
 
@@ -143,20 +173,29 @@ def list_dems():
 def describe_dems():
     """Human-readable table of the catalog (used by `MRRpy list-dems`)."""
     lines = [
-        "Available DEM sources (Google Earth Engine — requires "
-        "'pip install MRRpy[gee]' + authentication to download):",
+        "DEM datasets MRRpy can download (set DEM_SOURCE to one of these names).",
+        "glo30_open and glo90_open need no account; the others come from Google",
+        "Earth Engine ('pip install MRRpy[gee]' and a one-time sign-in).",
         "",
     ]
     for key, meta in DEM_CATALOG.items():
         lon0, lat0, lon1, lat1 = meta["bbox"]
         lines.append(f"  {key}  —  {meta['title']}")
-        lines.append(f"      gee_id: {meta['gee_id']}  "
-                     f"(band: {meta['band']}, {meta['gee_type']})")
+        if needs_earth_engine(key):
+            lines.append(f"      gee_id: {meta['gee_id']}  "
+                         f"(band: {meta['band']}, {meta['gee_type']})")
+        else:
+            lines.append("      no account needed (open data, read over the internet)")
         lines.append(f"      resolution: ~{meta['resolution_m']} m   "
                      f"coverage: lon [{lon0}, {lon1}]  lat [{lat0}, {lat1}]")
         lines.append(f"      {meta['description']}")
         lines.append("")
     return "\n".join(lines)
+
+
+def needs_earth_engine(name):
+    """False for the catalogue's open, no-account DEM sets; True otherwise."""
+    return DEM_CATALOG.get(str(name).strip().lower(), {}).get("provider", "gee") == "gee"
 
 
 def get_dem_info(name):

@@ -40,10 +40,10 @@ except Exception:                                 # pragma: no cover
 
 
 def _from_gee(cfg):
-    """Was the run's DEM downloaded from Earth Engine (DEM_BOUNDS_WGS84)?"""
+    """Was the run's DEM downloaded (DEM_BOUNDS_WGS84), from Earth Engine or open data?"""
     path = getattr(cfg, "DEM_PATH", "") or ""
     return bool(getattr(cfg, "DEM_BOUNDS_WGS84", None)) and (
-        not path or os.path.basename(path) == "raw_dem_gee.tif")
+        not path or os.path.basename(path) in ("raw_dem_gee.tif", "raw_dem_open.tif"))
 
 
 def resolve_inundation_dem(cfg, meta):
@@ -109,14 +109,14 @@ def _fine_dem(cfg, meta, kind, what, scale, ext, fine_dir, log):
     os.makedirs(fine_dir, exist_ok=True)
     if kind == "download":
         from rasterio.warp import transform_bounds
-        from ...gee.dem_gee import download_dem
+        from ...utils.open_dem import fetch_dem
         bbox = transform_bounds(meta["crs"], "EPSG:4326", *ext, densify_pts=21)
-        log(f"  Flood maps     |  downloading {what} at {scale:g} m from Earth Engine …")
-        raw = download_dem(bbox_wgs84=bbox, target_crs_epsg=meta["crs"],
-                           output_path=os.path.join(fine_dir, "raw_dem.tif"), scale_m=scale,
-                           project=getattr(cfg, "GEE_PROJECT", None), dataset=what)
+        log(f"  Flood maps     |  downloading {what} at {scale:g} m …")
+        raw = fetch_dem(bbox_wgs84=bbox, target_crs_epsg=meta["crs"],
+                        output_path=os.path.join(fine_dir, "raw_dem.tif"), scale_m=scale,
+                        project=getattr(cfg, "GEE_PROJECT", None), dataset=what, log=log)
         if not raw:
-            raise RuntimeError(f"the {what} download from Earth Engine failed")
+            raise RuntimeError(f"the {what} download failed")
     else:
         if not what or not os.path.isfile(what):
             raise FileNotFoundError(f"INUNDATION_DEM_PATH not found: {what}")
@@ -410,6 +410,10 @@ def dem_flood_grid(cfg, arrays, meta, dem_path, label, reason, log=print, finer=
                  area_ratio_p5_p95=[float(v) for v in np.percentile(ratio, [5, 95])]
                  if ratio.size else None,
                  entering_rivers=n_ent_river, reason=reason)
+    if not drains.any():
+        # No river of this DEM matched a routed river (a very small basin, or a
+        # DEM whose rivers run elsewhere): the caller falls back to another grid.
+        return None, "none of its rivers matched a routed river"
     pct = 100.0 * with_flow / max(n_in, 1)
     label = f"{label}, {cs:g} m"
     what_ = f"finer DEM: {label} ({reason})" if finer else f"{label}, original DEM"

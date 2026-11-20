@@ -7,6 +7,7 @@ config values or from the SERVES/SoilGrids rasters (via vsa_opm.gee), plus the
 Rawls (1983) Green-Ampt suction lookup by USDA texture class.
 """
 
+from ...config import Config as _Defaults   # one source for fallback values
 import os
 
 import numpy as np
@@ -33,7 +34,7 @@ def resolve_sd_params(cfg, cell_size):
     _manual_params = {
         'sd_max': float(cfg.VSA_SD_MAX_INITIAL),
         'sd_min': sd_min,
-        'phi': float(getattr(cfg, 'VSA_PHI', 0.10)),
+        'phi': float(getattr(cfg, 'VSA_PHI', _Defaults.VSA_PHI)),
         'sd_max_per_polygon': None,
         'ksat_ms': ksat_ms,
         'deficit_raster': None,
@@ -70,12 +71,12 @@ def resolve_sd_params(cfg, cell_size):
 
     geojson = getattr(cfg, 'WATERSHED_GEOJSON', 'output/watershed.geojson')
     sat     = getattr(cfg, 'SERVES_SATELLITE', 'landsat')
-    window  = getattr(cfg, 'SERVES_SEARCH_WINDOW', 16)
+    window  = getattr(cfg, 'SERVES_SEARCH_WINDOW', _Defaults.SERVES_SEARCH_WINDOW)
     band    = getattr(cfg, 'SOILGRIDS_DEPTH', 'b30')
     project = getattr(cfg, 'GEE_PROJECT', None)
 
     # Select lookup CSV and GEE land cover source to match MANNINGS_N_SOURCE.
-    _n_source = getattr(cfg, 'MANNINGS_N_SOURCE', 'lulc').lower()
+    _n_source = getattr(cfg, 'MANNINGS_N_SOURCE', _Defaults.MANNINGS_N_SOURCE).lower()
     if _n_source == 'lcz':
         lut          = getattr(cfg, 'LCZ_LOOKUP_CSV',  'lcz_lookup.csv')
         gee_lc_source = 'lcz'
@@ -113,7 +114,7 @@ def resolve_sd_params(cfg, cell_size):
         phi    = gee_result['phi']
     else:
         sd_max = float(cfg.VSA_SD_MAX_INITIAL)
-        phi    = float(getattr(cfg, 'VSA_PHI', 0.10))
+        phi    = float(getattr(cfg, 'VSA_PHI', _Defaults.VSA_PHI))
 
     # Per-cell deficit raster (aligned to the routing grid, clipped to the
     # watershed).  The engine reduces it per precipitation zone (cell_polygon),

@@ -78,7 +78,7 @@ def _resolve_path(source, *, key, cfg_attr, default_filename):
 
 
 def plot_hydrograph(source, ax=None, *, label=None, annotate_peak=True,
-                    color=None, **kwargs):
+                    color=None, observed=None, reference=None, **kwargs):
     """
     Plot outlet discharge Q(t) from a hydrograph.
 
@@ -93,6 +93,12 @@ def plot_hydrograph(source, ax=None, *, label=None, annotate_peak=True,
     label : str, optional legend label
     annotate_peak : bool, default True — mark peak Q with a dot + label
     color : str, optional line color
+    observed : DataFrame(time_utc, Q_m3s), optional — a gauge record, drawn as
+        dark dots (see MRRpy.observed: read_flow_csv, usgs_flow)
+    reference : DataFrame(time_utc, Q_m3s), optional — another model's flow,
+        e.g. MRRpy.observed.glofas_flow, drawn as a grey stepped line
+        Either one needs clock times in the run: set EVENT_START_UTC, so that
+        hydrograph.csv has a time_utc column; the time axis then shows dates.
 
     Returns
     -------
@@ -101,21 +107,86 @@ def plot_hydrograph(source, ax=None, *, label=None, annotate_peak=True,
     df = _resolve_df(source, df_key="hydrograph_df", csv_key="hydrograph_csv",
                      cfg_attr="HYDROGRAPH_CSV", default_filename="hydrograph.csv")
     fig, ax = _get_fig_ax(ax)
-    ax.plot(df["time_hr"], df["Q_m3s"], label=label, color=color, **kwargs)
+    dated = observed is not None or reference is not None
+    if dated and "time_utc" not in df.columns:
+        raise ValueError(
+            "To draw a flow record over the hydrograph the run needs clock times: set "
+            "EVENT_START_UTC before running (hydrograph.csv then has a time_utc column).")
+    x = pd.to_datetime(df["time_utc"]) if dated else df["time_hr"]
+    if dated and label is None:
+        label = "MRRpy"
+    ax.plot(x, df["Q_m3s"], label=label, color=color, **kwargs)
+
+    if dated:
+        lo, hi = x.min(), x.max()
+        pad = (hi - lo) * 0.02
+        if reference is not None and len(reference):
+            r = reference[(reference["time_utc"] >= lo - pd.Timedelta(days=1))
+                          & (reference["time_utc"] <= hi + pd.Timedelta(days=1))]
+            ax.step(r["time_utc"], r["Q_m3s"], where="post", color="0.6", lw=1.2,
+                    label=reference.attrs.get("label", "reference (daily mean)"))
+        if observed is not None and len(observed):
+            o = observed[(observed["time_utc"] >= lo) & (observed["time_utc"] <= hi)]
+            ax.plot(o["time_utc"], o["Q_m3s"], ".", color="0.15", ms=3,
+                    label=observed.attrs.get("label", "observed"))
+        ax.set_xlim(lo - pad, hi + pad)
+        fig.autofmt_xdate()
 
     if annotate_peak and len(df):
         i = df["Q_m3s"].idxmax()
-        peak_t, peak_q = df["time_hr"].loc[i], df["Q_m3s"].loc[i]
+        peak_t, peak_q = x.loc[i], df["Q_m3s"].loc[i]
         ax.plot(peak_t, peak_q, "o", color=color or "crimson", zorder=5)
-        ax.annotate(f"peak {peak_q:.2f} m³/s\n@ t={peak_t:.2f} h",
+        ax.annotate(f"peak {peak_q:.2f} m³/s\n@ t={df['time_hr'].loc[i]:.2f} h",
                    (peak_t, peak_q), textcoords="offset points",
                    xytext=(10, -28), fontsize=9)
 
-    ax.set_xlabel("Time (hours)")
+    ax.set_xlabel("Time (UTC)" if dated else "Time (hours)")
     ax.set_ylabel("Discharge Q (m³/s)")
     ax.set_title("Outlet hydrograph")
     if label:
-        ax.legend()
+        ax.legend(frameon=False)
+    return fig, ax
+
+
+def plot_ensemble(source, ax=None, *, members=False, color="tab:blue"):
+    """
+    The range of floods an ensemble forecast gives, in one figure: the median
+    as a line, the middle half of the members (25–75 %) as a band and the
+    10–90 % range as a lighter band.
+
+    source : what ``MRRpy.run_ensemble`` returned, its ``hydrographs`` table,
+        the ensemble folder, or ``ensemble_hydrograph.csv``.
+    members : also draw every member as a thin grey line.
+
+    Returns (fig, ax).
+    """
+    if isinstance(source, dict) and "hydrographs" in source:
+        df = source["hydrographs"]
+    elif isinstance(source, pd.DataFrame):
+        df = source
+    else:
+        path = str(source)
+        if os.path.isdir(path):
+            path = os.path.join(path, "ensemble_hydrograph.csv")
+        df = pd.read_csv(path)
+    fig, ax = _get_fig_ax(ax)
+    dated = "time_utc" in df.columns
+    x = pd.to_datetime(df["time_utc"]) if dated else df["time_hr"]
+    cols = [c for c in df.columns if c.startswith("member_")]
+    if members:
+        for c in cols:
+            ax.plot(x, df[c], color="0.75", lw=0.5, zorder=1)
+    ax.fill_between(x, df["p10"], df["p90"], color=color, alpha=0.15, lw=0,
+                    label="10–90 % of members")
+    ax.fill_between(x, df["p25"], df["p75"], color=color, alpha=0.30, lw=0,
+                    label="25–75 %")
+    ax.plot(x, df["median"], color=color, lw=1.6, label="median")
+    ax.set_xlabel("Time (UTC)" if dated else "Time (hours)")
+    ax.set_ylabel("Discharge Q (m³/s)")
+    ax.set_title(f"Ensemble forecast, {len(cols)} members")
+    ax.legend(frameon=False)
+    if dated:
+        fig.autofmt_xdate()
     return fig, ax
 
 
